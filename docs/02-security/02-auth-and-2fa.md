@@ -192,9 +192,9 @@ Using the eighth code triggers a warning; using the tenth forces regeneration. S
 | Recovery-code use | 3 failures in 1 hour | Locked 1 hour; user notified |
 | Password reset request | 3 per account per hour | Silently rate limited — the response is identical either way |
 | Email change request | 3 per account per day | — |
-| Signup per IP | 10 per hour | Blunts sockpuppet farming (T-17) |
+| Signup per IP | 10 per hour | Blunts sockpuppet farming (THR-17) |
 
-> **Lockout must not become a weapon.** A hard per-account lock lets anyone lock a target out by failing their login repeatedly — a denial of service against a specific person, which for this app could mean preventing someone from cancelling a meeting. So: the delay is scoped to the **(IP, account) pair**, and a request from a device with a valid, previously-seen refresh token is not subject to it. The legitimate user on their own phone is never locked out by a stranger's attempts. This is T-35.
+> **Lockout must not become a weapon.** A hard per-account lock lets anyone lock a target out by failing their login repeatedly — a denial of service against a specific person, which for this app could mean preventing someone from cancelling a meeting. So: the delay is scoped to the **(IP, account) pair**, and a request from a device with a valid, previously-seen refresh token is not subject to it. The legitimate user on their own phone is never locked out by a stranger's attempts. This is THR-35.
 
 Enumeration is avoided throughout: sign-in failure, password reset, and email change all return an identical response and take a similar amount of time whether or not the account exists.
 
@@ -260,13 +260,13 @@ Email notifications, always, regardless of preferences: new-device sign-in, pass
 
 | Threat | Control here |
 | --- | --- |
-| [T-13](01-threat-model.md) credential stuffing | Breach-list check, progressive delay, TOTP, new-device alerting |
-| [T-14](01-threat-model.md) SIM swap | No SMS factor exists |
-| [T-18](01-threat-model.md) OAuth token theft | PKCE, native flows, hardware-backed storage |
-| [T-20](01-threat-model.md) stolen unlocked device | Step-up matrix, sign-out-everywhere, optional biometric app gate |
-| [T-35](01-threat-model.md) lockout weaponization | Pair-scoped delay, known-device exemption |
-| [T-36](01-threat-model.md) `service_role` leak | Never in client config; bundle grep in CI |
-| [T-39](01-threat-model.md) moderator escalation | `app_metadata` server-controlled; role assignment admin-only and audited |
+| [THR-13](01-threat-model.md) credential stuffing | Breach-list check, progressive delay, TOTP, new-device alerting |
+| [THR-14](01-threat-model.md) SIM swap | No SMS factor exists |
+| [THR-18](01-threat-model.md) OAuth token theft | PKCE, native flows, hardware-backed storage |
+| [THR-20](01-threat-model.md) stolen unlocked device | Step-up matrix, sign-out-everywhere, optional biometric app gate |
+| [THR-35](01-threat-model.md) lockout weaponization | Pair-scoped delay, known-device exemption |
+| [THR-36](01-threat-model.md) `service_role` leak | Never in client config; bundle grep in CI |
+| [THR-39](01-threat-model.md) moderator escalation | `app_metadata` server-controlled; role assignment admin-only and audited |
 
 ---
 

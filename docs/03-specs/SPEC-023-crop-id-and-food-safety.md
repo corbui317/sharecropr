@@ -2,13 +2,13 @@
 
 | Field | Value |
 | --- | --- |
-| **Status** | Approved |
+| **Status** | Review |
 | **Version** | 1.0.0 |
 | **Owner** | Platform Engineering + Legal |
 | **Phase** | Phase 3 |
 | **Security review** | required |
-| **Depends on** | [SPEC-005](SPEC-005-crop-taxonomy.md), [SPEC-006](SPEC-006-crop-inventory.md) |
-| **Depended on by** | — |
+| **Schema depends on** | [SPEC-005](SPEC-005-crop-taxonomy.md), [SPEC-006](SPEC-006-crop-inventory.md) |
+| **Behaviourally coupled with** | SPEC-009 (disclosure on publish) |
 | **Related ADRs** | [ADR-0002](../01-architecture/adr/ADR-0002-barter-only.md), [ADR-0008](../01-architecture/adr/ADR-0008-edge-functions.md), [ADR-0009](../01-architecture/adr/ADR-0009-safe-spots-only.md) |
 | **Last updated** | 2026-08-08 |
 
@@ -161,7 +161,7 @@ Two capabilities that arrive together because they attach to the same object —
 | R57 | **MUST** | The guidance **MUST** direct anyone who becomes ill to a health professional or public health authority, **MUST NOT** direct them to Sharecropr support as a first step, and **MUST NOT** offer any assessment of their symptoms. |
 | R58 | **MUST** | Every rendered disclosure **MUST** carry the attribution line ("This is what the grower told us. Sharecropr hasn't checked it.") adjacent to the disclosure itself, not in a footnote, a tooltip, or an expandable section. |
 | R59 | **MUST** | A change to any disclaimer or guidance string **MUST** increment `attested_version`, **MUST** require legal sign-off recorded in the PR, and **MUST** be covered by `CODEOWNERS`. |
-| R60 | **MUST** | An incident runbook for a reported foodborne illness **MUST** exist before launch ([Runbooks](../05-operations/05-runbooks.md)), covering evidence preservation (the disclosure, the listing, the session, the thread), the notification path to both parties, counsel escalation, and the explicit instruction that support staff **MUST NOT** offer medical opinions. |
+| R60 | **MUST** | ⚠ **Not yet written — this is a launch blocker, not documentation debt.** An incident runbook for a reported foodborne illness **MUST** exist before launch ([Runbooks](../05-operations/05-runbooks.md)), covering evidence preservation (the disclosure, the listing, the session, the thread), the notification path to both parties, counsel escalation, and the explicit instruction that support staff **MUST NOT** offer medical opinions. |
 
 ## 6. Data
 

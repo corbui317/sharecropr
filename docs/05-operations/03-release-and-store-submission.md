@@ -61,7 +61,7 @@ Release branches are `release/1.4.0`, cut from `main`, fixes cherry-picked back.
 **1. The reviewer hits the KYC wall.**
 A reviewer will not photograph their driver's licence. If they hit an ID-verification screen they cannot pass, the app is "incomplete" and gets rejected. Mitigation: reviewer accounts on the server-side allowlist, KYC mocked in the review environment, and review notes that say plainly *"the provided account is pre-verified; you will not be asked for ID."*
 
-The allowlist must be **server-side with an expiry**. A build-time flag ships to production and becomes a permanent hole ([T-15](../02-security/01-threat-model.md)).
+The allowlist must be **server-side with an expiry**. A build-time flag ships to production and becomes a permanent hole ([THR-15](../02-security/01-threat-model.md)).
 
 **2. The reviewer sees an empty map.**
 Apple reviews from Cupertino. If our launch metros are Ann Arbor and Portland, the reviewer opens the map and sees nothing, which reads as a broken app. Mitigation: seed demo safe spots and listings near Apple's review locations in the review environment, and document the location-override in the notes.

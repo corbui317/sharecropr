@@ -2,13 +2,13 @@
 
 | Field | Value |
 | --- | --- |
-| **Status** | Approved |
+| **Status** | Review |
 | **Version** | 1.0.0 |
 | **Owner** | Product + Backend Engineering |
 | **Phase** | Phase 2 |
 | **Security review** | not required |
-| **Depends on** | [SPEC-005](SPEC-005-crop-taxonomy.md), [SPEC-006](SPEC-006-crop-inventory.md), [SPEC-013](SPEC-013-notifications.md) |
-| **Depended on by** | — |
+| **Schema depends on** | [SPEC-005](SPEC-005-crop-taxonomy.md), [SPEC-006](SPEC-006-crop-inventory.md) |
+| **Behaviourally coupled with** | SPEC-013 (surplus alerts) |
 | **Related ADRs** | [ADR-0005](../01-architecture/adr/ADR-0005-geospatial-model.md), [ADR-0009](../01-architecture/adr/ADR-0009-safe-spots-only.md), [ADR-0011](../01-architecture/adr/ADR-0011-state-management.md) |
 | **Last updated** | 2026-08-08 |
 

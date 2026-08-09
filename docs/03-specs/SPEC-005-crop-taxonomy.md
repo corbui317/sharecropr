@@ -2,13 +2,13 @@
 
 | Field | Value |
 | --- | --- |
-| **Status** | Approved |
+| **Status** | Review |
 | **Version** | 1.0.0 |
 | **Owner** | Platform Engineering |
 | **Phase** | MVP |
 | **Security review** | not required |
-| **Depends on** | — |
-| **Depended on by** | SPEC-006, SPEC-008, SPEC-009, SPEC-020, SPEC-023 |
+| **Schema depends on** | — |
+| **Behaviourally coupled with** | SPEC-900 (variety review) |
 | **Related ADRs** | [ADR-0003](../01-architecture/adr/ADR-0003-database-centric-authz.md), [ADR-0011](../01-architecture/adr/ADR-0011-state-management.md), [ADR-0017](../01-architecture/adr/ADR-0017-release-cadence.md) |
 | **Last updated** | 2026-08-08 |
 

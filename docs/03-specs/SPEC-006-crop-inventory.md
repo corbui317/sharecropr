@@ -2,13 +2,13 @@
 
 | Field | Value |
 | --- | --- |
-| **Status** | Approved |
+| **Status** | Review |
 | **Version** | 1.0.0 |
 | **Owner** | Mobile Engineering |
 | **Phase** | MVP |
 | **Security review** | not required |
-| **Depends on** | SPEC-004, SPEC-005 |
-| **Depended on by** | SPEC-009, SPEC-010, SPEC-020, SPEC-023 |
+| **Schema depends on** | [SPEC-004](SPEC-004-garden-verification.md), [SPEC-005](SPEC-005-crop-taxonomy.md) |
+| **Behaviourally coupled with** | SPEC-012 (image moderation), SPEC-013 |
 | **Related ADRs** | [ADR-0003](../01-architecture/adr/ADR-0003-database-centric-authz.md), [ADR-0008](../01-architecture/adr/ADR-0008-edge-functions.md), [ADR-0011](../01-architecture/adr/ADR-0011-state-management.md) |
 | **Last updated** | 2026-08-08 |
 
@@ -696,7 +696,7 @@ Exact strings.
 | --- | --- | --- | --- |
 | Q1 | Should there be a per-user item cap? None exists today (T58). A cap prevents a runaway client from filling a table, but a real August allotment can legitimately hold 150 rows and a cap that bites a real user at harvest time is worse than a bot we can suspend. | Architecture | Post-launch, first season |
 | Q2 | Is freezing all eight fields on `listed` too strict? A user who miscounted and wants to change 4 lb to 3 lb currently has to withdraw and republish, losing their position and any pending requests. A "reduce quantity only" exception is defensible and is also exactly the shape of a bait-and-switch. | Product | Post-launch, first season |
-| Q3 | Should `composted` be a status at all, given `archive_reason` already carries `composted`? Two ways to say the same thing is how enums rot. Removing it is an `ALTER TYPE`, which is destructive and gated ([Data Model §15.3](../01-architecture/03-data-model.md)) — so the decision is cheap now and expensive in three months. | Architecture | Before launch |
+| Q3 | **Cheapest question in the set, and the only one whose price rises on a schedule — decide it before the first migration.** Should `composted` be a status at all, given `archive_reason` already carries `composted`? Two ways to say the same thing is how enums rot. Removing it is an `ALTER TYPE`, which is destructive and gated ([Data Model §15.3](../01-architecture/03-data-model.md)) — so the decision is cheap now and expensive in three months. | Architecture | Before launch |
 | Q4 | Do we need image moderation to be synchronous before a photo is visible to a counterparty? Today `moderation_state` starts `pending` and the asset is visible once EXIF is stripped, so there is a window where an unreviewed image is on a listing ([Mobile Architecture §12.6](../01-architecture/02-mobile-architecture.md)). Synchronous review is a latency and cost decision, not a technical one. | Trust & Safety + Product | Before launch |
 | Q5 | Should the private note be included in a DSAR export as a separate category, given it is the one field a user may reasonably have forgotten exists? | Legal + Platform | Before first DSAR |
 | Q6 | Is 21 days the right staleness prompt (R48)? Too eager and it nags; too slow and the map fills with produce that rotted a fortnight ago, which is the single most damaging thing to trust in a barter product. | Product | Post-launch data |

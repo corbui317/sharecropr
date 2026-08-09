@@ -114,7 +114,7 @@ Email and auth record; password hash; `verifications` row; **`private.garden_loc
 | Pseudonymized `profiles` shell | Referential integrity — otherwise the counterparty's exchange history breaks | `id`, `deleted_at`, `handle_tombstone`. Display name becomes "Former member". |
 | Ratings **given** by the user | The recipient's rating average must not silently change | De-linked from the rater |
 | `audit.events` | Legal and integrity obligation; the table is immutable by construction | Actor id retained |
-| `private.verification_vendor_refs` | Ban-evasion defence ([T-17](01-threat-model.md)) | Pseudonymized, 7 years |
+| `private.verification_vendor_refs` | Ban-evasion defence ([THR-17](01-threat-model.md)) | Pseudonymized, 7 years |
 | Reports **about** the user | Safety record; deleting your account should not erase a harassment history | 3 years |
 | Aggregate counts | Non-personal | H3 r5 or coarser |
 
@@ -127,6 +127,9 @@ The deleted user's message bodies are replaced with `[deleted]` and the sender r
 ---
 
 ## 5. Data subject requests
+
+> ⚠ **This is a policy, not a workflow.** A DSAR carries a statutory clock, and what exists here is a position rather than a procedure: no runbook, no response template, no defined owner, no measured window. It is currently a manual Ops path that nobody has walked. Write it before launch, not on receipt of the first request ([Development Notes N-11](../07-review/02-development-notes.md#n-11--four-workflows-touching-safety-or-regulation-have-no-spec)).
+
 
 | Request | SLA | Method |
 | --- | --- | --- |

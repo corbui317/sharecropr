@@ -2,13 +2,13 @@
 
 | Field | Value |
 | --- | --- |
-| **Status** | Approved |
+| **Status** | Review |
 | **Version** | 1.0.0 |
 | **Owner** | Engineering — Platform, with Security and Legal |
 | **Phase** | MVP |
 | **Security review** | required |
-| **Depends on** | [SPEC-001](SPEC-001-authentication.md) |
-| **Depended on by** | [SPEC-002](SPEC-002-two-factor-auth.md) (R45 recovery re-verification), [SPEC-004](SPEC-004-garden-verification.md), [SPEC-009](SPEC-009-listings-and-offers.md), [SPEC-010](SPEC-010-exchange-lifecycle.md), [SPEC-012](SPEC-012-trust-and-safety.md) |
+| **Schema depends on** | [SPEC-001](SPEC-001-authentication.md) |
+| **Behaviourally coupled with** | SPEC-002 (R45 recovery re-verification), SPEC-013 |
 | **Related ADRs** | [ADR-0010](../01-architecture/adr/ADR-0010-kyc-vendor.md), [ADR-0008](../01-architecture/adr/ADR-0008-edge-functions.md), [ADR-0009](../01-architecture/adr/ADR-0009-safe-spots-only.md), [ADR-0002](../01-architecture/adr/ADR-0002-barter-only.md) |
 | **Last updated** | 2026-08-08 |
 

@@ -53,7 +53,7 @@ SELECT is(
 
 ### TC-GEO-03 — Averaging resistance
 
-The direct consequence of GEO-02, tested explicitly because it is the actual attack ([T-02](../02-security/01-threat-model.md)):
+The direct consequence of GEO-02, tested explicitly because it is the actual attack ([THR-02](../02-security/01-threat-model.md)):
 
 ```sql
 WITH samples AS (
@@ -206,7 +206,7 @@ TC-GEO-25 exists because the fix for GEO-07 — querying a disk instead of a cel
 | TC-GEO-35 | Map degrades gracefully at 200+ markers per the [degradation ladder](../01-architecture/02-mobile-architecture.md) | manual |
 | TC-GEO-36 | No coordinate appears in any analytics event or breadcrumb | unit |
 
-TC-GEO-32 matters more than it sounds: unstable quantization means every GPS tick issues a new query, which is a battery problem, a cost problem, and a much richer side channel for [T-08](../02-security/01-threat-model.md).
+TC-GEO-32 matters more than it sounds: unstable quantization means every GPS tick issues a new query, which is a battery problem, a cost problem, and a much richer side channel for [THR-08](../02-security/01-threat-model.md).
 
 ---
 

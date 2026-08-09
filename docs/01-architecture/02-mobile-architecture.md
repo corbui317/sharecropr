@@ -1,6 +1,6 @@
 # Mobile Architecture
 
-**Status:** Approved · **Version:** 1.0.0 · **Owner:** Architecture
+**Status:** Review · **Version:** 1.0.0 · **Owner:** Architecture
 
 The backend is where authorization and invariants live ([System Architecture §1](01-system-architecture.md)). The client is therefore **a rendering and caching layer with a state machine mirror** — it is not allowed to be the place a rule is enforced, and any rule that exists only here is a bug. What the client *is* responsible for: being fast, being usable offline, being usable with a screen reader, and never holding a secret it shouldn't.
 
@@ -837,7 +837,7 @@ AppState.addEventListener('change', (state) => {
 | Value | Where it lives | Why never at rest |
 | --- | --- | --- |
 | `service_role` key | Edge Function + CI secrets only | It bypasses RLS entirely ([RLS Design RLS-3](05-rls-design.md)). Any client-side copy — env var, `app.config.js`, EAS build secret consumed by the app — is a total compromise. CI greps the built JS bundle for the JWT signature prefix and fails the build. |
-| `handoff_code` | React state, for the lifetime of the handoff screen | It is P1. Persisting it means a lost phone yields a code that can be read aloud to a third party. Cleared on unmount, on background, and on session state change. |
+| `handoff_code` | React state, for the lifetime of the handoff screen | It is P1. Persisting it means a lost phone yields a code that can be read aloud to a third party. Cleared on unmount, on background, and on session state change. Fetched through `rpc.get_handoff_code` — the column is encrypted at rest and every read is audited, so the screen must not re-request it on each render ([Exchange State Machine §3.3](07-exchange-state-machine.md)). |
 | Garden coordinates (own or anyone's) | Never persisted; owner's own point is fetched on demand into memory | The persistence deny-list in §2.3, plus the fact that no other user's coordinate exists client-side at all. |
 | The user's current GPS position | Zustand, memory only | Quantized to ~100 m before it is sent anywhere ([Location Privacy §6.1](04-location-privacy.md)). Never written to MMKV, never logged, never a breadcrumb. |
 | TOTP secret / QR payload | Displayed once, never stored | Enrollment is a single flow. Recovery codes are the user's responsibility, shown once, never persisted by us. |

@@ -1,6 +1,6 @@
 # API Contract
 
-**Status:** Approved · **Version:** 1.0.0 · **Owner:** Architecture
+**Status:** Review · **Version:** 1.0.0 · **Owner:** Architecture
 
 This document is **authoritative for the client-server contract**. Specs describe *why* an endpoint exists; this describes exactly what it accepts, what it returns, and how it fails. A client change that assumes a shape not written here is a bug in the client. A server change that breaks a shape written here is a breaking change and follows §4.
 
@@ -113,7 +113,7 @@ The `anon` surface is deliberately tiny: taxonomy and safe spots, so the app can
 | `aal2` elevation | **15 minutes** from the `amr` TOTP timestamp | Not a separate token; a freshness check on the existing claim. |
 | Persona session token | 15 minutes, single use | Issued by `kyc-start`, never persisted client-side |
 | Storage signed URL | 3600 s for originals, 86400 s for thumbnails | |
-| `handoff_code` | Life of the session; invalid outside the confirmation window | Never persisted client-side ([Mobile Architecture §5.4](02-mobile-architecture.md)) |
+| `handoff_code` | Life of the session; invalid outside the confirmation window | Encrypted at rest ([Exchange State Machine §3.3](07-exchange-state-machine.md)); fetched via `rpc.get_handoff_code`; never persisted client-side ([Mobile Architecture §5.4](02-mobile-architecture.md)) |
 
 A 1-hour access token means a revoked moderator claim persists for up to an hour. Accepted, and mitigated by also checking `profiles.is_suspended` on every sensitive write ([RLS Design §2](05-rls-design.md)).
 
@@ -170,7 +170,7 @@ CREATE UNIQUE INDEX exchange_requests_idem
 Rules:
 
 1. The key is generated **once, when the user's intent is formed** (on button press), and reused across every retry of that intent. Regenerating it on retry defeats the entire mechanism.
-2. **A replay returns the original result with the original status code**, not a 409. `accept_exchange_request` demonstrates the pattern: it looks for an existing session for `(request_id, owner_id)` and returns it before taking any lock ([Exchange State Machine §4](07-exchange-state-machine.md)).
+2. **A replay returns the original result with the original status code**, not a 409. Idempotency is **key-based**, through the shared `app.idempotency_probe` / `app.idempotency_record` helpers ([Exchange State Machine §4.1](07-exchange-state-machine.md)): the probe runs before any lock, the record commits inside the effect's transaction, and the same key arriving with **different arguments** raises `idempotency_conflict` 409 — which is a client bug and must never be retried. `accept_exchange_request` adds a second layer on top: a natural-key lookup for an existing session on `(request_id, owner_id)`, so a retry that arrives with a *new* key is still not a second acceptance. Declaring a `p_idempotency_key` parameter and never reading it — which the first draft of that function did — satisfies none of this.
 3. A key replayed with **different arguments** raises `idempotency_conflict` (409). Silently returning the first result for a different request is worse than an error.
 4. Keys are retained for **7 days**, then reaped by `pg_cron`. Retry windows are minutes; 7 days is generous.
 5. Rows whose primary key is client-generated (`inventory_items`, `messages`, `media_assets`) use the **PK as the idempotency key** — a replayed INSERT conflicts on PK, and `ON CONFLICT DO NOTHING` plus a `RETURNING` read makes the replay a success.
@@ -496,7 +496,7 @@ GET /rest/v1/exchange_sessions?id=eq.<uuid>
             spot:safe_spots(id,name,category,address_line,hours,accessibility_notes,parking_notes)
 ```
 
-**`handoff_code` is excluded from the default select and from every list query.** It is returned exactly twice: by `accept_exchange_request` (the acceptor's copy) and by an explicit `GET ?select=handoff_code` that the client issues only when the session is `scheduled` and the handoff screen is open. Rule from [Exchange State Machine §3.1](07-exchange-state-machine.md): the code is not displayed until the session is `scheduled`, and it is never persisted client-side.
+**`handoff_code` is excluded from the default select and from every list query, and `SELECT` on the column is `REVOKE`d from `authenticated` outright.** The column is `bytea` — encrypted at rest against a Vault key — so even a successful direct read returns ciphertext. It is returned by exactly **one** path: `rpc.get_handoff_code`, which either participant may call only when the session is `scheduled`, and which audits every call as `exchange.code_read`. `accept_exchange_request` does **not** return it — an earlier draft returned "the acceptor's copy" at acceptance, which contradicted the rule two paragraphs of [Exchange State Machine §3.1](07-exchange-state-machine.md) also stated, and left the requester with no specified way to obtain the code at all. Both parties now read it the same way, at the same point in the lifecycle, and it is never persisted client-side.
 
 `version` is mandatory in every select, because every mutating session RPC takes `p_expected_version` (H5).
 
@@ -662,12 +662,14 @@ All take `p_idempotency_key uuid`. All session-mutating RPCs take `p_expected_ve
 | RPC | Actor | Limit | Request | Response |
 | --- | --- | --- | --- | --- |
 | `create_exchange_request` | Requester | **10 / hour / user** | `{ p_listing_id, p_offered_item_id?, p_message?, p_proposed_safe_spot_id?, p_idempotency_key }` | `{ request_id, thread_id, expires_at }` |
-| `accept_exchange_request` | Owner | 30 / hour / user | `{ p_request_id, p_idempotency_key }` | `{ session_id, handoff_code }` |
+| `accept_exchange_request` | Owner | 30 / hour / user, consumed **before** the locks | `{ p_request_id, p_idempotency_key }` | `{ session_id }` — never the code |
 | `decline_exchange_request` | Owner | 60 / hour / user | `{ p_request_id, p_reason?, p_idempotency_key }` | `{ request_id, status: "declined" }` |
 | `withdraw_exchange_request` | Requester | 60 / hour / user | `{ p_request_id, p_idempotency_key }` | `{ request_id, status: "withdrawn" }` |
 | `propose_schedule` | Either | 30 / hour / user | `{ p_session_id, p_safe_spot_id, p_start, p_end, p_expected_version, p_idempotency_key }` | `{ session_id, state, version, proposed_by }` |
 | `confirm_schedule` | The other party | 30 / hour / user | `{ p_session_id, p_expected_version, p_idempotency_key }` | `{ session_id, state: "scheduled", version, scheduled_start, scheduled_end, safe_spot_id }` |
-| `confirm_handoff` | Either | **5 / 15 min / session** | `{ p_session_id, p_code, p_expected_version, p_idempotency_key }` | `{ session_id, state, version, both_confirmed }` |
+| `confirm_handoff` | Either | **5 / rolling 15 min / session** | `{ p_session_id, p_code, p_expected_version, p_idempotency_key }` — version is **advisory** here ([SPEC-010 R42a](../03-specs/SPEC-010-exchange-lifecycle.md)) | `{ session_id, ok, reason, state, version, attempts_remaining, retry_after_s, both_confirmed }` |
+| `get_handoff_code` | Either participant | 20 / hour / session | `{ p_session_id }` | `{ handoff_code }` — only when `state = 'scheduled'`; audited as `exchange.code_read` |
+| `contest_no_show` | The marked party | 5 / day / user | `{ p_session_id, p_idempotency_key }` | `{ session_id, cleared }` — clears attribution, state stays `no_show` |
 | `cancel_session` | Either | 20 / day / user | `{ p_session_id, p_reason, p_expected_version, p_idempotency_key }` | `{ session_id, state: "cancelled", version, counts_as_late: bool }` |
 | `submit_rating` | Either, post-completion | 30 / day / user | `{ p_session_id, p_stars, p_tags?, p_comment?, p_idempotency_key }` | `{ rating_id, is_revealed }` |
 
@@ -681,7 +683,7 @@ Per-RPC error codes:
 | `withdraw_exchange_request` | `request_not_found` 404 · `not_authorized` 403 · `request_not_pending` 409 |
 | `propose_schedule` | `not_authorized` 403 · `invalid_transition` 409 · `stale_state` 409 · `venue_closed` 422 (window outside `safe_spots.hours`) · `validation_failed` 400 (`start < now()+1h`, `start > now()+14d`, spot not in the listing's set, `end <= start`) |
 | `confirm_schedule` | `not_authorized` 403 · `invalid_transition` 409 · `stale_state` 409 · `validation_failed` 400 (confirming your own proposal) |
-| `confirm_handoff` | `not_authorized` 403 · `invalid_transition` 409 · `stale_state` 409 · `validation_failed` 400 (wrong code, or outside `start−30m … end+2h`) · `rate_limited` 429 (**5 wrong attempts locks confirmation for 15 minutes and notifies both parties**) |
+| `confirm_handoff` | **Raises** `not_authorized` 403 · `invalid_transition` 409 · `request_not_found` 404. **Returns 200 with `ok = false`** for `handoff_code_invalid`, `handoff_window_closed`, and `rate_limited` — because each of those must durably record an attempt, and a `RAISE` rolls the record back ([SPEC-010 R49a](../03-specs/SPEC-010-exchange-lifecycle.md)). Never `stale_state`: the version is advisory on this RPC. **5 wrong attempts inside one rolling 15-minute window lock confirmation for 15 minutes and notify both parties** |
 | `cancel_session` | `not_authorized` 403 · `invalid_transition` 409 · `stale_state` 409 · `validation_failed` 400 (reason missing or > 200 chars). `counts_as_late` is true when cancelling < 4 h before `scheduled_start`; it increments `cancellation_count_90d`. |
 | `submit_rating` | `not_authorized` 403 · `invalid_transition` 409 (session not `completed`) · `conflict` 409 (already rated) · `validation_failed` 400 (stars outside 1–5, tag outside the closed vocabulary, self-rating) |
 
@@ -961,7 +963,7 @@ Realtime publications are **column-filtered**, not whole-row. `exchange_sessions
 
 | Not sent | Instead |
 | --- | --- |
-| `handoff_code` | Fetched on demand when the handoff screen opens, over HTTPS |
+| `handoff_code` | Fetched on demand via `rpc.get_handoff_code` when the handoff screen opens, over HTTPS. Encrypted at rest; the RPC is the only decrypt path |
 | Any coordinate, of any kind | Nothing to send — no realtime table has a coordinate column in its publication |
 | `safe_spots_near` results / map count changes | Polled at a 60 s `staleTime`. Broadcasting map deltas to every client in a metro is a fanout problem with no product payoff. |
 | `trust_score`, `cancellation_count_90d` | Never client-reachable at all |

@@ -2,13 +2,13 @@
 
 | Field | Value |
 | --- | --- |
-| **Status** | Approved |
+| **Status** | Review |
 | **Version** | 1.0.0 |
 | **Owner** | Engineering — Platform, with Security (location) |
 | **Phase** | MVP |
 | **Security review** | required |
-| **Depends on** | [SPEC-001](SPEC-001-authentication.md), [SPEC-003](SPEC-003-identity-verification.md) |
-| **Depended on by** | [SPEC-006](SPEC-006-crop-inventory.md), [SPEC-008](SPEC-008-interactive-map.md), [SPEC-009](SPEC-009-listings-and-offers.md), [SPEC-010](SPEC-010-exchange-lifecycle.md), [SPEC-900](SPEC-900-moderation-console.md) |
+| **Schema depends on** | [SPEC-001](SPEC-001-authentication.md), [SPEC-003](SPEC-003-identity-verification.md) |
+| **Behaviourally coupled with** | SPEC-013, SPEC-900 |
 | **Related ADRs** | [ADR-0005](../01-architecture/adr/ADR-0005-geospatial-model.md), [ADR-0009](../01-architecture/adr/ADR-0009-safe-spots-only.md), [ADR-0008](../01-architecture/adr/ADR-0008-edge-functions.md), [ADR-0013](../01-architecture/adr/ADR-0013-map-library.md) |
 | **Last updated** | 2026-08-08 |
 

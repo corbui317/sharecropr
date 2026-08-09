@@ -2,13 +2,13 @@
 
 | Field | Value |
 | --- | --- |
-| **Status** | Approved |
+| **Status** | Review |
 | **Version** | 1.0.0 |
 | **Owner** | Mobile Engineering |
 | **Phase** | MVP |
 | **Security review** | not required |
-| **Depends on** | SPEC-005, SPEC-007, SPEC-009 |
-| **Depended on by** | SPEC-009, SPEC-010 |
+| **Schema depends on** | [SPEC-005](SPEC-005-crop-taxonomy.md), [SPEC-007](SPEC-007-safe-spots.md), [SPEC-009](SPEC-009-listings-and-offers.md) |
+| **Behaviourally coupled with** | SPEC-009, SPEC-010 |
 | **Related ADRs** | [ADR-0013](../01-architecture/adr/ADR-0013-map-library.md), [ADR-0005](../01-architecture/adr/ADR-0005-geospatial-model.md), [ADR-0009](../01-architecture/adr/ADR-0009-safe-spots-only.md), [ADR-0011](../01-architecture/adr/ADR-0011-state-management.md) |
 | **Last updated** | 2026-08-08 |
 

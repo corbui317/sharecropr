@@ -2,13 +2,13 @@
 
 | Field | Value |
 | --- | --- |
-| **Status** | Approved |
+| **Status** | Review |
 | **Version** | 1.0.0 |
 | **Owner** | Engineering — Auth |
 | **Phase** | MVP |
 | **Security review** | required |
-| **Depends on** | [SPEC-001](SPEC-001-authentication.md) |
-| **Depended on by** | [SPEC-001](SPEC-001-authentication.md) (R32, R36, R44 cite R18), [SPEC-003](SPEC-003-identity-verification.md) (recovery re-verification), [SPEC-004](SPEC-004-garden-verification.md), [SPEC-900](SPEC-900-moderation-console.md) |
+| **Schema depends on** | [SPEC-001](SPEC-001-authentication.md) |
+| **Behaviourally coupled with** | SPEC-001, SPEC-003 (recovery re-verification) |
 | **Related ADRs** | [ADR-0014](../01-architecture/adr/ADR-0014-totp-not-sms.md), [ADR-0006](../01-architecture/adr/ADR-0006-auth-providers.md), [ADR-0007](../01-architecture/adr/ADR-0007-token-storage.md), [ADR-0010](../01-architecture/adr/ADR-0010-kyc-vendor.md) |
 | **Last updated** | 2026-08-08 |
 

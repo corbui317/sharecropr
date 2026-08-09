@@ -1,6 +1,6 @@
 # System Architecture
 
-**Status:** Approved · **Version:** 1.0.0 · **Owner:** Architecture
+**Status:** Review · **Version:** 1.0.0 · **Owner:** Architecture
 
 ---
 

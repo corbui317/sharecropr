@@ -125,6 +125,22 @@
 | --- | --- | --- |
 | EC-01 | | |
 
+## 10a. Cleanup Inventory
+
+> **Every resource this feature creates, and what destroys it.** Fill one row per resource, then check that every terminal state of every entity appears in the "Released by" column. A resource with no release path is not a tidiness problem — it is an orphan, and orphans are permanent.
+>
+> This section exists because it was missing. A `disputed` exchange session held its listing and its inventory item forever: every *other* terminal state had a release path, `disputed` had none, and nothing in the template asked. See [the 2026-08-09 review](../07-review/01-workflow-architect-review.md) B-4.
+
+| Resource | Created at | Released by | Release method | Alert if orphaned |
+| --- | --- | --- | --- | --- |
+| | | | | |
+
+**Terminal-state sweep.** List every terminal state of every entity this spec writes, and name the release path for each. If two states share one, say so. If one has none, that is the finding.
+
+| Entity | Terminal state | Releases what | Via |
+| --- | --- | --- | --- |
+| | | | |
+
 ## 11. Observability
 
 | Event / metric | Type | Properties | Alert threshold |

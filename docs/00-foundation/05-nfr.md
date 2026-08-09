@@ -153,7 +153,7 @@ Target: **WCAG 2.2 AA equivalent for mobile.** "Follows WCAG" is not a commitmen
 | NFR-71 | Reduced-motion honoured; no animation is required to understand state |
 | NFR-72 | Live regions announce changes politely and never steal focus from a text input |
 
-NFR-69 is the one that gets treated as optional and shouldn't be. See [Ray's journey](03-personas-and-journeys.md#9--journey--ray-accessibility).
+NFR-69 is the one that gets treated as optional and shouldn't be. See [Ray's journey](03-personas-and-journeys.md#9-journey--ray-accessibility).
 
 ---
 

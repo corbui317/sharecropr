@@ -2,13 +2,13 @@
 
 | Field | Value |
 | --- | --- |
-| **Status** | Approved |
+| **Status** | Review |
 | **Version** | 1.0.0 |
 | **Owner** | Backend Engineering + Trust & Safety |
 | **Phase** | MVP |
 | **Security review** | required |
-| **Depends on** | [SPEC-010](SPEC-010-exchange-lifecycle.md), [SPEC-012](SPEC-012-trust-and-safety.md), [SPEC-013](SPEC-013-notifications.md) |
-| **Depended on by** | [SPEC-900](SPEC-900-moderation-console.md) |
+| **Schema depends on** | [SPEC-010](SPEC-010-exchange-lifecycle.md) |
+| **Behaviourally coupled with** | SPEC-012, SPEC-013, SPEC-900 |
 | **Related ADRs** | [ADR-0003](../01-architecture/adr/ADR-0003-database-centric-authz.md), [ADR-0009](../01-architecture/adr/ADR-0009-safe-spots-only.md) |
 | **Last updated** | 2026-08-08 |
 
@@ -56,7 +56,7 @@ Messaging lets two people coordinate one specific exchange — when, where, what
 | R02 | MUST | `message_threads.request_id` **MUST** be `UNIQUE`. One request, one thread, forever. |
 | R03 | MUST | The thread **MUST** be created inside the same transaction as the exchange request, by `create_exchange_request`, not by a separate client call. |
 | R04 | MUST | `participant_a` and `participant_b` **MUST** be stored sorted (`LEAST`/`GREATEST`) so the pair key is stable regardless of who initiated. |
-| R05 | MUST | A thread **MUST** be closed (`is_closed = true`) 14 days after its session reaches `completed`, by the `close_threads` cron job. |
+| R05 | MUST | A thread **MUST** be closed (`is_closed = true`) 14 days after its session reaches `completed`, by the `close_threads` cron job. **This spec owns that job and is the only place it is created.** [SPEC-010 R50](SPEC-010-exchange-lifecycle.md) *schedules* a close at completion; it does not define the cron. An earlier draft had both specs claiming to create it, which is how two migrations end up racing to `cron.schedule` the same job name and the second one wins silently. |
 | R06 | MUST | A thread **MUST** be closed immediately when a block is created between its participants, by the `on_block_created` trigger. |
 | R07 | MUST | A thread **MUST** be closed immediately when its request reaches `declined`, `withdrawn`, or `expired` without acceptance. |
 | R08 | MUST | A closed thread **MUST** remain readable by its participants until message retention expires, and **MUST NOT** accept new messages. |

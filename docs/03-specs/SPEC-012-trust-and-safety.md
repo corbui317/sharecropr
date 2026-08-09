@@ -2,13 +2,13 @@
 
 | Field | Value |
 | --- | --- |
-| **Status** | Approved |
+| **Status** | Review |
 | **Version** | 1.0.0 |
 | **Owner** | Trust & Safety + Backend Engineering |
 | **Phase** | MVP |
 | **Security review** | required |
-| **Depends on** | SPEC-003, SPEC-010, SPEC-011 |
-| **Depended on by** | SPEC-009, SPEC-011, SPEC-013, SPEC-900 |
+| **Schema depends on** | [SPEC-003](SPEC-003-identity-verification.md), [SPEC-010](SPEC-010-exchange-lifecycle.md), [SPEC-011](SPEC-011-messaging.md) |
+| **Behaviourally coupled with** | SPEC-009, SPEC-010, SPEC-011, SPEC-013, SPEC-900 |
 | **Related ADRs** | [ADR-0003](../01-architecture/adr/ADR-0003-database-centric-authz.md), [ADR-0009](../01-architecture/adr/ADR-0009-safe-spots-only.md), [ADR-0010](../01-architecture/adr/ADR-0010-kyc-vendor.md), [ADR-0014](../01-architecture/adr/ADR-0014-totp-not-sms.md) |
 | **Last updated** | 2026-08-08 |
 
@@ -155,6 +155,21 @@ Three mechanisms cover the entire distance between "two strangers agreed to meet
 | R62 | **MUST NOT** | The re-registration check MUST NOT become an enumeration oracle. The failure MUST be indistinguishable from an ordinary verification failure — same `failure_reason_code` class, same copy, same timing — and MUST NOT say or imply "you have been banned". Anything more precise tells a determined person exactly which identity document to stop using. |
 | R63 | **MUST** | Every action in this spec — rating submitted, rating revealed, report filed, report resolved, block created, block removed, tier changed, ban registered — MUST write `audit.events` with actor, subject, and action ([Data Model §12](../01-architecture/03-data-model.md)), and `metadata` MUST NOT be capable of carrying a coordinate. |
 | R64 | **SHOULD** | A user with an open `severity = 1` report against them SHOULD be surfaced to on-call with their in-flight sessions listed, so the responder can see whether a meeting is scheduled in the next few hours. This is the difference between a report and an intervention. |
+
+### 5.7 Freezing and resolving an exchange
+
+> **Unspecced neighbour: the suspension fanout.** [SPEC-010 R19](SPEC-010-exchange-lifecycle.md) and EC-05 both depend on suspension cancelling a user's pending requests and in-flight sessions, and this spec's enforcement ladder is what triggers it — but no document states which trigger fires, in what order, or which notifications go out. It strands someone mid-exchange if the order is wrong, and it is cited by three specs and owned by none. This section is its natural home ([Development Notes N-11](../07-review/02-development-notes.md#n-11--four-workflows-touching-safety-or-regulation-have-no-spec)).
+
+
+A report against a session is the one place where this spec moves another spec's state machine. It does so through [SPEC-010](SPEC-010-exchange-lifecycle.md)'s transitions, never around them.
+
+| ID | Req | Statement |
+| --- | --- | --- |
+| R65 | **MUST** | `create_report` against a session MUST freeze it to `disputed` when the session is non-terminal or completed within 72 hours ([SPEC-010 R67](SPEC-010-exchange-lifecycle.md)). All four source states — `scheduling`, `scheduled`, `in_progress`, `completed` — MUST be reachable. **`scheduled` is the one that matters most**: it is the state in which the reporter has a confirmed time and place with someone they have become afraid of, and the transition table originally omitted it, which made the most important freeze in the product silently impossible. |
+| R66a | **MUST** | Resolving a dispute MUST move the session out of `disputed` through `moderation-action`, to `cancelled` or `completed` per [Exchange State Machine §3.2](../01-architecture/07-exchange-state-machine.md). **Leaving it in `disputed` is not a resolution**: the session still holds its listing and its inventory item, `expire_listings` will not touch a `reserved` row, and `listings_one_active_per_item` means the owner can never relist that produce. A report that is dismissed still has to release the tomatoes. |
+| R66b | **MUST** | `disputed → cancelled` MUST call `app.release_reservation` and MUST NOT set `counts_as_late` or increment `cancellation_count_90d` for either party. A moderated outcome is nobody's late cancellation — the same principle as R60 for blocks, and for the same reason: a safety process that costs its participants reputation is a safety process people learn to avoid. |
+| R66c | **MUST** | The moderation console MUST show, on every disputed case, **what the freeze is currently holding** — the listing, the item, and how long it has been held. A moderator deciding a case cannot weigh the cost of deferring it if the cost is invisible ([SPEC-900 R39](SPEC-900-moderation-console.md)). |
+| R66d | **MUST** | `dispute_sla_breach` MUST alert on any dispute open longer than **7 days** ([SPEC-010 R68c](SPEC-010-exchange-lifecycle.md)). It MUST NOT auto-resolve. Guessing the outcome of a safety report to free an inventory row is the wrong trade in every case, and the alert exists so a human makes it. |
 
 ## 6. Data
 
@@ -887,7 +902,7 @@ Exact strings.
 | Q3 | [PRD C12](../00-foundation/02-prd.md) lists `other` as a user-facing report reason; R21 removes it from the picker. An "Other" bucket is cheap to offer and expensive to triage, and its removal means a genuinely novel harm has no home until a moderator reclassifies. Is six the right number, or is the correct answer six plus a clearly-labelled "Something else" that routes to a lower-priority queue? | Product + Trust & Safety | Before launch |
 | Q4 | Is 7 days the right reveal window? Shorter means a faster signal and more one-sided reveals; longer means more reciprocity and a staler rating. It is a guess, and R08 makes it also the rating deadline, which couples two decisions that might want different answers. | Product | Post-launch, first season |
 | Q5 | R61 stops a banned user reusing the same government ID. It does not stop a second genuine ID, a family member's ID, or a jurisdiction we don't cover. What is the acceptable residual, and at what point does it justify a device-signal control that [Location Privacy §12](../01-architecture/04-location-privacy.md) would otherwise refuse? | Security + Legal | Before the second launch metro |
-| Q6 | Should `no_show` be reportable at all, given [Exchange State Machine §10 Q2](../01-architecture/07-exchange-state-machine.md) asks whether `detect_no_shows` should file a report automatically? Two paths to the same fact will double-count unless one defers, and automatic filing inflates the queue with a machine's opinion about a person. | Trust & Safety | Before launch |
+| Q6 | Should `no_show` be reportable at all, given the same question about automatic filing? **Deferred to [Exchange State Machine Q2](../01-architecture/07-exchange-state-machine.md), which is the canonical row.** The question was open in three documents at once; it is answered there, and this row and [SPEC-010 Q3](SPEC-010-exchange-lifecycle.md) adopt the answer. Two paths to the same fact will double-count unless one defers, and this row is the one that defers. | *see arch Q2* | Before launch |
 | Q7 | Should a `trusted` tier exist in MVP at all? Reaching it needs 10 completed exchanges, which almost nobody will have in a seeded launch metro, so for the first season the badge will be a near-empty category that mostly signals "not trusted" by its absence. | Product | Before launch |
 
 ## 16. Change Log

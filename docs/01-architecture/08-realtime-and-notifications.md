@@ -1,6 +1,6 @@
 # Realtime & Notifications
 
-**Status:** Approved · **Version:** 1.0.0 · **Owner:** Architecture
+**Status:** Review · **Version:** 1.0.0 · **Owner:** Architecture
 
 Two mechanisms, two jobs, and a hard separation between them:
 
@@ -174,7 +174,7 @@ sequenceDiagram
     PG->>PG: INSERT public.notifications (durable record)
     PG->>OB: INSERT outbox row (same transaction)
     Note over PG: COMMIT
-    PG-->>A: 200 { session_id, handoff_code }
+    PG-->>A: 200 { session_id }
 
     par Realtime (live screens only)
         PG->>RT: WAL decode
@@ -419,7 +419,7 @@ That "not delivered when force-quit" row is why the inbox is the record and not 
 | `verification_result` | normal | none | |
 | `garden_review_result` | normal | none | |
 | `moderation_outcome` | normal | none | |
-| `surplus_alert` (Phase 2) | normal | `surplus:{species_id}` | |
+| `surplus_alert` | normal | `surplus:{species_id}` | |
 
 High priority is used sparingly and honestly. Marking everything high is how an app gets throttled by FCM and muted by users.
 
@@ -457,19 +457,21 @@ A user can still mute the safety channel at the OS level. We cannot prevent that
 
 Every `notification_kind` from [Data Model §4](03-data-model.md). Templates live in `private.notification_templates` as rows; the `{}` placeholders are filled from the outbox row's `payload`.
 
-| Kind | Trigger | Title | Body | Deep link | Default on | Quiet-hours suppressible | Channel |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| `request_received` | `create_exchange_request` commits | `New exchange request` | `{requester_name} wants your {listing_title}` | `sharecropr://exchanges/{request_id}` | Yes | Yes | exchanges |
-| `request_accepted` | `accept_exchange_request` commits | `Request accepted` | `{owner_name} accepted your request for {listing_title}. Pick a time and place.` | `sharecropr://exchanges/session/{session_id}` | Yes | Yes | exchanges |
-| `request_declined` | `decline_exchange_request`, or auto-decline on someone else's acceptance | `Request declined` | `{owner_name} declined your request for {listing_title}` | `sharecropr://exchanges/{request_id}` | Yes | Yes | exchanges |
-| `message_received` | `messages` INSERT where `kind='user'` | `{sender_name}` | `{body_preview}` (≤ 140 chars, truncated on a word boundary) | `sharecropr://thread/{thread_id}` | Yes | Yes | messages |
-| `exchange_reminder` | `remind_upcoming` cron, 24 h and 2 h before `scheduled_start` | `Exchange {when}` | `{item_title} with {other_name} at {safe_spot_name}, {time}` | `sharecropr://exchanges/session/{session_id}` | Yes | **No** at the 2 h mark, yes at 24 h | exchanges |
-| `exchange_cancelled` | `cancel_session`, `on_block_created`, or `detect_no_shows` | `Exchange cancelled` | `Your exchange with {other_name} was cancelled.` (**reason is never in the push body** — it is in the inbox row) | `sharecropr://exchanges/session/{session_id}` | Yes | **No** — someone may be about to drive somewhere | exchanges |
-| `verification_result` | `kyc-webhook` writes a terminal status | `Identity verification {outcome}` | pass: `You can now list and exchange crops.` fail: `We couldn't verify your ID. Tap for next steps.` | pass: `sharecropr://notifications` · fail: `sharecropr://onboarding/identity` | Yes | Yes | account |
-| `garden_review_result` | Moderator decision on a submission | `Garden {outcome}` | approved: `Your garden is verified. You're ready to trade.` rejected: `{rejection_reason}` | `sharecropr://profile/garden` | Yes | Yes | account |
-| `moderation_outcome` | `moderation-action` resolves a report | `Update on your report` / `Account notice` | Templated per `moderation_action`. Never names the other party. | `sharecropr://notifications` | Yes | Yes | account |
-| `safety_alert` | Trust & Safety, manually or by rule | `Important safety notice` | Templated, reviewed per incident | `sharecropr://notifications` | **Yes, and not disableable** | **Never** | safety |
-| `surplus_alert` (Phase 2) | SPEC-020 subscription match | `{species_name} available nearby` | `{count} new listings within {radius} km` | `sharecropr://map` | No (opt-in) | Yes | exchanges |
+**The enum has 11 values; MVP ships 10.** `surplus_alert` is Phase 2 and gated behind [SPEC-020](../03-specs/SPEC-020-harvest-planning.md), so it has no template row until then. Any test or sweep that iterates notification kinds MUST derive the list from `private.notification_templates` filtered by phase — **never from the enum** — or it will go looking for a template that does not exist and fail for the wrong reason. The `Phase` column below is the filter.
+
+| Kind | Phase | Trigger | Title | Body | Deep link | Default on | Quiet-hours suppressible | Channel |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `request_received` | **MVP** | `create_exchange_request` commits | `New exchange request` | `{requester_name} wants your {listing_title}` | `sharecropr://exchanges/{request_id}` | Yes | Yes | exchanges |
+| `request_accepted` | **MVP** | `accept_exchange_request` commits | `Request accepted` | `{owner_name} accepted your request for {listing_title}. Pick a time and place.` | `sharecropr://exchanges/session/{session_id}` | Yes | Yes | exchanges |
+| `request_declined` | **MVP** | `decline_exchange_request`, or auto-decline on someone else's acceptance | `Request declined` | `{owner_name} declined your request for {listing_title}` | `sharecropr://exchanges/{request_id}` | Yes | Yes | exchanges |
+| `message_received` | **MVP** | `messages` INSERT where `kind='user'` | `{sender_name}` | `{body_preview}` (≤ 140 chars, truncated on a word boundary) | `sharecropr://thread/{thread_id}` | Yes | Yes | messages |
+| `exchange_reminder` | **MVP** | `remind_upcoming` cron, 24 h and 2 h before `scheduled_start` | `Exchange {when}` | `{item_title} with {other_name} at {safe_spot_name}, {time}` | `sharecropr://exchanges/session/{session_id}` | Yes | **No** at the 2 h mark, yes at 24 h | exchanges |
+| `exchange_cancelled` | **MVP** | `cancel_session`, `on_block_created`, or `detect_no_shows` | `Exchange cancelled` | `Your exchange with {other_name} was cancelled.` (**reason is never in the push body** — it is in the inbox row) | `sharecropr://exchanges/session/{session_id}` | Yes | **No** — someone may be about to drive somewhere | exchanges |
+| `verification_result` | **MVP** | `kyc-webhook` writes a terminal status | `Identity verification {outcome}` | pass: `You can now list and exchange crops.` fail: `We couldn't verify your ID. Tap for next steps.` | pass: `sharecropr://notifications` · fail: `sharecropr://onboarding/identity` | Yes | Yes | account |
+| `garden_review_result` | **MVP** | Moderator decision on a submission | `Garden {outcome}` | approved: `Your garden is verified. You're ready to trade.` rejected: `{rejection_reason}` | `sharecropr://profile/garden` | Yes | Yes | account |
+| `moderation_outcome` | **MVP** | `moderation-action` resolves a report | `Update on your report` / `Account notice` | Templated per `moderation_action`. Never names the other party. | `sharecropr://notifications` | Yes | Yes | account |
+| `safety_alert` | **MVP** | Trust & Safety, manually or by rule | `Important safety notice` | Templated, reviewed per incident | `sharecropr://notifications` | **Yes, and not disableable** | **Never** | safety |
+| `surplus_alert` | **Phase 2** | SPEC-020 subscription match | `{species_name} available nearby` | `{count} new listings within {radius} km` | `sharecropr://map` | No (opt-in) | Yes | exchanges |
 
 Rules that hold across the whole table:
 

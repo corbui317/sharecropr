@@ -2,13 +2,13 @@
 
 | Field | Value |
 | --- | --- |
-| **Status** | Approved |
+| **Status** | Review |
 | **Version** | 1.0.0 |
 | **Owner** | Product + Trust & Safety |
 | **Phase** | Phase 2 |
 | **Security review** | required |
-| **Depends on** | [SPEC-007](SPEC-007-safe-spots.md), [SPEC-010](SPEC-010-exchange-lifecycle.md), [SPEC-012](SPEC-012-trust-and-safety.md) |
-| **Depended on by** | [SPEC-022](SPEC-022-gamification.md), [SPEC-900](SPEC-900-moderation-console.md) |
+| **Schema depends on** | [SPEC-007](SPEC-007-safe-spots.md), [SPEC-010](SPEC-010-exchange-lifecycle.md), [SPEC-012](SPEC-012-trust-and-safety.md) |
+| **Behaviourally coupled with** | SPEC-007, SPEC-022, SPEC-900 |
 | **Related ADRs** | [ADR-0003](../01-architecture/adr/ADR-0003-database-centric-authz.md), [ADR-0009](../01-architecture/adr/ADR-0009-safe-spots-only.md), [ADR-0002](../01-architecture/adr/ADR-0002-barter-only.md) |
 | **Last updated** | 2026-08-08 |
 

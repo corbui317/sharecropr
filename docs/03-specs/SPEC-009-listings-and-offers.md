@@ -2,13 +2,13 @@
 
 | Field | Value |
 | --- | --- |
-| **Status** | Approved |
+| **Status** | Review |
 | **Version** | 1.0.0 |
 | **Owner** | Backend Engineering |
 | **Phase** | MVP |
 | **Security review** | not required |
-| **Depends on** | SPEC-006, SPEC-007 |
-| **Depended on by** | SPEC-008, SPEC-010, SPEC-011, SPEC-020 |
+| **Schema depends on** | [SPEC-006](SPEC-006-crop-inventory.md), [SPEC-007](SPEC-007-safe-spots.md) |
+| **Behaviourally coupled with** | SPEC-010, SPEC-012 (block-aware discoverability), SPEC-013 |
 | **Related ADRs** | [ADR-0002](../01-architecture/adr/ADR-0002-barter-only.md), [ADR-0003](../01-architecture/adr/ADR-0003-database-centric-authz.md), [ADR-0009](../01-architecture/adr/ADR-0009-safe-spots-only.md) |
 | **Last updated** | 2026-08-08 |
 

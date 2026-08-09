@@ -1,6 +1,6 @@
 # Row-Level Security Design
 
-**Status:** Approved · **Version:** 1.0.0 · **Owner:** Architecture + Security
+**Status:** Review · **Version:** 1.0.0 · **Owner:** Architecture + Security
 **Security review:** required for any change.
 
 RLS *is* the authorization layer in Sharecropr. There is no service tier that could enforce access control instead, which means a missing or wrong policy is a data breach with no error, no crash, and no alert. This document defines the patterns, the helper functions, the performance traps, and the proof obligations.

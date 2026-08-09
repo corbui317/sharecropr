@@ -1,6 +1,6 @@
 # Location Privacy Architecture
 
-**Status:** Approved · **Version:** 1.0.0 · **Owner:** Architecture + Security
+**Status:** Review · **Version:** 1.0.0 · **Owner:** Architecture + Security
 **Security review:** required for any change to this document.
 
 > **Read this before writing any code that touches location.** Sharecropr stores the home addresses of thousands of people and introduces them to strangers. This document describes the one mechanism that makes that acceptable. Every other privacy control in the system is secondary to this one.

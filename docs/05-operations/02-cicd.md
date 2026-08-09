@@ -144,6 +144,35 @@ Parses `docs/03-specs/*.md`, extracts every requirement marked `MUST`, and confi
 
 This is what makes [the doc conventions](../00-foundation/06-doc-conventions.md) real rather than aspirational.
 
+### 5.1 The checks the traceability gate cannot see
+
+The `MUST`→test gate only sees requirements that were written as requirements. Five rate limits in SPEC-010 lived in a prose cell for the whole first draft, so they had no ID, no traceability row, and therefore no test — invisible to the one check designed to catch exactly that. These five gates close the gaps found in the [2026-08-09 review](../07-review/01-workflow-architect-review.md):
+
+```yaml
+- name: Doc governance gates
+  run: pnpm ci:doc-gates
+```
+
+| Gate | Rule | Rationale |
+| --- | --- | --- |
+| **Normative-prose sweep** | A spec section containing a numeric limit, threshold, or cadence outside a `MUST` row fails. Numbers belong to requirements | The failure mode that hid five rate limits |
+| **Approval gate** | A spec MUST NOT hold `Status: Approved` while any of its open questions carries `Needed by: Before launch`, or while its registry row has no `Last verified` date | "Approved" has to mean something. 18 specs claimed it with 21 launch-blocking questions open and no code to verify against |
+| **Schema-graph gate** | `Schema depends on` across all specs must be **acyclic**; `Behaviourally coupled with` must be **symmetric** | [Specs README §Build order](../03-specs/README.md). Conflating the two produced five apparent cycles |
+| **Cross-reference gate** | Every `SPEC-###-T##`, `R##`, `EC-##`, `THR-##`, and `R-##` citation must resolve to a real row. Bare `T##` across documents fails — citations must be namespaced. Also link-checks every relative markdown link and heading anchor | `T-26` was a threat and `T30` a test, one hyphen apart, both cited across documents. The link half is proven: a run on 2026-08-09 checked **1,957 links across 74 documents** and found 6 broken anchors, all since fixed. Note the slug rule — GitHub drops `.` and `—`, keeps `_`, and turns *each* space into its own hyphen, so `## 9. Journey — Ray` is `#9-journey--ray` |
+| **Registry staleness** | Every row in [`docs/workflows/REGISTRY.md`](../workflows/REGISTRY.md) with a `Last verified` date older than 30 days is reported; a row for a shipped workflow that has never been verified fails once its spec is `Approved` | A spec that is never re-checked against code is a spec that is quietly wrong |
+
+**Generated-artefact gates** — each asserts that a fact stored in the database is not also hand-maintained somewhere:
+
+| Artefact | Generated from | Failure |
+| --- | --- | --- |
+| `src/domain/exchange/machine.ts` | `private.legal_session_transitions` | Regeneration produces a diff |
+| `domain/errors/classify.ts` | [Exchange State Machine §9](../01-architecture/07-exchange-state-machine.md) | A code in one and not the other |
+| Notification template coverage | `private.notification_templates` × phase | A kind with no template, or a test iterating the enum rather than the phase-filtered table |
+
+The pattern is the one already proven by the transition table: put the fact in the database, generate the copy, and let CI fail on drift. Every finding in the review's process section was a fact that lived in two places with nothing comparing them.
+
+> **None of the gates in this section exist yet.** Until `pnpm ci:doc-gates` is real, the 2026-08-09 fixes are a snapshot and the doc set will drift back to where it was. Build them in the first sprint, while the reasons are fresh and there are no green builds to break — see [Development Notes N-07](../07-review/02-development-notes.md#n-07--the-ci-gates-are-described-not-built).
+
 ---
 
 ## 6. Build and release

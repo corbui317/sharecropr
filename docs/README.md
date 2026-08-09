@@ -18,6 +18,7 @@ This directory is the **single source of truth** for what Sharecropr is, how it 
 | Reviewing a PR | [Test Strategy](04-testing/01-test-strategy.md) + [Definition of Done](00-foundation/06-doc-conventions.md#11-definition-of-done) |
 | Shipping a release | [Release & Store Submission](05-operations/03-release-and-store-submission.md) |
 | Responding to an incident | [Runbooks](05-operations/05-runbooks.md) |
+| **About to start building** | [Development Notes](07-review/02-development-notes.md) — the things that will cost you a day if nobody told you |
 
 ---
 

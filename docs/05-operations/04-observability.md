@@ -155,7 +155,7 @@ PostHog, with hard rules:
 | Pseudonymous ids only | The user's UUID, never email or handle |
 | **Spatial resolution capped at H3 r5** (~250 km²) | Enforced in the event wrapper; an event carrying anything finer is dropped and an error is logged |
 | No message content, ever | — |
-| No exchange times or safe-spot ids | These are P1 and are the burglary primitive ([T-43](../02-security/01-threat-model.md)) |
+| No exchange times or safe-spot ids | These are P1 and are the burglary primitive ([THR-43](../02-security/01-threat-model.md)) |
 | Retention 25 months | Then deleted |
 | Opt-out honoured | Product analytics only; crash reporting and security telemetry continue |
 
@@ -227,7 +227,7 @@ Any failure pages immediately, at any hour. Check 4 exists because a canary that
 | Storage egress | > 130% |
 | Sentry event volume | > 130% |
 
-KYC is the one to watch: it is the only cost that an attacker can drive up directly, and the alarm is a security control as much as a finance one ([T-30](../02-security/01-threat-model.md), [R-07](../06-roadmap/02-open-risks.md)).
+KYC is the one to watch: it is the only cost that an attacker can drive up directly, and the alarm is a security control as much as a finance one ([THR-30](../02-security/01-threat-model.md), [R-07](../06-roadmap/02-open-risks.md)).
 
 ---
 

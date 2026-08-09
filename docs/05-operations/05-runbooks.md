@@ -25,6 +25,7 @@ Step-by-step procedures for when something is wrong. Written to be followed by s
 | [11](#11--moderation-console-outage) | Moderation console outage | P1 |
 | [12](#12--bad-migration-in-production) | Bad migration in production | P0 |
 | [13](#13--compromised-credential) | Compromised credential | P0 |
+| [14](#14--handoff-code-key-rotation) | Handoff-code key rotation | Controlled |
 
 ---
 
@@ -246,6 +247,7 @@ Follow [Privacy §8](../02-security/04-privacy-and-data-retention.md#8-breach-re
 
 | Credential | Action |
 | --- | --- |
+| **`handoff_code_key`** | Run runbook 14. Do **not** rotate with a plain key swap — every live session's code becomes undecryptable and every scheduled meeting loses its handoff |
 | **`service_role` key** | Rotate **immediately** in Supabase. Redeploy Edge Functions and update CI secrets. Then audit all access since the suspected exposure. **Assume everything was readable.** |
 | Persona API key | Rotate at the vendor; update Edge Function secrets; check for unexpected inquiries (they cost money and could forge a verification) |
 | Persona webhook secret | Rotate; verify no forged webhook flipped a verification to `passed` — check `audit.events` for verification outcomes in the window |
@@ -254,6 +256,48 @@ Follow [Privacy §8](../02-security/04-privacy-and-data-retention.md#8-breach-re
 | A user's session | Revoke all their sessions; notify them; check for unusual activity |
 
 Then, always: rotate, audit, notify, post-mortem — **in that order**. Rotating first stops the bleeding; auditing first is how the bleeding continues while you read logs.
+
+---
+
+## 14 — Handoff-code key rotation
+
+**Trigger:** scheduled rotation (annual), suspected exposure of `handoff_code_key`, or a Vault migration.
+
+**Why this needs a runbook at all.** `exchange_sessions.handoff_code` is encrypted with a symmetric Vault key ([Exchange State Machine §3.3](../01-architecture/07-exchange-state-machine.md)). Swapping the key without re-encrypting makes every existing code undecryptable — and a session in `scheduled` whose code cannot be read is two people standing in a library with no way to complete an exchange. **The naive rotation is a customer-facing outage with no error message.**
+
+### Procedure
+
+1. **Add the new key alongside the old.** `vault.create_secret('handoff_code_key_next', …)`. Both exist; nothing reads the new one yet.
+2. **Identify the working set.** Only **non-terminal** sessions matter:
+   ```sql
+   SELECT count(*) FROM public.exchange_sessions
+    WHERE state IN ('scheduling','scheduled','in_progress','disputed');
+   ```
+   Terminal sessions are deliberately left on the old key — nobody will ever read those codes again, and re-encrypting them multiplies the transaction size for no benefit. At launch volume the working set is small enough to do in one transaction.
+3. **Re-encrypt in one transaction**, holding a row lock so no acceptance or confirmation interleaves:
+   ```sql
+   BEGIN;
+   SELECT id FROM public.exchange_sessions
+    WHERE state IN ('scheduling','scheduled','in_progress','disputed')
+      FOR UPDATE;
+   UPDATE public.exchange_sessions
+      SET handoff_code = pgp_sym_encrypt(
+            pgp_sym_decrypt(handoff_code, vault.get_secret('handoff_code_key'))::text,
+            vault.get_secret('handoff_code_key_next'))
+    WHERE state IN ('scheduling','scheduled','in_progress','disputed');
+   COMMIT;
+   ```
+4. **Verify before promoting.** Decrypt a sample of 20 rows with the new key and assert all are six digits. **If any fails, roll back and stop** — do not promote a key that cannot read what it just wrote.
+5. **Promote.** Rename `handoff_code_key_next` to `handoff_code_key`. The read path picks it up on the next call; no deploy is needed because the function resolves the secret by name.
+6. **Confirm in the product.** Open a real `scheduled` session's handoff screen and read the code. `exchange.code_read` errors must be zero for 15 minutes before the rotation is called done.
+
+### If it goes wrong mid-flight
+
+The old key is still present until step 5, so the rollback is to stop using the new one. If step 3 partially committed — it should not, it is one transaction — the tell is `pgp_sym_decrypt` errors on the `get_handoff_code` path. Re-run step 3; it is idempotent only against a consistent key, so identify which key each row is under by attempting both.
+
+**Never:** rotate during a metro's peak exchange hours, or with an open severity-1 dispute in the working set.
+
+> **Rehearse this before you need it.** SPEC-010-T73b covers the mechanics; it does not cover an operator reading this page at 2am. Run it once against a seeded staging database with live `scheduled` sessions before the first production rotation ([Development Notes N-03](../07-review/02-development-notes.md#n-03--vault-is-now-on-the-critical-path-of-a-physical-meeting)).
 
 ---
 

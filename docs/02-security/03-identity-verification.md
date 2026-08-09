@@ -93,7 +93,7 @@ Camera-only photo (no library import)
 
 **How strong is this?** Weaker than it looks, and we should be clear about it internally:
 
-- The distance check is defeated by a mock-location app on a rooted or developer-mode device. Play Integrity and App Attest are Phase 2, not MVP ([T-22](01-threat-model.md)).
+- The distance check is defeated by a mock-location app on a rooted or developer-mode device. Play Integrity and App Attest are Phase 2, not MVP ([THR-22](01-threat-model.md)).
 - The photo check is defeated by walking to a neighbour's garden.
 - The ML score is a hint. It will confidently score a well-kept flower bed as a vegetable garden and a genuine three-pot balcony as not-a-garden.
 
@@ -193,12 +193,12 @@ Expiry is deliberately not a hard cliff at 24 months for someone mid-exchange: a
 
 | Threat | Control here |
 | --- | --- |
-| [T-15](01-threat-model.md) stolen ID | Vendor liveness face-match; 5-attempt cap |
-| [T-16](01-threat-model.md) deepfaked liveness | Vendor capability; renewal criterion; 24-month re-verification |
-| [T-17](01-threat-model.md) ban evasion | 7-year vendor-reference retention; document reuse detection |
-| [T-22](01-threat-model.md) spoofed garden location | Distance check + human review; App Attest in Phase 2 |
-| [T-30](01-threat-model.md) KYC cost attack | §7.1 controls |
-| [T-45](01-threat-model.md) minor on the platform | `is_over_18` enforced through KYC before any transacting |
+| [THR-15](01-threat-model.md) stolen ID | Vendor liveness face-match; 5-attempt cap |
+| [THR-16](01-threat-model.md) deepfaked liveness | Vendor capability; renewal criterion; 24-month re-verification |
+| [THR-17](01-threat-model.md) ban evasion | 7-year vendor-reference retention; document reuse detection |
+| [THR-22](01-threat-model.md) spoofed garden location | Distance check + human review; App Attest in Phase 2 |
+| [THR-30](01-threat-model.md) KYC cost attack | §7.1 controls |
+| [THR-45](01-threat-model.md) minor on the platform | `is_over_18` enforced through KYC before any transacting |
 
 ---
 

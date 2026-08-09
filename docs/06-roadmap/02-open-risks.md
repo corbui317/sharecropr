@@ -6,6 +6,8 @@ Ranked by expected damage × probability. Risk IDs are `R-##`, permanent, refere
 
 This register is deliberately blunt. A risk register that reads as reassuring is not doing its job.
 
+Risks are things that might go wrong strategically. For the smaller, concrete traps waiting in the build itself — organised by when each one bites — see [Development Notes](../07-review/02-development-notes.md).
+
 ---
 
 ## Summary
@@ -21,7 +23,7 @@ This register is deliberately blunt. A risk register that reads as reassuring is
 | [R-07](#r-07--kyc-unit-economics-are-unbounded) | KYC unit economics are unbounded | Medium | Medium | Finance | Monthly |
 | [R-08](#r-08--the-privacy-scheme-is-strong-at-the-database-and-weak-at-the-edges) | Privacy is strong at the DB, weak at the edges | **Critical** | Medium | Security | Monthly |
 | [R-09](#r-09--users-may-route-around-safe-spots) | Users may route around safe spots | High | **High** | Product | Monthly |
-| [R-10](#r-10--releasecadence-coupling) | Release-cadence coupling | Medium | Medium | Platform | Per release |
+| [R-10](#r-10--release-cadence-coupling) | Release-cadence coupling | Medium | Medium | Platform | Per release |
 | [R-11](#r-11--moderation-is-a-staffing-commitment-scoped-as-a-feature) | Moderation is staffing, scoped as a feature | High | High | T&S | Monthly |
 | [R-12](#r-12--the-dual-spatial-model-will-produce-a-correctness-bug) | Dual spatial model correctness | Medium | High | Backend | Per spatial change |
 | [R-13](#r-13--seasonality-may-kill-retention) | Seasonality may kill retention | High | High | Product | Quarterly |

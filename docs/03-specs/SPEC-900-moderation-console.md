@@ -2,13 +2,13 @@
 
 | Field | Value |
 | --- | --- |
-| **Status** | Approved |
+| **Status** | Review |
 | **Version** | 1.0.0 |
 | **Owner** | Trust & Safety + Platform Engineering |
 | **Phase** | MVP |
 | **Security review** | required |
-| **Depends on** | [SPEC-004](SPEC-004-garden-verification.md), [SPEC-011](SPEC-011-messaging.md), [SPEC-012](SPEC-012-trust-and-safety.md) |
-| **Depended on by** | App Store submission (Guideline 1.2) |
+| **Schema depends on** | [SPEC-004](SPEC-004-garden-verification.md), [SPEC-011](SPEC-011-messaging.md), [SPEC-012](SPEC-012-trust-and-safety.md) |
+| **Behaviourally coupled with** | SPEC-005, SPEC-007, SPEC-010 (dispute resolution), SPEC-011, SPEC-012 |
 | **Related ADRs** | [ADR-0003](../01-architecture/adr/ADR-0003-database-centric-authz.md), [ADR-0018](../01-architecture/adr/ADR-0018-observability.md) |
 | **Last updated** | 2026-08-08 |
 
@@ -116,6 +116,9 @@ The moderation console is the internal web tool where staff review reports, appr
 | R36 | MUST | Images in a case **MUST** default to blurred with a click to reveal. |
 | R37 | SHOULD | No moderator **SHOULD** be assigned more than 2 consecutive hours on the severity-1 queue, and the console **SHOULD** enforce a rotation prompt. |
 | R38 | MUST | Support resources **MUST** be one click away from every case view. |
+| R39 | MUST | A disputed-session case **MUST** show what the freeze is holding: the listing title, the inventory item, and the elapsed hold time ([SPEC-012 R66c](SPEC-012-trust-and-safety.md)). A frozen session holds its listing `reserved` and its item unrelistable for as long as the case is open, and a moderator weighing whether to defer a decision cannot weigh a cost they cannot see. |
+| R40 | MUST | Resolving a disputed session **MUST** require choosing an outcome — *the exchange stands* (`disputed → completed`) or *it did not* (`disputed → cancelled`) — and **MUST NOT** offer "close without deciding". Closing a case while leaving the session `disputed` releases nothing; it is how produce stays frozen for a season ([SPEC-010 R68a](SPEC-010-exchange-lifecycle.md)). |
+| R41 | MUST | The console **MUST** surface disputes open longer than 7 days as an SLA breach in the same place as report SLA breaches ([SPEC-010 R68c](SPEC-010-exchange-lifecycle.md)), and **MUST NOT** offer any bulk or automatic resolution for them. |
 
 > **The honest framing.** A 24-hour SLA is a staffing commitment, not a software feature. The console can measure the SLA, page on it, and make breaches visible — it cannot meet it. Meeting it requires a named human on a rota, and the App Store submission asserts that this exists. Before launch, that rota must be real, with a defined escalation path and a paging target for severity 1. This is tracked as [R-11](../06-roadmap/02-open-risks.md).
 

@@ -2,13 +2,13 @@
 
 | Field | Value |
 | --- | --- |
-| **Status** | Approved |
+| **Status** | Review |
 | **Version** | 1.0.0 |
 | **Owner** | Engineering — Auth |
 | **Phase** | MVP |
 | **Security review** | required |
-| **Depends on** | — (this is the root capability) |
-| **Depended on by** | [SPEC-002](SPEC-002-two-factor-auth.md), [SPEC-003](SPEC-003-identity-verification.md), [SPEC-004](SPEC-004-garden-verification.md), [SPEC-006](SPEC-006-crop-inventory.md), and every spec above them |
+| **Schema depends on** | — (root capability) |
+| **Behaviourally coupled with** | SPEC-002 (R32, R36, R44 cite R18), SPEC-013 |
 | **Related ADRs** | [ADR-0004](../01-architecture/adr/ADR-0004-supabase.md), [ADR-0006](../01-architecture/adr/ADR-0006-auth-providers.md), [ADR-0007](../01-architecture/adr/ADR-0007-token-storage.md), [ADR-0014](../01-architecture/adr/ADR-0014-totp-not-sms.md) |
 | **Last updated** | 2026-08-08 |
 

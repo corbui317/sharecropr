@@ -34,6 +34,8 @@ The rule: **if it isn't specified, it isn't built.** If implementation reveals t
 
 ## 3. Identifier scheme
 
+> **Namespaces are not optional.** Every cross-document citation carries its prefix and, for spec-local IDs, its spec number: `SPEC-010-T30`, not `T30`. Threats are `THR-##`, risks are `R-##`, requirements `R##`, edge cases `EC-##`, tests `T##`. A bare `T30` in another document is a CI failure ([CI/CD §5.1](../05-operations/02-cicd.md)) — threats were once `T-##` and tests `T##`, one hyphen apart and both cited across documents, which is a collision waiting for a reader to resolve wrongly.
+
 ### 3.1 Feature specs — `SPEC-###`
 
 Numbers are **permanent and never reused.** A retired spec keeps its number and gets `Status: Superseded by SPEC-###`.
@@ -124,13 +126,28 @@ Draft ──▶ In Review ──▶ Approved ──▶ Implemented ──▶ Sup
 | --- | --- |
 | **Draft** | Being written. No one should build from it. |
 | **In Review** | Open for comment. Requires sign-off from Engineering + one of Product/Security. |
-| **Approved** | Buildable. Changes now require a version bump and a change-log entry. |
-| **Implemented** | Shipped and matching production behaviour. |
+| **Approved** | Buildable. Changes now require a version bump and a change-log entry. **See the entry gate below — this status has to be earned.** |
+| **Implemented** | Shipped, **and verified against production behaviour**, with a `Last verified` date in the [workflow registry](../workflows/REGISTRY.md). |
 | **Deprecated** | Feature is being removed; the spec documents what existed. |
 | **Superseded** | Replaced. Header points to the successor. |
 | **Rejected** | Considered and declined. Kept, because "why not" is valuable. |
 
 Security-relevant specs (anything touching auth, location, KYC, messaging, or moderation) **MUST** carry a Security sign-off before reaching Approved. Those specs are tagged `security-review: required` in front matter.
+
+### 6.1 The entry gate for Approved
+
+A spec MUST NOT be marked `Approved` unless **all** of these hold. CI enforces the first three ([CI/CD §5.1](../05-operations/02-cicd.md)):
+
+1. **No open question carries `Needed by: Before launch`.** An unanswered launch-blocking question is by definition not a settled design.
+2. **Every `MUST` maps to a test ID**, and no numeric limit, threshold, or cadence appears in prose outside a `MUST` row.
+3. **No contradiction with a normative architecture document.** Where a spec and an architecture document disagree, the architecture document wins and the spec is wrong — so a spec that disagrees with one is not approvable, it is unfinished.
+4. **A reviewer has read it against the actual implementation** and recorded the date in the [workflow registry](../workflows/REGISTRY.md). Where no implementation exists yet, this cannot be satisfied and the correct status is `In Review`.
+
+**Why this is written down.** On 2026-08-09 all 18 specs carried `Approved` with zero lines of code written, 21 open questions marked `Before launch`, and four defects severe enough to block development — including a security control that could not work as specified and a safety path that was unreachable. None of that was carelessness; it was the absence of a definition. `Approved` meant "we finished writing it", and what it has to mean is "we checked".
+
+An honest `In Review` is worth more than an `Approved` nobody tested. The status is a claim about verification, not about effort.
+
+**Scope.** The gate binds documents that make **normative claims about behaviour** — every `SPEC-###` and every document under `01-architecture/`. It does not bind vision, PRD, personas, glossary, roadmap, or the risk register: those record decisions and positions, and a decision is approved when it is taken, not when it is verified. Testing and operations documents sit in between and follow the artefact they describe.
 
 ---
 
@@ -149,7 +166,7 @@ Every version bump adds a Change Log row: date, version, author, what changed, w
 ## 8. Cross-referencing
 
 - Always link by relative path: `[SPEC-010](../03-specs/SPEC-010-exchange-lifecycle.md)`.
-- Cite requirements inline: "…as required by [SPEC-006-R06](../03-specs/SPEC-006-crop-inventory.md#r06)."
+- Cite requirements inline: "…as required by [SPEC-006-R06](../03-specs/SPEC-006-crop-inventory.md#3-non-goals)."
 - Never duplicate a requirement into another document. Link to it. Duplicated requirements drift, and the drift is silent.
 - Data model is authoritative for schema. Specs describe *which* columns they touch and *why*, never redefine types.
 

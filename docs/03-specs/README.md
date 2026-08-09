@@ -57,30 +57,58 @@ Rules for writing specs: [Doc Conventions](../00-foundation/06-doc-conventions.m
 
 ## Build order
 
-Dependencies constrain the order more than priority does. The critical path to a usable product:
+Dependencies constrain the order more than priority does — but only one *kind* of dependency does.
+
+### Two relations, and only one of them orders anything
+
+Every spec's front matter carries two rows, and conflating them is how a plan becomes unbuildable on paper:
+
+| Row | Means | Property |
+| --- | --- | --- |
+| **Schema depends on** | Needs tables, types, or functions that another spec's **migration** creates | **Must be a DAG.** This is the only relation that constrains build order |
+| **Behaviourally coupled with** | Calls into, or is called by, at runtime | **May cycle freely.** Says nothing about ordering |
+
+The exchange calls the notification outbox and the notification catalog describes exchange events; messaging closes threads the exchange opened and the exchange writes system messages into them. Those are real couplings and they are mutually recursive, which is fine — they are satisfied by the shared baseline in [Data Model](../01-architecture/03-data-model.md) and [RLS Design](../01-architecture/05-rls-design.md), both of which land before any feature migration. Written as one undifferentiated "Depends on", they looked like a five-way cycle across SPEC-001/002/003 and SPEC-010/011/012/013, and the first person to topologically sort them would have concluded the plan could not be built.
+
+**CI enforces both properties**: the schema graph must be acyclic, and every `Behaviourally coupled with` edge must be symmetric — if A names B, B names A ([CI/CD §4](../05-operations/02-cicd.md)).
+
+### The critical path
 
 ```mermaid
 flowchart LR
-    S001[001 Auth] --> S003[003 ID Verify]
+    S001[001 Auth] --> S002[002 2FA]
+    S001 --> S003[003 ID Verify]
     S001 --> S004[004 Garden]
     S003 --> S004
+    S001 --> S007[007 Safe Spots]
+    S001 --> S013[013 Notifications]
     S005[005 Taxonomy] --> S006[006 Inventory]
     S004 --> S006
-    S007[007 Safe Spots] --> S009[009 Listings]
-    S006 --> S009
-    S009 --> S008[008 Map]
+    S006 --> S009[009 Listings]
+    S007 --> S009
+    S005 --> S008[008 Map]
     S007 --> S008
-    S009 --> S010[010 Exchange]
+    S009 --> S008
+    S003 --> S010[010 Exchange]
+    S006 --> S010
+    S007 --> S010
+    S009 --> S010
     S010 --> S011[011 Messaging]
-    S010 --> S012[012 Trust & Safety]
-    S011 --> S013[013 Notifications]
-    S012 --> S900[900 Moderation]
-    S002[002 2FA] -.optional.-> S001
+    S011 --> S012[012 Trust & Safety]
+    S003 --> S012
+    S010 --> S012
+    S011 --> S900[900 Moderation]
+    S012 --> S900
+    S004 --> S900
 ```
+
+Generated from `Schema depends on` only. A valid order: **001 → 002 → 003 → 004 → 005 → 006 → 007 → 009 → 008 → 010 → 011 → 012 → 013 → 900.**
 
 **Before any of it**, run the map spike from [R-04](../06-roadmap/02-open-risks.md): build the SPEC-008 map screen with 200 clustered custom markers on both platforms under the New Architecture. The map is the product, and if `react-native-maps` misbehaves under Fabric, that changes the plan before the data model is written, not after.
 
-**Parallelizable early:** SPEC-005 (taxonomy) and SPEC-007 (safe spots) are both mostly data curation and depend on nothing. Start them on day one — SPEC-007 in particular has a long lead time because it requires physically verifying venue hours in two metros.
+**Parallelizable early:** SPEC-005 (taxonomy) depends on nothing at all, and SPEC-007 (safe spots) depends only on auth. Both are mostly data curation — start them on day one. SPEC-007 in particular has a long lead time because it requires physically verifying venue hours in two metros.
+
+**A note on SPEC-007 and the moderation console.** SPEC-007's front matter used to claim a schema dependency on SPEC-900, which contradicted the "day one" advice directly and closed a 007 → 900 → 012 → 010 → 007 loop. The real relationship is behavioural: curation *happens through* the console, but the `safe_spots` tables do not need it to exist. Seeding for the first two metros is manual data entry against the schema, and the console affordance can land with SPEC-900. If that proves painful in practice, the fix is to pull a thin curation slice forward — not to make the whole console a prerequisite for the product's supply side.
 
 ---
 

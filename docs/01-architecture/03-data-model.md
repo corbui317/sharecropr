@@ -1,6 +1,6 @@
 # Data Model
 
-**Status:** Approved · **Version:** 1.0.0 · **Owner:** Architecture
+**Status:** Review · **Version:** 1.1.0 · **Owner:** Architecture
 
 This document is **authoritative for the schema**. Specs reference it; they never redefine types. Every table listed here has a corresponding migration under `supabase/migrations/`, RLS policies in [RLS Design](05-rls-design.md), and pgTAP tests in [RLS Test Plan](../04-testing/02-rls-test-plan.md).
 
@@ -434,8 +434,20 @@ CREATE INDEX safe_spots_cat_idx ON public.safe_spots (category) WHERE status = '
 | `created_at` / `updated_at` | `timestamptz` | NOT NULL | |
 
 ```sql
+-- The status and the pointer move together or not at all. Without this, a
+-- release path that clears `status` and forgets `reserved_request_id` leaves an
+-- `active` listing carrying a stale reservation pointer — silently wrong, and
+-- invisible to the unique index below because that index only sees the pointer.
+ALTER TABLE public.listings ADD CONSTRAINT listings_reservation_coherent
+  CHECK ((status = 'reserved') = (reserved_request_id IS NOT NULL));
+
 -- A request can hold at most one reservation, and an inventory item can back at
 -- most one live listing. These two indexes ARE the concurrency backstop.
+--
+-- NOTE: indexed on `reserved_request_id`, NOT on `(id) WHERE status = 'reserved'`.
+-- The latter is a no-op — `id` is the primary key, so a unique index on it
+-- constrains nothing. This is the only correct form; see
+-- Exchange State Machine §5 H1.
 CREATE UNIQUE INDEX listings_single_reservation
   ON public.listings (reserved_request_id) WHERE reserved_request_id IS NOT NULL;
 
@@ -508,7 +520,7 @@ Created when a request is accepted. This is the object that represents a real-wo
 | `safe_spot_id` | `uuid` | NULL FK | P1 | |
 | `scheduled_start` | `timestamptz` | NULL | **P1** | A confirmed time + place a specific person will be |
 | `scheduled_end` | `timestamptz` | NULL, CHECK > `scheduled_start` | P1 | |
-| `handoff_code` | `char(6)` | NULL | P1 | Shared six-digit code |
+| `handoff_code` | `bytea` | NULL | P1 | Shared six-digit code, **encrypted at rest** with a Vault key ([Exchange State Machine §3.3](07-exchange-state-machine.md)). Encrypted rather than hashed because both parties must be able to *read* it at the meeting — a hash would make it displayable once and lost forever. `SELECT` on this column is `REVOKE`d from `authenticated`; the only decrypt path is `rpc.get_handoff_code`, which is gated on `state = 'scheduled'` and audited |
 | `owner_confirmed_at` | `timestamptz` | NULL | P1 | |
 | `requester_confirmed_at` | `timestamptz` | NULL | P1 | |
 | `completed_at` | `timestamptz` | NULL | P1 | |
@@ -723,6 +735,7 @@ These tables ship as **empty migrations in MVP** so that Phase 2 and 3 are addit
 | `messages` | 90 days after thread close | `pg_cron` purge |
 | `exchange_sessions` | Anonymized 90 days after completion (participants and times nulled, aggregates retained) | `pg_cron` |
 | `reports` + evidence | 3 years from resolution | — |
+| `private.idempotency_keys` | 24 hours | `sweep_idempotency_keys` hourly ([Exchange State Machine §4.1](07-exchange-state-machine.md)) |
 | `audit.events` | 7 years | — |
 | Analytics events | 25 months, H3 r5 max spatial resolution | PostHog retention setting |
 | Deleted accounts | 30-day grace, then hard delete of P0/P1, pseudonymized shell retained for referential integrity | Deletion pipeline |
@@ -747,3 +760,5 @@ Full policy and DSAR handling: [Privacy & Data Retention](../02-security/04-priv
 | Date | Version | Author | Change |
 | --- | --- | --- | --- |
 | 2026-08-08 | 1.0.0 | Architecture | Initial data model |
+| 2026-08-09 | 1.1.0 | Architecture | Workflow-architect review fixes ([review](../07-review/01-workflow-architect-review.md)). §10: added `listings_reservation_coherent` so `status` and `reserved_request_id` cannot drift apart, and a comment pinning `listings_single_reservation` to its only correct form. §14: retention entry for `private.idempotency_keys` |
+| 2026-08-09 | 1.2.0 | Architecture | `exchange_sessions.handoff_code` is now `bytea`, encrypted at rest ([Exchange State Machine §3.3](07-exchange-state-machine.md)), with `SELECT` revoked from `authenticated`. Added `no_show_contested_by` / `no_show_contested_at` for SPEC-010 R64a |

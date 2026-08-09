@@ -2,13 +2,13 @@
 
 | Field | Value |
 | --- | --- |
-| **Status** | Approved |
+| **Status** | Review |
 | **Version** | 1.0.0 |
 | **Owner** | Product + Ops (Venue Relations) |
 | **Phase** | MVP |
 | **Security review** | not required |
-| **Depends on** | SPEC-001, SPEC-900 |
-| **Depended on by** | SPEC-008, SPEC-009, SPEC-010 |
+| **Schema depends on** | [SPEC-001](SPEC-001-authentication.md) |
+| **Behaviourally coupled with** | SPEC-900 (curation console), SPEC-021 (partner-managed spots) |
 | **Related ADRs** | [ADR-0009](../01-architecture/adr/ADR-0009-safe-spots-only.md), [ADR-0005](../01-architecture/adr/ADR-0005-geospatial-model.md) |
 | **Last updated** | 2026-08-08 |
 
@@ -91,6 +91,8 @@ The safe spot network is the curated set of public, staffed-or-surveilled venues
 | R18 | **MUST** | `hours_verified_at` MUST be set to `now()` only by an explicit "hours confirmed" action in the console, and MUST NOT be updated as a side effect of editing any other column. Touching a row is not verifying it. |
 | R19 | **MUST** | A daily job `alert_stale_safe_spot_hours` MUST raise an ops alert listing every `active` spot whose `hours_verified_at` is older than **90 days**. |
 | R20 | **MUST** | The client MUST render a "Hours may be out of date" note on any spot whose `hours_verified_at` is older than 90 days, on the map sheet, in the list view, and on the scheduling screen. |
+> **Curation is recurring, not one-off.** R21's 180-day auto-suspension means verifying a spot's hours is a subscription, not a purchase: the operational cost scales with the number of live spots, not the number of metros launched. [R-02](../06-roadmap/02-open-risks.md) rates this the most likely real constraint on growth, ahead of engineering ([Development Notes N-09](../07-review/02-development-notes.md#n-09--safe-spot-curation-is-the-growth-constraint-not-engineering)).
+
 | R21 | **MUST** | A spot whose `hours_verified_at` is older than **180 days** MUST be automatically transitioned to `suspended` with `suspension_reason = 'hours_unverified'` by the same job. Unverified for six months means we do not know whether it is open, and guessing produces no-shows. |
 | R22 | **MUST** | `app.venue_open_during(p_safe_spot_id, p_start, p_end)` MUST return `false` when any part of `[p_start, p_end)` falls outside the venue's weekly hours or inside a listed exception, and MUST be the single authority used by [SPEC-010-R31](SPEC-010-exchange-lifecycle.md) to raise `venue_closed`. |
 | R23 | **MUST** | `app.venue_open_during` MUST evaluate hours in the safe spot's local timezone (`hours.timezone`), never the server's and never the caller's. |
