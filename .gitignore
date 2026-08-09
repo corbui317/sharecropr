@@ -1,0 +1,5 @@
+.cursor/
+node_modules/
+.expo/
+.DS_Store
+*.log
