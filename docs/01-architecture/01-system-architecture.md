@@ -27,9 +27,11 @@ C4Context
 
     System_Ext(kyc, "Persona", "Government ID capture + liveness verification")
     System_Ext(push, "Expo Push Service", "APNs / FCM delivery")
-    System_Ext(maps, "Apple Maps / Google Maps", "Base map tiles and rendering SDKs")
     System_Ext(oauth, "Apple / Google ID", "OAuth identity providers")
     System_Ext(obs, "Sentry + PostHog", "Crash reporting and product analytics")
+    System_Ext(osm, "OpenStreetMap<br/>(Geofabrik + Overpass)", "Open geodata: tile build input and safe-spot candidates. No SLA.")
+
+    System(tiles, "Sharecropr Tile Origin", "PMTiles archive on Cloudflare R2 behind Cloudflare CDN — ours, not a vendor's")
 
     Rel(gardener, sharecropr, "Uses", "HTTPS / WSS")
     Rel(moderator, sharecropr, "Reviews via console", "HTTPS")
@@ -37,8 +39,12 @@ C4Context
     Rel(sharecropr, push, "Sends notifications", "HTTPS")
     Rel(sharecropr, oauth, "Delegates sign-in", "OIDC")
     Rel(sharecropr, obs, "Emits scrubbed telemetry", "HTTPS")
-    Rel(gardener, maps, "Renders tiles", "SDK")
+    Rel(gardener, tiles, "Fetches vector tiles", "HTTPS range GET, no auth, no identifier")
+    Rel(osm, tiles, "Monthly extract → Protomaps build", "offline pipeline")
+    Rel(sharecropr, osm, "Monthly Overpass import (server-side only)", "HTTPS")
 ```
+
+Note what moved boxes. Apple Maps and Google Maps used to sit in this diagram as external systems the *gardener* talked to directly, streaming a viewport to a third party on every pan. They are gone, replaced by a tile origin we own ([ADR-0019](adr/ADR-0019-openstreetmap-maplibre.md), [ADR-0020](adr/ADR-0020-pmtiles-self-hosting.md)). OpenStreetMap appears instead, and only ever at build time and on a monthly schedule — **no client ever talks to an OSM service.**
 
 ### External dependencies and what happens when they fail
 
@@ -47,7 +53,8 @@ C4Context
 | Supabase (Postgres, Auth, Storage, Realtime) | Everything | Total outage | Hard down. App shows cached inventory and taxonomy with an offline banner. Accepted single point of failure; mitigations in [Runbooks](../05-operations/05-runbooks.md). |
 | Persona | Identity verification | Unavailable | New verifications queue as `pending_vendor`; existing verified users unaffected. Signup continues; transacting is blocked for the affected users only. |
 | Expo Push | Notifications | Delayed / dropped | In-app inbox is the durable record; push is explicitly best-effort. Users still see everything on next open. |
-| Apple/Google Maps SDK | Map rendering | Tile failure | Map renders a neutral background with markers still positioned correctly. Never blocks the exchange flow. |
+| **Sharecropr tile origin** (PMTiles on R2 + Cloudflare CDN) | Basemap vector tiles | CDN outage, missing or bad archive, cold cache | **Neutral background, markers still at correct geographic positions, camera still working, attribution still rendered.** The basemap is context; the markers are the product. Never blocks the exchange flow. A bad archive is rolled back by repointing the style URL — no app release ([ADR-0020](adr/ADR-0020-pmtiles-self-hosting.md), [Runbook 15](../05-operations/05-runbooks.md)). |
+| **OpenStreetMap / Geofabrik / Overpass** | Tile-build input and safe-spot candidate discovery | Extract format change, Overpass rate limiting or outage — **no SLA, donated infrastructure** | **No user-facing impact.** Tiles are served from an archive we already built; the last good archive keeps serving. A failed Overpass month delays candidate discovery, and `basemap_age_days` makes a run of failures visible ([ADR-0021](adr/ADR-0021-osm-safe-spot-sourcing.md)). Nothing here is on a request path. |
 | Apple / Google OAuth | Sign-in | Provider down | Email/password path remains. Users tied to that provider cannot sign in — communicated via status banner. |
 
 ---
@@ -62,6 +69,7 @@ flowchart TB
         API["API Layer<br/>typed Supabase client, TanStack Query"]
         STORE["Local State<br/>Zustand (ephemeral) + MMKV (cache)"]
         SEC["expo-secure-store<br/>refresh tokens, TOTP enrollment"]
+        MAPC["MapCanvas<br/>the ONLY MapLibre importer<br/>+ style JSON, versioned in-repo"]
     end
 
     subgraph Supabase["Supabase Project"]
@@ -80,10 +88,20 @@ flowchart TB
         end
     end
 
+    subgraph Tiles["Sharecropr Tile Origin — ours, no vendor"]
+        CDN["Cloudflare CDN<br/>cacheable HTTPS range GETs<br/>no auth header, no user identifier"]
+        R2T[("Cloudflare R2<br/>sharecropr-basemap-YYYYMM.pmtiles<br/>immutable, date-versioned")]
+    end
+
     subgraph Ext["External"]
         KYC["Persona"]
         PUSH["Expo Push"]
         SENTRY["Sentry / PostHog"]
+        OSM["OpenStreetMap<br/>Geofabrik extracts · Overpass API"]
+    end
+
+    subgraph Build["Offline — monthly, not a request path"]
+        TB["Protomaps basemap build<br/>GitHub Actions, scheduled"]
     end
 
     UI --> DOM --> API
@@ -91,6 +109,11 @@ flowchart TB
     API --> SEC
     API -->|HTTPS| GW
     API -->|WSS| RT
+    UI --> MAPC
+    MAPC -->|HTTPS range GET| CDN
+    CDN --> R2T
+    OSM -->|regional extract| TB --> R2T
+    EF -->|monthly Overpass import<br/>server-side only| OSM
     GW --> REST --> PUB
     GW --> AUTH
     GW --> STG
@@ -105,6 +128,12 @@ flowchart TB
     EF --> KYC
     Client --> SENTRY
 ```
+
+Two properties of this diagram are load-bearing rather than decorative.
+
+**The tile path does not pass through the Supabase gateway, and it carries no credential.** A tile request is a plain cacheable range `GET` for a `z/x/y` address — no `Authorization` header, no cookie, no API key, no device or user identifier ([API Contract §6a](06-api-contract.md)). That means it is outside the RLS/PostgREST authorization model entirely, which is correct: there is nothing to authorize, because a public grid index is not personal data and there is no account to attach it to. It also means no key to rotate, restrict, or leak.
+
+**OpenStreetMap sits on two offline edges and zero request paths.** Geofabrik feeds a monthly build; Overpass is called by one scheduled Edge Function. Neither is reachable from a client, and an outage of either is invisible to users until a basemap goes stale enough for NFR-101 to alert.
 
 ### 3.1 Schema separation
 
@@ -130,6 +159,7 @@ The four-schema split is the backbone of the security model.
 | Persona webhook handling | Edge Function | Signature verification + vendor secret; must not be in the client or the DB |
 | Push notification fanout | Edge Function on `pg_cron` | Outbound HTTP with retries; wrong job for Postgres |
 | EXIF stripping + thumbnailing | Edge Function on Storage trigger | Binary image processing |
+| Importing OSM safe-spot candidates | Edge Function on `pg_cron`, monthly | Outbound HTTP to Overpass with backoff, plus tag parsing. Writes only to `private.osm_spot_candidates` — it has no path that can publish a spot ([ADR-0021](adr/ADR-0021-osm-safe-spot-sourcing.md)) |
 | Expiring stale listings and requests | `pg_cron` + SQL | Pure data operation |
 | Trust score recomputation | `pg_cron` nightly + on-completion trigger | Derived data |
 
@@ -146,7 +176,9 @@ The four-schema split is the backbone of the security model.
 | Client state | Zustand | 5.x | [ADR-0011](adr/ADR-0011-state-management.md) |
 | Local cache | MMKV | 3.x | [ADR-0011](adr/ADR-0011-state-management.md) |
 | Secure storage | `expo-secure-store` (Keychain / Android Keystore) | SDK-matched | [ADR-0007](adr/ADR-0007-token-storage.md) |
-| Maps | `react-native-maps` (Apple Maps on iOS, Google Maps on Android) | 1.x | [ADR-0013](adr/ADR-0013-map-library.md) |
+| Maps | `@maplibre/maplibre-react-native` over OSM vector tiles — **identical rendering on both platforms**. `react-native-maps` is retained only as the documented fallback behind the `MapCanvas` seam | 10.x | [ADR-0019](adr/ADR-0019-openstreetmap-maplibre.md) (supersedes [ADR-0013](adr/ADR-0013-map-library.md)) |
+| Tile hosting | Protomaps-built **PMTiles** archive on Cloudflare R2, fronted by Cloudflare CDN. Rebuilt monthly from Geofabrik OSM extracts. No tile server, no vendor, no API key, no per-map-load billing | Archive versioned by build date | [ADR-0020](adr/ADR-0020-pmtiles-self-hosting.md) |
+| Map data source | OpenStreetMap (ODbL 1.0) — basemap **and** safe-spot candidates via Overpass | — | [ADR-0021](adr/ADR-0021-osm-safe-spot-sourcing.md) |
 | Backend platform | Supabase (managed) | Postgres 15 | [ADR-0004](adr/ADR-0004-supabase.md) |
 | Geospatial | PostGIS 3.4 + H3 (`h3-pg`) | — | [ADR-0005](adr/ADR-0005-geospatial-model.md) |
 | Auth | Supabase GoTrue; TOTP MFA | — | [ADR-0006](adr/ADR-0006-auth-providers.md) |
@@ -303,6 +335,7 @@ Stated plainly so they can be argued with:
 3. **Single Postgres instance is a single point of failure.** PITR and a documented RTO/RPO, accepted for MVP scale.
 4. **The dual spatial model (PostGIS geography + H3 cells) will produce at least one bug**, most likely a boundary-recall miss where someone queries one cell instead of a disk. Covered by an explicit boundary test in [Geospatial Test Plan](../04-testing/03-geospatial-test-plan.md).
 5. **Backend and mobile release cadences are coupled.** Mitigated by a two-version compatibility rule enforced mechanically in CI ([ADR-0017](adr/ADR-0017-release-cadence.md)).
+6. **We now operate a piece of geospatial infrastructure.** The basemap used to be Apple's problem and is now ours: a monthly build to run, a tooling version to pin, an extract format that can change under us, and a failure mode — a silently stale archive — with no user-visible symptom. [ADR-0020](adr/ADR-0020-pmtiles-self-hosting.md) argues honestly that this is a small permanent operational tax taken on a team that has not shipped an MVP. `basemap_age_days` and the build-result metric are the detectors; the managed-tiles fallback is a style-URL change and a day of work if the tax turns out to be real.
 
 ---
 
@@ -311,3 +344,4 @@ Stated plainly so they can be argued with:
 | Date | Version | Author | Change |
 | --- | --- | --- | --- |
 | 2026-08-08 | 1.0.0 | Architecture | Initial architecture |
+| 2026-08-09 | 1.1.0 | Architecture | OpenStreetMap adopted as the map substrate. Apple/Google Maps removed from the context diagram and the external-dependency table, replaced by a Sharecropr-owned PMTiles tile origin and by OSM/Overpass as a no-SLA data source. Container view gains the tile CDN and the monthly build. Stack table: MapLibre ([ADR-0019](adr/ADR-0019-openstreetmap-maplibre.md)), tile hosting ([ADR-0020](adr/ADR-0020-pmtiles-self-hosting.md)), OSM data ([ADR-0021](adr/ADR-0021-osm-safe-spot-sourcing.md)). New weakness §10.6: we operate the basemap now |

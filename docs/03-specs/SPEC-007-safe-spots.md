@@ -3,14 +3,14 @@
 | Field | Value |
 | --- | --- |
 | **Status** | Review |
-| **Version** | 1.0.0 |
+| **Version** | 1.1.0 |
 | **Owner** | Product + Ops (Venue Relations) |
 | **Phase** | MVP |
 | **Security review** | not required |
 | **Schema depends on** | [SPEC-001](SPEC-001-authentication.md) |
 | **Behaviourally coupled with** | SPEC-900 (curation console), SPEC-021 (partner-managed spots) |
-| **Related ADRs** | [ADR-0009](../01-architecture/adr/ADR-0009-safe-spots-only.md), [ADR-0005](../01-architecture/adr/ADR-0005-geospatial-model.md) |
-| **Last updated** | 2026-08-08 |
+| **Related ADRs** | [ADR-0009](../01-architecture/adr/ADR-0009-safe-spots-only.md), [ADR-0005](../01-architecture/adr/ADR-0005-geospatial-model.md), [ADR-0021](../01-architecture/adr/ADR-0021-osm-safe-spot-sourcing.md) |
+| **Last updated** | 2026-08-09 |
 
 ---
 
@@ -33,7 +33,8 @@ The safe spot network is the curated set of public, staffed-or-surveilled venues
 - **Partner-administered spots.** `safe_spots.partner_org_id` is a stub column. Libraries administering their own hours arrives with [SPEC-021](SPEC-021-community-groups.md).
 - **In-app navigation or directions.** Out of scope per [PRD §1](../00-foundation/02-prd.md). We render an address and a photo; the user's own maps app does the rest.
 - **Real-time occupancy, crowding, or "is anyone there now".** Presence in an app that arranges physical meetings tells a stalker when their target is out ([Realtime & Notifications §8 Q4](../01-architecture/08-realtime-and-notifications.md)).
-- **Automated hours ingestion from Google Places / OSM.** Evaluated and rejected for MVP: third-party hours for municipal buildings are wrong often enough that we would be laundering bad data into a no-show. A human phones the library.
+- **Automated hours ingestion, from OSM or anywhere else.** Rejected, permanently rather than for MVP: third-party hours for municipal buildings are wrong often enough that we would be laundering bad data into a no-show. §5.7 imports OSM `opening_hours` as a **reviewer hint that no automated path may promote** (R47, R48). A human phones the library. This is the single most important rule added in 1.1.0, and [ADR-0021](../01-architecture/adr/ADR-0021-osm-safe-spot-sourcing.md) resolved it against convenience deliberately.
+- **Auto-publishing imported spots.** OSM supplies discovery; humans supply verification ([ADR-0021](../01-architecture/adr/ADR-0021-osm-safe-spot-sourcing.md)). No import path produces an `active` row (R45). A safe spot is a place we tell a stranger to meet another stranger; a wrong one is a safety problem, not a data-quality problem.
 - **Private businesses as safe spots.** No cafés, no supermarket car parks. `safe_spot_category` is a closed enum and there is no `private_business` member.
 - **Ratings or reviews of safe spots.** Users report problems (§7.4); they do not star-rate a public library.
 
@@ -122,6 +123,62 @@ The safe spot network is the curated set of public, staffed-or-surveilled venues
 | R37 | **MUST** | A weekly `safe_spot_coverage_report` MUST be produced per metro covering: `active` count, count by category, count with stale hours, population-within-3km percentage, and the ten `active` spots with the fewest attached listings. |
 | R38 | **SHOULD** | Coverage dropping below the R35 threshold in a live metro SHOULD open a P2 ops incident, not a backlog ticket. |
 
+### 5.7 OSM candidate sourcing
+
+Curation has two halves that this spec previously treated as one. **Discovery** — finding every library, town hall, police station, community centre, fire station, and campus in a metro — is a data problem OpenStreetMap has already solved. **Verification** — confirming hours, judging whether the entrance is lit and staffed, obtaining consent — is irreducibly human and is where the actual cost sits. [ADR-0021](../01-architecture/adr/ADR-0021-osm-safe-spot-sourcing.md) automates only the first half, and this section is careful to keep it there.
+
+Two things are worth stating plainly before the requirements. First, **the durable value is the monthly diff, not the initial import**: a person with a browser and an afternoon can list every library in Ann Arbor, but nobody will notice, every month across every market, that a building closed or moved — and that failure arrives later as a user standing outside a shut door. Second, **a review queue erodes the attention the manual process forced**. Rubber-stamping is what queues produce, and this is a safety-critical judgement. R49 and R50 are the answer to that, and they are deliberately inconvenient.
+
+| ID | Req | Statement |
+| --- | --- | --- |
+| R39 | **MUST** | Candidate import MUST query the Overpass API per launch-metro bounding box, one amenity tag at a time, and write results to `private.osm_spot_candidates` (§6.4). |
+| R40 | **MUST** | The OSM tag → `safe_spot_category` mapping MUST be exactly the table in §6.4. An element whose tags map to no entry MUST be dropped at import and MUST NOT be mapped to `other_municipal`. The escape-hatch category exists for a human who has seen a venue, not for an importer that did not recognise a tag. |
+| R41 | **MUST** | An element with no `name` tag MUST be rejected at import and MUST NOT create a candidate row. An unnamed civic building is not reviewable — a reviewer cannot phone it, and a user cannot recognise it. |
+| R42 | **MUST** | An element carrying `access=private` or `access=no` MUST be auto-rejected with `rejection_reason = 'access_restricted'`. R02(a) requires public accessibility without purchase or membership; an explicit upstream statement to the contrary is dispositive and does not need reviewer time. |
+| R43 | **MUST** | A candidate within **50 m** of an existing `public.safe_spots` row whose `name` has trigram similarity **≥ 0.6** to it MUST be written with `review_state = 'duplicate'` and MUST NOT enter the review queue. Re-import of the same OSM element MUST update `last_seen_at` on the existing candidate rather than create a second row — the unique index on `(osm_type, osm_id)` makes that structural. |
+| R44 | **MUST** | Candidates MUST land in `private.osm_spot_candidates` with `review_state = 'pending'` and MUST NOT be reachable by role `anon` or `authenticated` through any table, view, RPC, or grant. **An unreviewed candidate is never discoverable.** It is in `private` rather than in `safe_spots` with a status filter precisely so that this is structural rather than a filter somebody must remember. |
+| R45 | **MUST** | A candidate MUST NOT become a `public.safe_spots` row with `status = 'active'` without an explicit human promotion action. Promotion MUST satisfy every rule already in §5.1–§5.4 without exception — the R06 completeness trigger, the R16 second approver, R12's meeting-point pin (not the OSM centroid), and R02's eligibility criteria. **The import path has no privileges the manual path lacks**; it just fills in a form's first draft. |
+| R46 | **MUST** | A promoted row MUST carry `source = 'osm_import'`, `osm_type`, `osm_id`, `osm_source_licence = 'ODbL-1.0'`, and `osm_last_synced_at`, and the candidate MUST have `promoted_safe_spot_id`, `reviewed_by`, and `reviewed_at` set in the same transaction. |
+
+#### Hours: the rule this section exists to enforce
+
+| ID | Req | Statement |
+| --- | --- | --- |
+| R47 | **MUST** | `private.osm_spot_candidates.suggested_hours_raw` is a **reviewer hint only**. It MUST be displayed in the console review UI explicitly labelled as unverified OSM data with the element's `last_seen_at`, and it MUST NOT be rendered to an end user on any surface, at any time, in any state. |
+| R48 | **MUST NOT** | **No automated path — trigger, function, scheduled job, console action, migration, or backfill — may copy `suggested_hours_raw` into `public.safe_spots.hours`, nor set `hours_verified_at` from an import or a refresh.** Those two columns are written only by the explicit human verification action of R18. This is why the staging column is named differently from the live one ([Data Model §9](../01-architecture/03-data-model.md#9-safe-spots)): making the values structurally hard to confuse is cheaper than a code review that catches somebody copying them across. The reason is R-02 and the whole of §5.4 — **stale hours are the single largest controllable generator of no-shows**, OSM `opening_hours` on civic buildings is patchy and frequently years out of date, and a no-show is a real person's wasted afternoon and a trust event on somebody's score ([SPEC-012](SPEC-012-trust-and-safety.md)). An imported hours string that reached a user would be us laundering a stranger's guess into a confident claim. |
+| R49 | **MUST** | Promotion MUST require an hours-verification action recorded **separately** from the approval: an `audit.events` row with `action = 'safe_spot.hours_verified'` carrying `verification_method` in (`phone`, `visit`, `official_website`) and the source detail (number called, URL, date of visit). Activation MUST fail if no such event exists for the candidate within the promotion transaction's history. |
+| R50 | **MUST NOT** | The console MUST NOT offer any single control that approves a candidate and activates a spot. The hours form MUST start **empty**; `suggested_hours_raw` is displayed beside it and MUST NOT pre-populate it, and there MUST be no "accept suggested hours" button. Retyping hours after a phone call is a human act; accepting a pre-filled form is not, and the difference is the entire control. [ADR-0021](../01-architecture/adr/ADR-0021-osm-safe-spot-sourcing.md)'s strongest argument against itself is queue-induced rubber-stamping; R49 and R50 are the answer, and they are answerable only by someone who actually made the call. |
+
+#### Monthly refresh and the diff
+
+| ID | Req | Statement |
+| --- | --- | --- |
+| R51 | **MUST** | A monthly job MUST re-query Overpass for every active metro, join results to `public.safe_spots` and `private.osm_spot_candidates` on `(osm_type, osm_id)`, and update `last_seen_at` and `osm_last_synced_at` on every element it sees. |
+| R52 | **MUST** | An element present upstream with no matching spot or candidate MUST create a new candidate with `review_state = 'pending'`, subject to R40–R43 exactly as at initial import. |
+| R53 | **MUST** | An element that has disappeared from OSM but has a linked `active` spot MUST raise a re-verification flag in the ops queue with reason `osm_element_deleted`. It MUST NOT change `status` automatically. The building may have closed — or the element may have been retagged, merged, or vandalised, and auto-suspending on an upstream edit hands a stranger the ability to remove our supply. |
+| R54 | **MUST** | A change upstream to `name`, any `addr:*` tag, or `opening_hours` on a linked spot MUST raise a review flag carrying the before/after diff, and MUST NOT auto-apply to the live row. An `opening_hours` change specifically MUST NOT touch `hours`, `hours_verified_at`, or the staleness clock (R48) — an upstream edit is not a verification, and treating it as one would let anyone with an OSM account reset our 90-day counter. |
+| R55 | **MUST** | An element that has moved **> 50 m** MUST raise a review flag; the live `point` MUST NOT be moved automatically. R12 requires the pin to be the meeting point a human chose, not the OSM centroid, so an upstream geometry change is evidence to look at rather than a value to copy. |
+| R56 | **MUST NOT** | **Nothing auto-applies to a live safe spot, in either direction.** The refresh job's only permitted writes to `public.safe_spots` are `osm_last_synced_at`; everything else it produces is a flag in a human queue. |
+
+#### Licence obligations (ODbL 1.0)
+
+| ID | Req | Statement |
+| --- | --- | --- |
+| R57 | **MUST** | Every row with `source = 'osm_import'` MUST have `osm_type`, `osm_id`, and `osm_source_licence` non-null, enforced by a `CHECK` constraint rather than by the import code. We must be able to answer "which of our records are OSM-derived" from the database at any time, including for rows written before whatever bug we are investigating. |
+| R58 | **MUST** | "© OpenStreetMap contributors" MUST be rendered on every surface displaying OSM-derived spot data — the safe-spot sheet at every detent that shows spot fields, the list row context, both spot pickers, and the credits screen — and on the map ([SPEC-008-R75](SPEC-008-interactive-map.md)). The rendered sheet and list are ODbL **Produced Works**: they require attribution, not share-alike. |
+| R59 | **MUST** | Any feature that exports, publishes, syndicates, or exposes a public API over safe-spot data MUST have a **recorded legal review of ODbL share-alike completed before implementation begins**, not before launch. A database derived from OSM data must itself be ODbL if published; we do not publish ours today, which is the only reason this does not currently bite. The obligation is recorded here so that whoever proposes a "share our safe spots" feature finds this line rather than discovering ODbL afterwards ([ADR-0021 §Licence obligations](../01-architecture/adr/ADR-0021-osm-safe-spot-sourcing.md#licence-obligations), [Q1](#15-open-questions)). |
+
+#### Overpass usage
+
+Overpass is donated community infrastructure with per-IP rate limiting and load shedding. It owes us nothing and has no SLA.
+
+| ID | Req | Statement |
+| --- | --- | --- |
+| R60 | **MUST** | Overpass MUST be queried only from a scheduled server-side Edge Function. No client, no moderation console action, no CI job, and no user-triggered path may issue an Overpass query. |
+| R61 | **MUST** | Every request MUST send a descriptive `User-Agent` identifying Sharecropr with a contact address, MUST check `/api/status` before starting a batch, and MUST back off exponentially on `429`, abandoning the run rather than retrying past the advertised slot. A run abandoned this month is a run that succeeds next month; a blocked User-Agent is an outage we cannot fix from our side. |
+| R62 | **MUST** | Cadence MUST be **monthly** per metro. Civic buildings do not move. An ad-hoc run is permitted only for a new-market import and MUST be limited to one per metro per day, enforced in the function rather than by convention. |
+| R63 | **SHOULD** | If the monthly job is rate-limited twice, Ops SHOULD stand up a Sharecropr Overpass instance from a Geofabrik extract rather than lean harder on the public one ([ADR-0021](../01-architecture/adr/ADR-0021-osm-safe-spot-sourcing.md)). |
+
 ## 6. Data
 
 | Table | Access | Notes |
@@ -131,7 +188,8 @@ The safe spot network is the curated set of public, staffed-or-surveilled venues
 | `public.listings` | write (definer, on suspension) | R28 withdraws orphaned listings |
 | `public.exchange_sessions` | read (definer, on suspension) | R27 finds affected participants. Never written by this spec. |
 | `public.notifications` / `private.notification_outbox` | write via `app.enqueue_notification` | R27 |
-| `audit.events` | write | R15 |
+| `audit.events` | write | R15, R49 |
+| [`private.osm_spot_candidates`](../01-architecture/03-data-model.md#9-safe-spots) | write (import Edge Function, service role) / read (moderator, via the console) | §5.7. **No grant to `anon` or `authenticated` at all** (R44) |
 
 **New schema objects introduced by this spec:** migration `20260808_0071_safe_spot_curation.sql`
 
@@ -167,7 +225,35 @@ REVOKE ALL ON private.safe_spot_consents FROM anon, authenticated;
 
 Also introduced: `app.venue_open_during(uuid, timestamptz, timestamptz) → boolean` (definer, `STABLE`, granted to `authenticated`), the `trg_safe_spot_activation_guard` BEFORE UPDATE trigger enforcing R06/R16/R31, the `trg_safe_spot_status_fanout` AFTER UPDATE trigger implementing R27/R28, and two `pg_cron` jobs: `alert_stale_safe_spot_hours` (daily 08:00 UTC) and `safe_spot_coverage_report` (weekly Monday 07:00 UTC).
 
-**PII touched:** none of the spot data itself — `safe_spots` is classified **P3, public** throughout ([Data Model §1](../01-architecture/03-data-model.md)). `private.safe_spot_consents.contact_role` and `notes` are **P1** and live in `private` because they describe named organisations' internal positions; the schema deliberately stores a role ("Branch Manager") rather than a person's name. R27's fanout reads `exchange_sessions.owner_id` / `requester_id` (**P1**) inside a `SECURITY DEFINER` function and returns nothing to any client.
+**Added in 1.1.0 for §5.7:** migration `20260809_0072_osm_spot_sourcing.sql`. The column and table definitions are authoritative in [Data Model §9](../01-architecture/03-data-model.md#9-safe-spots); this migration adds them plus the constraints this spec requires.
+
+```sql
+-- Provenance. safe_spot_source and the columns themselves are defined in Data Model §9.
+ALTER TABLE public.safe_spots
+  ADD COLUMN source             safe_spot_source NOT NULL DEFAULT 'manual',
+  ADD COLUMN osm_type           text CHECK (osm_type IN ('node','way','relation')),
+  ADD COLUMN osm_id             bigint,
+  ADD COLUMN osm_last_synced_at timestamptz,
+  ADD COLUMN osm_source_licence text DEFAULT 'ODbL-1.0';
+
+-- R57: provenance is a constraint, not a convention.
+ALTER TABLE public.safe_spots
+  ADD CONSTRAINT safe_spots_osm_provenance CHECK (
+    source <> 'osm_import'
+    OR (osm_type IS NOT NULL AND osm_id IS NOT NULL AND osm_source_licence IS NOT NULL)
+  );
+
+CREATE UNIQUE INDEX safe_spots_osm_key ON public.safe_spots (osm_type, osm_id)
+  WHERE osm_id IS NOT NULL;
+
+-- R44: the staging table lives in private so that "not discoverable" is structural.
+CREATE TABLE private.osm_spot_candidates ( /* Data Model §9 */ );
+REVOKE ALL ON private.osm_spot_candidates FROM anon, authenticated;
+```
+
+Also introduced: the `osm_spot_import` Edge Function (scheduled monthly per metro, R39/R51/R60–R62), the `trg_safe_spot_hours_verification_guard` BEFORE UPDATE trigger enforcing R49, and a CI schema assertion that `private.osm_spot_candidates` has no column named `hours` or `hours_verified_at` — there is deliberately no column on that table that a careless `INSERT … SELECT` could align with `safe_spots.hours` (R48).
+
+**PII touched:** none of the spot data itself — `safe_spots` is classified **P3, public** throughout ([Data Model §1](../01-architecture/03-data-model.md)). `private.safe_spot_consents.contact_role` and `notes` are **P1** and live in `private` because they describe named organisations' internal positions; the schema deliberately stores a role ("Branch Manager") rather than a person's name. R27's fanout reads `exchange_sessions.owner_id` / `requester_id` (**P1**) inside a `SECURITY DEFINER` function and returns nothing to any client. `private.osm_spot_candidates` is **P3** throughout — it describes public buildings and carries no user data — and lives in `private` for discoverability reasons (R44) rather than confidentiality ones. Its `raw_tags` may nonetheless contain upstream `contact:*` and `operator` tags naming individuals at small venues, which is a second reason not to expose it and a reason the console renders it as inspectable JSON rather than mapping it into fields.
 
 ## 7. API
 
@@ -292,6 +378,27 @@ Two windows per day are permitted (a midday closure), which is why `weekly.<dow>
 | `suspension_reason` | `temporary_closure`, `renovation`, `venue_request`, `safety_concern`, `hours_unverified`, `data_error`, `seasonal` |
 | `retirement_reason` | `venue_request`, `permanently_closed`, `ineligible_on_review`, `superseded_by_row`, `safety_incident` |
 | `private.safe_spot_consents.state` | `not_contacted`, `informed`, `consented`, `objected` |
+| `private.osm_spot_candidates.review_state` | `pending`, `approved`, `rejected`, `duplicate` |
+| `private.osm_spot_candidates.rejection_reason` | `unnamed`, `access_restricted`, `unmapped_tag`, `out_of_bbox`, `implausible_geometry`, `not_eligible`, `venue_declined` |
+| `audit.events` `verification_method` (R49) | `phone`, `visit`, `official_website` |
+
+### 6.4 OSM tag → category mapping (R40)
+
+Exactly this table, from [ADR-0021](../01-architecture/adr/ADR-0021-osm-safe-spot-sourcing.md). An element matching no row is dropped with `rejection_reason = 'unmapped_tag'`.
+
+| OSM tag | `safe_spot_category` | Reviewer note carried into the queue |
+| --- | --- | --- |
+| `amenity=library` | `public_library` | Highest-quality category; OSM coverage is excellent |
+| `amenity=police` | `police_station` | **Flagged.** Lobby access varies enormously, and see [Q5](#15-open-questions) — a segment of users will not enter one |
+| `amenity=townhall` | `city_hall` | |
+| `amenity=community_centre` | `community_center` | |
+| `amenity=fire_station` | `fire_station` | **Flagged.** Many are unstaffed |
+| `amenity=college`, `amenity=university` | `college_campus` | **Flagged.** A campus is a polygon; a human MUST choose a specific entrance (R12), because the centroid is a fifteen-minute walk from anywhere useful |
+| `amenity=marketplace` | `farmers_market` | **Flagged.** Frequently seasonal; hours are the least reliable in the set |
+
+Additional tags read but never trusted: `name` (**required**, R41), `addr:*` (best-effort, a human corrects), `wheelchair` (an accessibility *hint*; R11's notes are written by a human), `opening_hours` (R47, R48), `access` (R42). Node geometry is used directly; ways and relations are reduced to a representative centroid, which R12 then requires a human to move to the actual meeting point.
+
+There is no mapping to `park_pavilion` or `other_municipal`. `leisure=park` is far too broad to import — most parks have no describable meeting point and fail R02(c) — and `other_municipal` is the human escape hatch (R05), not an importer's default.
 
 ## 8. UI / UX
 
@@ -377,6 +484,11 @@ Exact strings.
 > **Listing withdrawn**
 > {listing_title} was offered only at {safe_spot_name}, which is no longer available. Publish it again at another spot when you're ready.
 
+**OSM attribution (R58 — rendered on every surface showing spot data, exact string)**
+> © OpenStreetMap contributors
+
+Rendered whether or not the specific spot on screen is OSM-derived. Attribution that appears on some rows and not others invites the question "which of these came from OSM?", which is a question about our data pipeline that no user has, and it makes the notice something a layout change can accidentally remove for the row that needed it. Identical string, capitalisation, and rules as [SPEC-008 §8.3](SPEC-008-interactive-map.md).
+
 **Report a problem — entry point label**
 > Report a problem with this spot
 
@@ -391,8 +503,8 @@ Exact strings.
 
 | Question | Answer |
 | --- | --- |
-| What is the worst thing an attacker could do with this feature? | Two things. (1) **Inject a hostile venue.** A safe spot the attacker controls — a private address dressed as a "community center" — converts the entire safety architecture into a lure. This is why there is no client write path at all (R14), why writes require `app.is_moderator()` (R13), and why activation requires a second approver (R16). (2) **Bulk-harvest the network** as a proxy for where Sharecropr users are. Safe-spot coordinates are public data about public buildings, so the harm is low, but the `listing_count` attached to each spot is a supply signal; that is bounded by the 200-row cap and the 30/min limit on `safe_spots_near`, not by anything in this spec. |
-| Which RLS policies enforce access? | `safe_spots_read` (`FOR SELECT TO anon, authenticated USING (status = 'active')`) and `safe_spots_staff_write` (`FOR ALL TO authenticated USING (app.is_moderator()) WITH CHECK (app.is_moderator())`) — [RLS Design §5 Pattern B](../01-architecture/05-rls-design.md). `private.safe_spot_consents` has no policy at all; the schema-level `REVOKE ALL ON SCHEMA private FROM anon, authenticated` is the denial. Definer functions: `app.is_moderator()`, `app.venue_open_during()`, `app.enqueue_notification()`. |
+| What is the worst thing an attacker could do with this feature? | Two things. (1) **Inject a hostile venue.** A safe spot the attacker controls — a private address dressed as a "community center" — converts the entire safety architecture into a lure. This is why there is no client write path at all (R14), why writes require `app.is_moderator()` (R13), and why activation requires a second approver (R16). (2) **Bulk-harvest the network** as a proxy for where Sharecropr users are. Safe-spot coordinates are public data about public buildings, so the harm is low, but the `listing_count` attached to each spot is a supply signal; that is bounded by the 200-row cap and the 30/min limit on `safe_spots_near`, not by anything in this spec. (3) **Poison the candidate queue upstream.** OSM is world-editable, so an attacker can tag their own address `amenity=community_centre` and wait for our monthly import to queue it — a variant of (1) that arrives through a channel we do not control. The controls are the same ones and they are the reason §5.7 changes none of them: a candidate is never discoverable (R44), promotion requires eligibility assessment plus a second approver (R45), and R49's hours verification requires contacting a venue that, in this attack, does not exist. The residual risk is a reviewer who approves without doing the work, which is what R50 is built against and what the approval-rate alert in §11 is watching for. |
+| Which RLS policies enforce access? | `safe_spots_read` (`FOR SELECT TO anon, authenticated USING (status = 'active')`) and `safe_spots_staff_write` (`FOR ALL TO authenticated USING (app.is_moderator()) WITH CHECK (app.is_moderator())`) — [RLS Design §5 Pattern B](../01-architecture/05-rls-design.md). `private.safe_spot_consents` and `private.osm_spot_candidates` have no policy at all; the schema-level `REVOKE ALL ON SCHEMA private FROM anon, authenticated` is the denial, and it is why an unreviewed OSM candidate cannot be reached by any client request however malformed (R44). Definer functions: `app.is_moderator()`, `app.venue_open_during()`, `app.enqueue_notification()`. |
 | Can any response path expose an exact coordinate or PII? | It exposes `safe_spots.point`, which is exact, precise, and deliberately public — a public building. It is one of two entries on the coordinate-column allowlist for the CI contract sweep (API-04, [API Contract §9.1](../01-architecture/06-api-contract.md)). No path in this spec touches `private.garden_locations`, `gardens.h3_r9`, or any user coordinate. The R27 fanout reads participant ids inside a definer function and returns nothing. |
 | What is logged, and is it scrubbed? | Every write to `safe_spots` writes `audit.events` with a column diff (R15). Coordinates in `metadata` would fail the `CHECK` forbidding `lat`/`lng`/`point` keys, so the diff records `point` as a boolean "changed" flag rather than a value — a deliberate consequence of applying the same rule uniformly rather than exempting public data. Consent notes are never logged outside `private`. |
 | Does this need step-up authentication? | No. Curation writes are moderator-role operations behind console SSO; AAL2 is reserved for account-security operations ([API Contract §2.4](../01-architecture/06-api-contract.md)). A moderator's session compromise is handled by session revocation and the audit trail, not by a TOTP prompt per row edit. |
@@ -417,6 +529,13 @@ Exact strings.
 | EC-13 | A user's device clock is wrong, so the client's open/closed pill disagrees with the server's `venue_open_during`. | The server is authoritative. `propose_schedule` raises `venue_closed` and the client shows the venue's hours from the response rather than from its own computation. The pill is decoration; the RPC is the rule. |
 | EC-14 | A spot is the only one attached to 40 listings and is suspended. | All 40 are withdrawn (R28) and 40 owners are notified. This is a visible supply cliff and is exactly why R36 exists — a metro whose supply concentrates on one venue is one renovation away from having no product. |
 | EC-15 | The `alert_stale_safe_spot_hours` cron job silently stops running after a migration. | Detected by the post-migration smoke check asserting every scheduled job exists ([Realtime & Notifications §8](../01-architecture/08-realtime-and-notifications.md)); additionally, the weekly coverage report includes a "stale hours" count that would climb monotonically. |
+| EC-16 | An element is retagged upstream: `amenity=library` becomes `amenity=community_centre`. | For a **pending candidate**, the next run rewrites `suggested_category` and `raw_tags` in place — nothing has been promoted, so there is nothing to protect. For a **linked `active` spot**, it is an R54 review flag showing the tag diff; `category` is not auto-changed. A retag is frequently a correction to OSM's model of the building rather than a change to the building, and our `category` was chosen by a human who stood in the lobby. |
+| EC-17 | A campus imports as a way whose centroid lands in the middle of a quad, 400 m from any door. | The candidate carries the centroid; R12 forbids promoting it unchanged and the console requires the reviewer to move the pin before the row can be activated. This is the failure EC-05 already describes, arriving now at higher volume — which is why `college_campus` is flagged in §6.4 rather than treated as a routine import. |
+| EC-18 | The same venue exists in OSM as both a node and a building way, and both are tagged. | Two candidates, each unique on `(osm_type, osm_id)` so neither collapses the other. R43's 50 m + name-similarity check catches the second **only after the first is promoted**; before that, both sit in the queue. The console groups candidates within 50 m of each other so the reviewer sees the pair, and the loser is closed as `review_state = 'duplicate'`. We accept a small amount of reviewer time here rather than auto-merging two elements we cannot tell apart. |
+| EC-19 | A candidate is under review when its element is deleted from OSM. | The refresh leaves `last_seen_at` behind and the console shows "no longer in OpenStreetMap" beside the candidate. The reviewer may still promote it — the building may exist perfectly well and the OSM edit may be wrong — but doing so requires the same R49 verification as any other promotion, which is precisely the action that would establish whether the venue is real. |
+| EC-20 | Overpass is down, rate-limiting, or shedding load for the entire monthly window. | The run backs off, abandons, and alerts (R61, §11). **No degraded mode, no partial import, no fallback source.** A month with no refresh is a month with slightly staler flags; a half-completed diff would produce false "disappeared from OSM" flags for every element in the untried half, which is worse than no diff at all. Twice in a quarter is the [ADR-0021](../01-architecture/adr/ADR-0021-osm-safe-spot-sourcing.md) trigger to run our own instance (R63). |
+| EC-21 | An element's coordinate is in the sea, at `(0,0)`, or outside the metro bounding box. | Rejected at import with `rejection_reason = 'implausible_geometry'` or `'out_of_bbox'`. This is the check that matters most in the whole import: a mis-parsed coordinate that survives review sends a real person to the wrong place, and the human gate is the control but is not infallible ([ADR-0021](../01-architecture/adr/ADR-0021-osm-safe-spot-sourcing.md)). A coordinate outside the queried bbox is by definition a parsing bug, not a data finding, and it alerts rather than merely rejecting. |
+| EC-22 | An element's `name` is non-ASCII, has diacritics, or exists only as `name:es`. | The candidate stores `name` verbatim as UTF-8 with no transliteration; a name present only under a language-suffixed key is treated as absent for R41 purposes and the element is rejected as `unnamed`, because a venue whose only recorded name is in a language the reviewer may not read is not reviewable from the queue. R43's trigram similarity runs on `unaccent(lower(name))`, so "Café Municipal" and "Cafe Municipal" dedupe against each other rather than producing two rows. |
 
 ## 11. Observability
 
@@ -434,8 +553,16 @@ Exact strings.
 | `spot_sheet_open` | product event | `safe_spot_id`, `category`, `listing_count`, `source` (`marker`\|`list`\|`deep_link`) | — |
 | `spot_sheet_paint_ms` | histogram | `warm` boolean | p95 > 150 ms warm, > 600 ms cold |
 | `listings_orphaned_by_suspension` | counter | `safe_spot_id`, `count` | > 20 in one action ⇒ notify Product; a supply cliff (EC-14) |
+| `osm_candidate_queue_depth` | gauge, per metro | `metro_key`, `review_state` | `pending` > 150 for 14 days ⇒ the queue is not being worked and the pipeline is generating backlog rather than spots |
+| `osm_candidate_approval_rate` | gauge, 30-day rolling per reviewer and per metro | `metro_key`, `reviewer_id`, `approved / reviewed` | **> 90% ⇒ suspected rubber-stamping** — audit a sample and tighten the gate. **< 30% ⇒ the import filter is too loose** and is spending reviewer time on candidates that were never eligible. Both thresholds are [ADR-0021](../01-architecture/adr/ADR-0021-osm-safe-spot-sourcing.md) revisit triggers, and the per-reviewer breakdown is the point: a healthy metro average can hide one reviewer approving everything |
+| `osm_import_job_result` | event, per metro per run | `metro_key`, `outcome` (`success`\|`backoff_abandoned`\|`error`), `elements_seen`, `candidates_created`, `duration_s` | **Any month with no successful run for a live metro.** Two abandoned runs in a quarter ⇒ R63 |
+| `osm_refresh_flags_raised` | counter | `metro_key`, `kind` (`element_deleted`\|`name_changed`\|`address_changed`\|`hours_changed`\|`moved`) | A single run raising flags on > 20% of a metro's linked spots ⇒ suspect an upstream schema or parsing change, not twenty buildings moving |
+| `osm_import_rejected` | counter | `metro_key`, `rejection_reason` | `implausible_geometry` or `out_of_bbox` > 0 ⇒ **investigate as a parsing bug** (EC-21), not as upstream data quality |
+| `osm_hours_verification_method` | counter | `method` (`phone`\|`visit`\|`official_website`) | `official_website` > 70% of verifications ⇒ the cheapest method is crowding out the reliable ones (R49) |
 
-No event in this table carries a user identifier alongside a `safe_spot_id` except the audit events, which are moderator actions. `spot_sheet_open` is deliberately not joined to a user in analytics: "which user looked at which meeting place" is a movement-pattern dataset we have no use for.
+**`basemap_age_days` is deliberately not in this table.** Basemap freshness belongs to the tile pipeline ([ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md), [Observability](../05-operations/04-observability.md)), not to the safe-spot network. They share a data source and nothing else: a stale basemap means a new building is missing from the picture, while a stale safe spot means we are sending someone to a door we have not checked. Putting them on the same dashboard would invite treating one as a proxy for the other.
+
+No event in this table carries a user identifier alongside a `safe_spot_id` except the audit events and the per-reviewer approval rate, which are moderator actions. `spot_sheet_open` is deliberately not joined to a user in analytics: "which user looked at which meeting place" is a movement-pattern dataset we have no use for.
 
 ## 12. Accessibility
 
@@ -487,6 +614,27 @@ No event in this table carries a user identifier alongside a `safe_spot_id` exce
 | T30 | e2e | §8.2 | Terminal error: spot suspended server-side while the sheet is open → sheet closes, marker removed, toast shown, map invalidated |
 | T31 | unit | §8.2 | Open/closed pill formatting across all seven copy variants including "Closed today" and "Closed · Opens Tue at 9:00 AM" |
 | T32 | manual | §12 | VoiceOver and TalkBack pass over the sheet at all three detents, at 200% type, with focus return on dismiss |
+| T49 | integration | R39, R62 | Import runs per metro bbox, one amenity tag per query; the scheduler is monthly; a second ad-hoc run for the same metro inside 24 h is refused by the function, not by convention |
+| T50 | unit | R40 | Mapping table asserted row-by-row against §6.4 for all seven entries; twelve unmapped-tag fixtures (`leisure=park`, `amenity=cafe`, `shop=*`, …) are dropped with `unmapped_tag` and **none** becomes `other_municipal` |
+| T51 | integration | R41 | An element with no `name` produces zero candidate rows; one with only `name:es` is likewise rejected as `unnamed` (EC-22) |
+| T52 | integration | R42 | `access=private` and `access=no` elements are recorded with `review_state='rejected'`, `rejection_reason='access_restricted'`, and never appear in the pending queue |
+| T53 | integration | R43 | A candidate 30 m from an existing spot with name similarity 0.8 is marked `duplicate`; one 300 m away, and one with similarity 0.3, both stay `pending`; re-importing the same `(osm_type, osm_id)` updates `last_seen_at` and creates no second row |
+| T54 | rls | R44 | Import writes land with `review_state='pending'`; `anon` and `authenticated` receive permission-denied on `private.osm_spot_candidates` via PostgREST, direct SQL, and any view |
+| T55 | integration | R45 | The import job, run end to end against a fixture metro, produces **zero** rows in `public.safe_spots` in any status. Promotion of a candidate is then asserted to raise on each of R06's null columns, on R16's same-approver case, and on an unmoved campus centroid |
+| T56 | integration | R46 | A promoted row carries `source='osm_import'`, `osm_type`, `osm_id`, `osm_source_licence='ODbL-1.0'`, `osm_last_synced_at`; the candidate carries `promoted_safe_spot_id`, `reviewed_by`, `reviewed_at`; a forced failure mid-promotion leaves neither side written |
+| T57 | unit | R47 | Console renders `suggested_hours_raw` labelled as unverified OSM data with `last_seen_at`. Contract sweep: the string appears in no client-reachable response shape — not in `GET /rest/v1/safe_spots`, not in `safe_spots_near`, not in any view |
+| T58 | integration | R48 | **No automated path copies imported hours.** (a) Static analysis: no source file, migration, or function body references `suggested_hours_raw` together with `safe_spots.hours` or `hours_verified_at`. (b) Run the full import and monthly refresh over a fixture metro with hours-bearing elements: no `safe_spots.hours` value changes and no `hours_verified_at` is written. (c) The guard trigger raises when `hours_verified_at` is set in the same statement that sets `hours` from a promotion payload with no verification event |
+| T59 | integration | R49 | Activation with no `safe_spot.hours_verified` audit event for the candidate raises; activation with one carrying a `verification_method` and source detail succeeds; an event with a `verification_method` outside the closed vocabulary is rejected |
+| T60 | e2e | R50 | Console review screen: no control approves and activates in one action; the hours form renders empty with `suggested_hours_raw` beside it and no copy-across affordance; a UI test asserting the presence of an "accept suggested hours" button **fails**, and is kept as the regression guard against somebody adding one for velocity |
+| T61 | integration | R51, R52 | Monthly refresh joins on `(osm_type, osm_id)`, updates `last_seen_at`/`osm_last_synced_at` for seen elements, and creates `pending` candidates for genuinely new POIs while re-applying R40–R43 |
+| T62 | integration | R53 | An element removed from the fixture upstream raises an `osm_element_deleted` flag against its linked spot; the spot's `status` is byte-identical before and after |
+| T63 | integration | R54 | Upstream `name`, `addr:street`, and `opening_hours` changes each raise a flag carrying the before/after diff; `public.safe_spots` `name`, address columns, `hours`, and `hours_verified_at` are all unchanged, and the 90-day staleness clock does not reset |
+| T64 | integration | R55 | An element moved 80 m raises a flag; one moved 30 m does not; `point` is unchanged in both cases |
+| T65 | integration | R56 | Row hash of every linked `safe_spots` row before and after a full refresh differs **only** in `osm_last_synced_at`, asserted column-wise rather than by eyeballing a diff |
+| T66 | integration | R57 | `CHECK safe_spots_osm_provenance` rejects `source='osm_import'` with any of `osm_type`, `osm_id`, `osm_source_licence` null; accepts a `manual` row with all three null |
+| T67 | e2e | R58 | "© OpenStreetMap contributors" is present on the sheet at all three detents, on list rows, in both spot pickers, and on the credits screen — including for a spot whose `source='manual'` |
+| T68 | integration | R59 | CI gate: any diff touching a safe-spot export, feed, or public-API surface fails unless the change carries a recorded ODbL legal-review artifact. Asserted by adding such a surface to a fixture branch and confirming the gate fails |
+| T69 | integration | R60, R61 | Overpass calls originate only from the scheduled Edge Function (egress allowlist asserted); the `User-Agent` matches the required pattern including a contact address; `/api/status` is called before a batch; a stubbed `429` produces exponential backoff and then abandonment, never a retry past the advertised slot |
 
 ### 13.2 Negative & security tests
 
@@ -508,6 +656,12 @@ No event in this table carries a user identifier alongside a `safe_spot_id` exce
 | T46 | Suspension fanout triggered for a spot with 5,000 scheduled sessions | Completes inside the statement timeout, or the trigger enqueues a batched job; asserted so that a large suspension cannot lock the table during a business-hours edit |
 | T47 | A moderator suspends a spot, and a concurrent `propose_schedule` targets it | Whichever commits first wins; the losing `propose_schedule` gets `venue_closed` (the spot is no longer `active`), never a partially applied schedule |
 | T48 | `retired` spot's `photo_path` requested from Storage by a direct signed-URL guess | Storage policy denies: safe-spot photos are served through a path bound to `status = 'active'` |
+| T70 | Attempt every plausible route by which an imported hours string could reach `safe_spots.hours`: a `INSERT … SELECT` from the candidate table, a console payload echoing the hint verbatim, a migration backfill, a refresh-job write | All fail or are absent. Additionally, a promotion whose submitted `hours` is byte-identical to `suggested_hours_raw` is **flagged for audit rather than blocked** — genuinely correct OSM hours do exist, and blocking that case would train reviewers to retype a character and change it back. The flag feeds the approval-rate audit in §11, which is the honest control here: this test bounds the damage, R50 prevents it, and neither is airtight on its own (R48) |
+| T71 | Query `safe_spots_near` over a viewport dense with pending candidates | Zero candidate-derived rows. `safe_spots_near` reads `public.safe_spots` with `status='active'` only and has no join to `private`. `GET /rest/v1/osm_spot_candidates` 404s at the API layer before reaching Postgres, exactly as `private.garden_locations` does (R44) |
+| T72 | Feed the importer a fixture Overpass response containing an unnamed element, an `access=private` element, a `shop=supermarket`, and an element at `(0,0)` | Zero candidates enter the pending queue; four rejection rows are recorded with reasons `unnamed`, `access_restricted`, `unmapped_tag`, `implausible_geometry`; the last alerts (EC-21) |
+| T73 | An attacker tags their own home address `amenity=community_centre` in OSM and waits for the monthly import | The candidate queues — we cannot prevent that, and the honest answer is that we do not try. It cannot reach `active`: R45 applies R02's eligibility criteria, R16 requires a second approver, and R49 requires a recorded hours verification against a venue that cannot be phoned. Asserted end to end, including that a single reviewer acting alone cannot activate it in any sequence of console actions |
+| T74 | A reviewer approves 40 candidates in 20 minutes | Permitted mechanically — we do not rate-limit judgement — but each still requires its own R49 event, and the per-reviewer `osm_candidate_approval_rate` crosses the 90% alert. Asserted so that the rubber-stamping control is the audit trail and the alert, not an artificial delay somebody would route around |
+| T75 | Trigger an Overpass query from the moderation console, from a client, or from CI | No egress path exists: the Overpass host is absent from every allowlist except the scheduled function's (R60). Asserted from the deployed network policy rather than from source, so a new function inherits the denial by default |
 
 ### 13.3 Manual QA
 
@@ -520,14 +674,21 @@ No event in this table carries a user identifier alongside a `safe_spot_id` exce
 - [ ] Confirm a retired spot cannot be reactivated from the console UI, and that the console explains why rather than showing a disabled button with no reason.
 - [ ] Screen-reader pass on the sheet at all three detents on iOS and Android, at 200% type.
 - [ ] Confirm hours render in the venue's timezone with the abbreviation shown when the device timezone differs.
+- [ ] Run the importer against one real launch metro and read the whole pending queue by hand. The question is not "did it work" but **"would a reviewer working through this at speed make a mistake?"** — count how many candidates are obviously ineligible, and compare the list against what a person with a browser and an afternoon produces for the same metro.
+- [ ] Promote one candidate end to end, including a real phone call to the venue, and confirm the hours you were told differ from `suggested_hours_raw`. If they match for the first ten spots, say so — it is evidence about R48's premise and it belongs in the record either way.
+- [ ] Attempt to activate a candidate without recording an hours verification, and confirm the console explains why rather than showing a disabled button with no reason.
+- [ ] Delete a fixture element from a staging Overpass mirror and confirm the next refresh flags the linked spot for re-verification without changing its status.
+- [ ] Confirm "© OpenStreetMap contributors" is visible on the sheet, the list row, and both spot pickers on both platforms, at 200% type.
+- [ ] Reviewer training: confirm every curator can state, unprompted, why `suggested_hours_raw` may not be copied. [ADR-0021](../01-architecture/adr/ADR-0021-osm-safe-spot-sourcing.md) names this as a training requirement, and a control nobody understands is a control that gets routed around.
 
 ## 14. Rollout
 
 | Field | Value |
 | --- | --- |
 | Feature flag | None. The safe-spot network is not optional; there is no product without it. The curation console is behind `console.safe_spots` for staff only. |
-| Migration required | Yes — `20260808_0071_safe_spot_curation.sql` (columns, `private.safe_spot_consents`, `app.venue_open_during`, two triggers, two cron jobs) |
-| Backfill required | Yes — `metro_slug` on all seeded spots, and a `private.safe_spot_consents` row per seeded spot with state `not_contacted` at minimum. Curation data itself is entered by hand before launch; there is no import. |
+| Migration required | Yes — `20260808_0071_safe_spot_curation.sql` (columns, `private.safe_spot_consents`, `app.venue_open_during`, two triggers, two cron jobs) and `20260809_0072_osm_spot_sourcing.sql` (provenance columns and constraint, `private.osm_spot_candidates`, the hours-verification guard trigger, the monthly import schedule) |
+| Backfill required | Yes — `metro_slug` on all seeded spots, and a `private.safe_spot_consents` row per seeded spot with state `not_contacted` at minimum. Existing hand-curated rows get `source = 'manual'` by column default and **no OSM provenance**; they are not retro-matched to OSM elements, because a match we inferred rather than imported is provenance we cannot stand behind (R57). |
+| Sourcing rollout | The importer is Ops tooling, not a product surface, and ships behind `console.osm_candidates`. It runs against one launch metro first and its output is reviewed by hand in full (§13.3) before the second metro's import runs at all. **Manual curation continues in parallel** for the first metro rather than being stood down on the pipeline's promise — [R-02](../06-roadmap/02-open-risks.md) is a release-gate risk, and discovering in week ten that the queue is unusable would cost the launch. |
 | Rollback plan | Forward-only ([Data Model §15](../01-architecture/03-data-model.md)). The triggers are the risky part: if `trg_safe_spot_status_fanout` misbehaves, disable it with a follow-up migration and run the fanout as a one-off script. Suspensions remain correct; only the notification and detach side effects would be deferred. |
 | Client version floor | None. Older clients that do not render the stale-hours note still receive correct hours; the note is additive. |
 
@@ -540,9 +701,12 @@ No event in this table carries a user identifier alongside a `safe_spot_id` exce
 | Q3 | Should auto-suspension at 180 days (R21) instead auto-*flag* and require a human to suspend? Auto-suspension can remove supply in a metro over a weekend with no one watching. | Ops | Before second metro launch |
 | Q4 | Do we need a `meeting_point_description` free-text column distinct from `safety_notes` ("meet at the reference desk on the second floor")? EC-05 suggests the pin alone is not enough on campuses. | Product | Post-launch, first 100 no-shows |
 | Q5 | What is our position if a police-station lobby is a category we list and a segment of users will not enter one? Naming this openly may require a category-level filter default rather than a curation change. | Product + Trust & Safety | Before launch |
+| Q6 | Do we contribute confirmed hours back to OSM? We will hold phone-verified hours for hundreds of civic buildings — better data than the source we took it from. [ADR-0021](../01-architecture/adr/ADR-0021-osm-safe-spot-sourcing.md) calls it a good-citizen item and explicitly out of MVP scope. It also has a downside worth naming: publishing which venues we verified discloses our operating footprint. | Product + Legal | Phase 2 |
+| Q7 | Does R50's empty-form rule survive contact with a reviewer processing eighty candidates? It is the answer to [ADR-0021](../01-architecture/adr/ADR-0021-osm-safe-spot-sourcing.md)'s strongest self-criticism, and it is also the requirement most likely to be quietly relaxed for velocity. If it is going to be relaxed, that should be an ADR and not a console ticket. | Ops + Trust & Safety | After the first metro's queue is worked |
 
 ## 16. Change Log
 
 | Date | Version | Author | Change |
 | --- | --- | --- | --- |
+| 2026-08-09 | 1.1.0 | Product + Ops | **OSM candidate sourcing** ([ADR-0021](../01-architecture/adr/ADR-0021-osm-safe-spot-sourcing.md)). Requirements added, none invalidated: no existing rule is relaxed and every promotion still passes the full §5.1–§5.4 gate. New §5.7 (R39–R63) covers Overpass import per metro per amenity tag, the §6.4 tag mapping, rejection of unnamed and access-restricted elements, dedupe, the never-discoverable candidate table, the human promotion gate, the monthly refresh diff (nothing auto-applies), ODbL provenance and attribution, share-alike as a pre-implementation legal trigger for any future export, and Overpass etiquette. The load-bearing rule is R47/R48: imported `opening_hours` is a reviewer hint that **no automated path may promote** to `safe_spots.hours` — stale hours are the top no-show cause. R49/R50 are the anti-rubber-stamping controls ADR-0021's own steel-man demands. §6 adds the provenance columns, `private.osm_spot_candidates`, and migration `20260809_0072`; §10 adds EC-16–EC-22; §11 adds queue depth, approval-rate alerts at > 90% / < 30%, and job success; §13 adds T49–T75. §3 clarifies that automated *hours* ingestion is rejected permanently, not just for MVP. Q6 and Q7 raised. |
 | 2026-08-08 | 1.0.0 | Product + Ops | Initial spec |

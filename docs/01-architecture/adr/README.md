@@ -31,12 +31,15 @@ Write a new ADR when a change touches the schema shape, the API surface, a secur
 | [0010](ADR-0010-kyc-vendor.md) | KYC vendor | Accepted | 2026-08-08 | Persona hosted flow (Stripe Identity documented alternate); store pass/fail + inquiry ref only, never ID images |
 | [0011](ADR-0011-state-management.md) | State management | Accepted | 2026-08-08 | TanStack Query v5 for server state, Zustand for ephemeral client state, MMKV for cache — no Redux, no Jotai |
 | [0012](ADR-0012-navigation.md) | Navigation | Accepted | 2026-08-08 | Expo Router (file-based, typed routes) over React Navigation used directly |
-| [0013](ADR-0013-map-library.md) | Map library | Accepted | 2026-08-08 | `react-native-maps` behind a `MapCanvas` isolation seam; `expo-maps` too early, `@rnmapbox/maps` is the costed fallback |
+| [0013](ADR-0013-map-library.md) | Map library | **Superseded** by [0019](ADR-0019-openstreetmap-maplibre.md) | 2026-08-08 | ~~`react-native-maps` behind a `MapCanvas` isolation seam~~ — the seam survives, the renderer does not |
 | [0014](ADR-0014-totp-not-sms.md) | TOTP, not SMS | Accepted | 2026-08-08 | TOTP-only 2FA; SIM-swap risk is unacceptable for an app that gates physical meetings |
 | [0015](ADR-0015-e2e-tooling.md) | E2E tooling | Accepted | 2026-08-08 | Maestro over Detox for end-to-end mobile tests |
 | [0016](ADR-0016-pgtap.md) | Database testing | Accepted | 2026-08-08 | pgTAP against a real Postgres in CI, over mocking or app-level integration testing |
 | [0017](ADR-0017-release-cadence.md) | Release cadence | Accepted | 2026-08-08 | EAS Build + EAS Update; OTA is JS-only, never native; two-version compatibility enforced from `devices.app_version` |
 | [0018](ADR-0018-observability.md) | Observability | Accepted | 2026-08-08 | Sentry + PostHog + Supabase logs, behind a mandatory telemetry scrubber; >200 reports/day extracts moderation |
+| [0019](ADR-0019-openstreetmap-maplibre.md) | **OpenStreetMap via MapLibre** | Accepted | 2026-08-09 | OSM vector tiles rendered by `@maplibre/maplibre-react-native`; identical on both platforms; supersedes [0013](ADR-0013-map-library.md) |
+| [0020](ADR-0020-pmtiles-self-hosting.md) | **PMTiles self-hosting** | Accepted | 2026-08-09 | OSM basemap as a Protomaps PMTiles archive on Cloudflare R2 + CDN; no tile vendor, no per-load billing, offline-capable |
+| [0021](ADR-0021-osm-safe-spot-sourcing.md) | **OSM safe-spot sourcing** | Accepted | 2026-08-09 | Overpass imports civic POIs as *candidates*; humans verify before any spot goes live. `opening_hours` is a hint, never truth |
 
 ---
 

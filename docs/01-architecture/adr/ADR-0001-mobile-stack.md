@@ -66,7 +66,7 @@ Generated types from the Postgres schema (`supabase gen types typescript`) are c
 ### Negative
 
 - **We inherit Expo's release calendar.** A new iOS version's breaking change lands when Expo ships support for it, not when Apple ships it.
-- Map performance is a genuine risk. `react-native-maps` marker rendering crosses the JS/native boundary and clustering must be done carefully.
+- Map performance is a genuine risk. `react-native-maps` marker rendering crosses the JS/native boundary and clustering must be done carefully. *(Partly mitigated since: [ADR-0019](ADR-0019-openstreetmap-maplibre.md) moved to MapLibre, where 200 markers are one GeoJSON source update rendered as GPU layers rather than 200 native views. The risk did not disappear — it moved to New Architecture interop and style complexity.)*
 - App binary is ~8–12 MB larger than an equivalent native build.
 - Debugging a Fabric-layer crash requires native skills we do not have on the team, and is the scenario in which we would buy consulting hours.
 

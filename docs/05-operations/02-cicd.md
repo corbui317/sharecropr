@@ -55,6 +55,9 @@ None of these are advisory. A PR cannot merge with any of them red.
 | `secret-scan` | Any secret in source or the built bundle |
 | `e2e-smoke` | Any smoke flow on either platform |
 | `perf-baseline` | An unreviewed `EXPLAIN` plan change on a hot path |
+| `map-style` | An invalid style JSON, or one referencing a tile, sprite, or glyph host we do not control (§4.1) |
+| `map-attribution` | The OSM attribution missing, zero-area, or obscured in any map state — **NFR-99, a licence obligation** (§4.1) |
+| `map-egress` | Any map-screen request to a non-allowlisted host, or a tile request carrying a credential or a coordinate — NFR-102 (§4.1) |
 
 Two approvals required, and a **`DB` CODEOWNERS approval** if `supabase/migrations/**` changed.
 
@@ -130,6 +133,36 @@ A migration creating a table without a matching `supabase/tests/rls_<table>.test
 | License audit | Copyleft in a shipped dependency |
 
 The merged-manifest check exists because a background-location permission can arrive through a dependency without anyone adding it, and it lands us in an App Store review category we've deliberately avoided.
+
+### 4.1 Map, tile, and attribution checks
+
+Three gates protect things that break silently: a licence obligation rendered in pixels, and an egress guarantee that no import audit can prove ([ADR-0019](../01-architecture/adr/ADR-0019-openstreetmap-maplibre.md), [ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md)).
+
+```yaml
+- name: Style JSON validates and references only our own hosts
+  run: pnpm ci:validate-map-style
+  # - validates src/features/map/style/sharecropr-basemap.json against the MapLibre schema
+  # - asserts every source, sprite, and glyph URL is on the Sharecropr tile origin
+  # - asserts the tile source names ONE explicit dated archive, never a "latest" alias
+
+- name: Attribution is present and unobscured in every map state
+  run: pnpm ci:assert-attribution
+  # Renders the map fixture in each §8.2 state and at each sheet detent, then asserts
+  # the attribution node is mounted, has non-zero measured area, meets 4.5:1, and its
+  # rect intersects no other rendered node. TC-GEO-37/38/39/40.
+
+- name: No map request leaves Sharecropr infrastructure
+  run: pnpm ci:assert-map-egress
+  # Captures every request the map screen makes against a host allowlist, then regexes
+  # each tile request for credentials and for coordinate-shaped values beyond z/x/y and
+  # PMTiles byte ranges. TC-GEO-41/42/43, NFR-102.
+```
+
+Three notes on why these are shaped the way they are:
+
+- **`map-attribution` is geometric, not a string search.** Nobody deletes the attribution. Somebody adds a bottom banner in an unrelated PR, and the notice is still in the tree, still rendered, and covered. A `grep` for the string passes; the incident is "we breached ODbL for six weeks and nobody checked". **Failing this check is treated as a licence incident, not a layout bug.**
+- **`map-egress` inspects captured traffic, not imports.** A lint rule can prove that only `MapCanvas` imports `@maplibre/*`; it cannot prove that nothing in the dependency tree resolves a font, a sprite, or a telemetry beacon from someone else's host. Only the wire can.
+- **`map-style` bans a `latest` alias deliberately.** The style must name one dated archive, because that is what makes a bad basemap a one-line rollback rather than a cache-invalidation problem ([Environments §11](01-environments.md)).
 
 ---
 
@@ -259,6 +292,38 @@ There are no `DOWN` migrations. Reversing a migration on a live database with co
 | Data-quality checks | Nightly | Stale safe-spot hours, orphaned media |
 | Preview cleanup | Daily | Destroy orphaned branch projects |
 | Flake report | Weekly | Auto-quarantine above 2% |
+| **Basemap tile build** | **Monthly** | Geofabrik extract → Protomaps build → dated PMTiles → R2 → promote to `staging` (§9.1) |
+| Basemap coverage and age | Nightly | TC-GEO-47 (every active spot inside coverage), TC-GEO-49 (`basemap_age_days` ≤ 45) |
+| OSM candidate import | Monthly, production only | `osm-import` per active metro; result recorded as `osm_import_job_result` |
+
+### 9.1 The monthly tile build
+
+```yaml
+# .github/workflows/tile-build.yml
+on:
+  schedule: [{ cron: '0 3 1 * *' }]        # 03:00 UTC, first of the month
+  workflow_dispatch:                        # on demand when a market needs it
+
+jobs:
+  build:
+    steps:
+      - name: Download Geofabrik extracts for every active metro
+      - name: Protomaps basemap build            # tooling version PINNED, not floating
+      - name: Emit sharecropr-basemap-$(date +%Y%m).pmtiles
+      - name: Verify archive                     # TC-GEO-46, 48, 50 — before it is uploaded
+      - name: Upload to R2                       # immutable; NEVER overwrite an existing key
+      - name: Promote to staging                 # repoint the staging style; production waits
+      - name: Record osm_tile_build_result       # success or failure, either way
+```
+
+Four properties this workflow must keep, each of which is a lesson [ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md) already paid for in advance:
+
+1. **The tooling version is pinned.** An unpinned Protomaps version turns a cartography regression into an archaeology exercise, and TC-GEO-50's reproducibility assertion is what notices.
+2. **Verification happens before upload, not after promotion.** A bad archive that never reaches the bucket needs no rollback.
+3. **Upload never overwrites.** Archives are immutable and date-stamped; that is what makes rollback a one-line style change ([Runbook 15](05-runbooks.md)).
+4. **A failed or skipped run is recorded, not silent.** A monthly job that quietly stops running is exactly the operational tax ADR-0020's steel-man warns about, and the only detector is that somebody notices the metric stopped moving. Two failures or skips in a quarter is the documented signal to take the managed-tiles fallback rather than to automate harder around it.
+
+Production promotion is **not** automatic. A new archive soaks on staging alongside the release candidate; promoting it to production is repointing the production style, which ships as a reviewed change.
 
 ---
 

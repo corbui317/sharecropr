@@ -79,9 +79,14 @@ export default [
     ignores: ['src/features/map/components/MapCanvas.tsx'],
     rules: {
       'no-restricted-imports': ['error', {
-        paths: [{
-          name: 'react-native-maps',
-          message: 'react-native-maps is isolated behind MapCanvas. See 02-mobile-architecture.md §4.',
+        patterns: [{
+          // Both the current renderer and the documented fallback. The rule bans
+          // the *seam being bypassed*, not one library, so adopting the fallback
+          // under ADR-0013 does not require editing this rule under pressure.
+          group: ['@maplibre/*', 'react-native-maps', 'react-native-maps/*', '@rnmapbox/*'],
+          message:
+            'The map renderer is isolated behind MapCanvas — exactly one file may import it. ' +
+            'See 02-mobile-architecture.md §4 and ADR-0019.',
         }],
       }],
     },
@@ -89,7 +94,9 @@ export default [
 ];
 ```
 
-Three rules, three seams: domain purity, transport isolation, map-vendor isolation. Each has a corresponding CI check that fails the build rather than warning.
+Three rules, three seams: domain purity, transport isolation, map-renderer isolation. Each has a corresponding CI check that fails the build rather than warning.
+
+The third rule has now been cashed in once. [ADR-0019](adr/ADR-0019-openstreetmap-maplibre.md) replaced the entire map substrate — renderer, tile source, and marker model — and the blast radius was one component plus its type adapters. That is the argument for seams, made concretely rather than in the abstract. Note also that a lint rule is a *source* check: it cannot see a transitive dependency reaching a network host, which is why NFR-102 is asserted from captured traffic instead.
 
 ### 1.2 Folder tree
 
@@ -164,14 +171,19 @@ src/
 │   ├── taxonomy/                          # species/variety pickers, bundled-data loader
 │   ├── map/
 │   │   ├── components/
-│   │   │   ├── MapCanvas.tsx              # ← the ONLY react-native-maps importer
-│   │   │   ├── SafeSpotMarker.tsx
-│   │   │   ├── ClusterMarker.tsx
+│   │   │   ├── MapCanvas.tsx              # ← the ONLY @maplibre/* importer
+│   │   │   ├── OsmAttribution.tsx         # "© OpenStreetMap contributors" — NFR-99
+│   │   │   ├── MarkerLayer.tsx            # ShapeSource + SymbolLayer, one FeatureCollection
 │   │   │   ├── FollowMeButton.tsx
 │   │   │   ├── InventoryFab.tsx
 │   │   │   ├── FilterChips.tsx
 │   │   │   ├── StalenessBanner.tsx
+│   │   │   ├── TileDegradedChip.tsx       # non-blocking; the whole tile-failure UI
 │   │   │   └── SafeSpotSheet.tsx
+│   │   ├── style/
+│   │   │   └── sharecropr-basemap.json    # the style JSON — reviewed like code
+│   │   ├── data/
+│   │   │   └── gazetteer.<metro>.json     # bundled localities; no third-party geocoder
 │   │   ├── hooks/
 │   │   │   ├── useMapMarkers.ts           # supercluster wrapper
 │   │   │   ├── useFollowMode.ts
@@ -588,27 +600,43 @@ The client's `canTransact` is a **UX affordance only**. The authority is `app.ca
 
 ## 4. The map screen
 
-The map is the app's front door and its hardest performance problem. [PRD Assumption A5](../00-foundation/02-prd.md) — that `react-native-maps` performs acceptably under the New Architecture with 200+ clustered markers — is validated by a mandatory two-day spike before any other implementation work. Everything below assumes that spike passes; if it doesn't, the seam in §4.1 is what makes the Mapbox fallback a bounded change.
+The map is the app's front door and its hardest performance problem. It renders **OpenStreetMap vector tiles through `@maplibre/maplibre-react-native`**, from a PMTiles archive we host ourselves ([ADR-0019](adr/ADR-0019-openstreetmap-maplibre.md), [ADR-0020](adr/ADR-0020-pmtiles-self-hosting.md)). There is no Apple Maps, no Google Maps, no tile vendor, and no API key anywhere on this screen.
+
+[PRD Assumption A5](../00-foundation/02-prd.md) — that MapLibre RN performs acceptably under the New Architecture at 200 clustered markers — is validated by a mandatory spike before any other implementation work. **That spike is reset**: the profiled `react-native-maps` spike answered a different question, and MapLibre RN's Fabric/TurboModule interop is the specific unknown to close first. Everything below assumes it passes; if it doesn't, the seam in §4.1 makes reverting to [ADR-0013](adr/ADR-0013-map-library.md) a one-component change.
 
 ### 4.1 The `MapCanvas` isolation seam
 
-`src/features/map/components/MapCanvas.tsx` is the only file in the repository permitted to import `react-native-maps` (enforced by the lint rule in §1.1). It exposes a vendor-neutral props contract:
+`src/features/map/components/MapCanvas.tsx` is the only file in the repository permitted to import `@maplibre/*` (enforced by the lint rule in §1.1). It exposes a renderer-neutral props contract:
 
 ```tsx
+export type Camera = {
+  center: { lat: number; lng: number };
+  zoom: number;                                     // MapLibre zoom level, not deltas
+};
+
 export type MapCanvasProps = {
-  camera: Camera;                                   // { center: LatLng; zoom: number }
+  camera: Camera;
   markers: readonly RenderableMarker[];             // already clustered by useMapMarkers
-  userLocation: LatLng | null;
-  onRegionChange: (r: Region, gesture: boolean) => void;   // gesture=true breaks follow mode
+  userLocation: QuantizedPoint | null;              // ~100 m quantized before it gets here
+  styleUrl: string;                                 // our style JSON → our PMTiles archive
+  onCameraChanged: (c: Camera, gesture: boolean) => void;  // gesture=true breaks follow mode
   onMarkerPress: (id: string) => void;
   onMapPress: () => void;
   children?: React.ReactNode;                       // overlays, positioned in RN space
 };
 ```
 
-Everything else — clustering, follow mode, filters, the sheet, the FAB — is plain React Native and knows nothing about the map vendor. The cost of swapping vendors is this one file plus the `Camera`/`Region` type adapters. That is roughly 300 lines rather than a rewrite, which is exactly the size of insurance [ADR-0013](adr/ADR-0013-map-library.md) says the risk deserves.
+Two changes from the pre-OSM contract are worth naming rather than glossing. `Region` with `latitudeDelta`/`longitudeDelta` was a `react-native-maps` concept that did not survive the swap — [ADR-0013](adr/ADR-0013-map-library.md)'s own steel-man predicted exactly this, and it was right. And `styleUrl` is now a prop, because the basemap is a versioned artifact of ours rather than an invisible platform default.
 
-The seam also means **the map screen is testable without a map**: Jest renders `MapCanvas` as a stub that emits synthetic region changes, and the clustering, follow-mode, and filter logic are covered without a simulator.
+Everything else — clustering, follow mode, filters, the sheet, the FAB — is plain React Native and knows nothing about the renderer. The cost of the ADR-0019 swap was this one file plus the type adapters, which is the insurance being claimed rather than merely described.
+
+**Markers are GPU layers, not views.** The whole marker set reaches MapLibre as a single GeoJSON `FeatureCollection` on one `ShapeSource`, drawn by a `SymbolLayer` whose icon, badge, and label are data-driven style expressions ([SPEC-008-R69](../03-specs/SPEC-008-interactive-map.md)). 200 markers is one source update, not 200 native views crossing the bridge — which is why `tracksViewChanges` and the per-marker memoization gymnastics of the old design are simply gone (§4.4).
+
+**`MapCanvas` renders the attribution, unconditionally.** `OsmAttribution` is mounted by the seam itself rather than by the screen, so no consumer can compose a map without it and no layout refactor can drop it by rearranging the screen. That is NFR-99 and it is an ODbL obligation, not a design preference (§4.4a).
+
+**MapLibre's built-in source clustering is not enabled.** `cluster`, `clusterRadius`, `clusterMaxZoom`, and `clusterProperties` stay off the `ShapeSource`. Clustering is `supercluster` on the JS side and only that (§4.3, [SPEC-008-R70](../03-specs/SPEC-008-interactive-map.md)) — two clustering implementations that disagree at a zoom boundary produce a bug with no owner and no reproducible case.
+
+The seam also means **the map screen is testable without a map**: Jest renders `MapCanvas` as a stub that emits synthetic camera changes, and the clustering, follow-mode, and filter logic are covered without a simulator.
 
 ### 4.2 Follow mode
 
@@ -624,7 +652,7 @@ app returns to fg, following = true and last fix > 60 s old  → single fresh fi
 
 `following` lives in Zustand and is read by `useFollowMode`, not by the screen — a boolean in React state here re-renders the marker tree on every location tick.
 
-The critical detail: **programmatic camera moves must not clear follow mode.** `react-native-maps` fires `onRegionChangeComplete` for animations too, so the gesture flag (`isGesture` on iOS, `reason === 1` on Android) is the only reliable discriminator. Getting this wrong produces a follow button that turns itself off half a second after you press it — the single most-reported bug in every map app that has shipped it wrong.
+The critical detail: **programmatic camera moves must not clear follow mode.** Every map SDK fires its camera-changed callback for animations as well as gestures, so the discriminator is the only thing standing between us and a follow button that turns itself off half a second after you press it — the single most-reported bug in every map app that has shipped it wrong. On MapLibre the flag is `isUserInteraction` on the region-change payload; normalising it to the seam's `gesture: boolean` is `MapCanvas`'s job, and it is the one piece of renderer trivia the swap did not eliminate.
 
 ### 4.3 Clustering
 
@@ -650,35 +678,45 @@ const markers = useMemo(
 - The index is rebuilt only when the underlying query result changes, not on camera change. `getClusters` is cheap; `load` is not.
 - Cluster press → `animateCamera` to `getClusterExpansionZoom`, which is the behaviour users already expect from every map they use.
 - **Cluster styling encodes supply, not count**: the badge shows the summed `listing_count` of the member spots, because "7 spots" is less useful to a gardener than "23 things available here" ([PRD C8](../00-foundation/02-prd.md)).
-- Above `minPoints`, clustering happens on the JS thread in `useMemo`. At 200 features this measures in single-digit milliseconds. If the spike shows otherwise, the fallback is moving `getClusters` into a worklet — not moving it to the server, because a server-side cluster index would need the user's viewport at high precision on every pan, which is exactly the query-pattern side channel [Location Privacy §12.4](04-location-privacy.md) warns about.
+- Above `minPoints`, clustering happens on the JS thread in `useMemo`. At 200 features this measures in single-digit milliseconds. If the spike shows otherwise, the fallback is moving `getClusters` into a worklet — **not** moving it to the server, and not switching to MapLibre's built-in source clustering. Server-side clustering needs the user's viewport at high precision on every pan, which is exactly the query-pattern side channel [Location Privacy §12.4](04-location-privacy.md) warns about; that argument is about the query pattern and is entirely unaffected by which renderer draws the result ([ADR-0019](adr/ADR-0019-openstreetmap-maplibre.md)).
 
-### 4.4 Marker memoization
+### 4.4 Marker rendering
+
+One source, one layer, style expressions. There is no per-marker React component and nothing about a marker crosses the JS/native boundary individually.
 
 ```tsx
-export const SafeSpotMarker = React.memo(
-  function SafeSpotMarker({ id, lat, lng, count, category, selected, onPress }: Props) {
-    return (
-      <Marker
-        coordinate={{ latitude: lat, longitude: lng }}
-        onPress={useCallback(() => onPress(id), [id, onPress])}
-        tracksViewChanges={false}          // ← the single most important prop on this screen
-        testID={`map.marker.${id}`}
-        accessibilityLabel={`${categoryLabel(category)}, ${count} items available`}
-      >
-        <SpotGlyph category={category} count={count} selected={selected} />
-      </Marker>
-    );
-  },
-  (a, b) => a.id === b.id && a.count === b.count && a.selected === b.selected,
-);
+// Inside MapCanvas — the only file that may write this.
+<ShapeSource id="spots" shape={featureCollection} onPress={handleFeaturePress}>
+  <SymbolLayer
+    id="spot-symbols"
+    style={{
+      iconImage: ['get', 'category'],                 // sprite in our own style bundle
+      iconAllowOverlap: true,
+      textField: ['to-string', ['get', 'listing_count']],
+      textSize: ['interpolate', ['linear'], ['zoom'], 10, 10, 15, 13],
+      iconOpacity: ['case', ['get', 'selected'], 1, 0.9],
+    }}
+  />
+</ShapeSource>
 ```
 
-Why this matters concretely:
+Why this is a simplification rather than a lateral move:
 
-1. **`tracksViewChanges={false}`.** With it `true` (the default), every marker re-rasterises its custom view **on every frame** of a pan. At 120 markers this is a guaranteed frame drop on any device. Markers set it `true` only for the ~300 ms after their count changes, then flip back.
-2. **Custom explicit comparator.** The parent passes a new `markers` array on every camera change. Without a comparator, all 200 markers re-render on every pan tick even though their props are structurally identical.
-3. **Stable `onPress` identity.** A fresh arrow function per render defeats `React.memo` entirely — a very common and completely invisible mistake, since the app still works, it is just slow.
-4. **Coordinates are primitives, not a `coordinate` object prop.** An object literal breaks referential equality every render.
+1. **A camera change is a no-op for the marker layer.** Panning does not re-render anything in React. The old design's `React.memo` comparator, stable `onPress` identity, and primitive-coordinate rules existed to stop 200 native views re-rendering per pan tick; that problem does not exist here, and neither do the four subtle ways of getting it wrong.
+2. **`tracksViewChanges` is gone.** It was the single most important prop on the old screen and the most common cause of a silent frame drop. There is no equivalent, because there is no rasterised custom view.
+3. **The feature properties are a closed set** — `(id, listing_count, category, label, selected)` and nothing else ([SPEC-008-R69](../03-specs/SPEC-008-interactive-map.md)). Geometry aside, no property carrying or derived from a *user* coordinate may appear on a feature. Constraining the payload at the seam is cheaper than auditing every future style expression.
+4. **The new frame-budget risk is style complexity, not marker count.** Label collision, sprite count, and glyph range are what will cost frames now. That is a different thing to profile, and the reset spike is where it gets profiled.
+5. **Sprites and glyphs are served from our own style bundle** (`styleUrl`), never from a third-party host — which is both NFR-102 and the reason a place label cannot fall back to a different font on Android than on iOS.
+
+### 4.4a Attribution and tile failure
+
+Two behaviours on this screen are obligations rather than preferences, and both are easy to break with a change that looks like a layout tidy-up.
+
+**Attribution (NFR-99).** `MapCanvas` mounts `OsmAttribution` itself. "© OpenStreetMap contributors" is rendered legibly in **every** state — before the first tile loads, when every tile fails, offline, rate-limited, permission-denied, empty — and on every screen showing OSM-derived spot data ([SPEC-008-R75](../03-specs/SPEC-008-interactive-map.md), [SPEC-007-R58](../03-specs/SPEC-007-safe-spots.md)). It is **not** localised, not abbreviated, and not collapsed behind an "ⓘ" tap target. Everything else on the screen — the sheet at any detent, the offline banner, the FAB, the chip row, the degraded chip — repositions around it rather than over it, and the layout guarantees that rather than achieving it by luck of z-order. It is a focusable element in the reading order with the accessible name "Map data from OpenStreetMap contributors", because a "reasonably visible" notice has to reach a user who cannot see. A client-side assertion emits `map.attribution_missing` if the node is unmounted or measures zero area while the map is visible; its alert threshold is one.
+
+**Tile failure.** A CDN outage, a 404 on the archive, or a cold cache in airplane mode degrades to a **neutral background with markers still at correct geographic positions**, a working camera, and the attribution still present. No modal, no block, no interruption — a non-blocking chip is the entire user-facing treatment, and every step of the exchange flow keeps working. This is also step 4 of the degradation ladder in §4.5, which means it is a state ordinary users reach and therefore a state that stays maintained. The client has no concept of a "wrong" or "stale" archive and shows no basemap-age messaging; staleness is an operational metric (NFR-101), not a user-facing one.
+
+**The map must be pannable and tappable before the first tile paints.** A map that blocks interaction on tiles has made the basemap load-bearing, and §4.5 is explicit that it is not.
 
 ### 4.5 The 200-marker budget, and what degrades first
 
@@ -698,7 +736,7 @@ Degradation order when the budget is exceeded — decided in advance so the choi
 1. **Marker glyph detail drops first.** Above 60 visible markers, spots render as flat dots without the count badge or category icon. Cheapest possible pixel, still positioned correctly.
 2. **Then clustering gets more aggressive.** `minPoints` drops to 2 and `radius` rises to 80 px, trading precision for marker count.
 3. **Then the viewport query stops following the pan.** Refetch-on-pan is debounced from 400 ms to 1200 ms and the staleness affordance appears.
-4. **Then the base map tiles go.** A neutral background with correctly positioned markers is a usable map; a smooth 15 fps tile crawl is not ([System Architecture §2](01-system-architecture.md)).
+4. **Then the base map tiles go.** A neutral background with correctly positioned markers is a usable map; a smooth 15 fps tile crawl is not ([System Architecture §2](01-system-architecture.md)). This is the same terminal state as a CDN outage (§4.4a), which is a deliberate convenience: one degraded rendering path, reached two ways, exercised by both. The attribution stays — the spot data is OSM-derived whether or not a tile ever loaded.
 5. **Last, we offer the list.** A persistent "View as list" affordance switches to `/map/list`, which is the same data with zero map cost — and is also the accessibility path (§9). This is why the list view is a real screen and not a fallback bolted on later.
 
 Notably **not** on the degradation list: reducing the query radius. Silently showing a user less of the world than they asked for is a correctness bug wearing a performance costume.
@@ -856,7 +894,8 @@ Offline is not a degraded mode bolted on at the end. A gardener standing in a li
 | --- | --- | --- | --- | --- |
 | **Crop taxonomy** | Full — bundled JSON in the binary, overlaid by an MMKV-cached server delta | N/A | None. Taxonomy is never "stale" in a way a user cares about. | Bundled + updatable. A version check at cold start (`GET /rest/v1/taxonomy_version`) pulls a delta; the app never blocks on it ([PRD C5](../00-foundation/02-prd.md)). |
 | **Inventory** | Full read from persisted Query cache | **Full write, queued** — add, edit, archive, photo upload | Per-row "pending sync" glyph | The one place with genuine offline write support. `gcTime` is 30 days for exactly this reason. |
-| **Map** | Last-known `safe_spots_near` result for the last-viewed viewport; safe-spot details from the 7-day cache | No | **Persistent staleness banner**: "Showing what was available 2 hours ago", with a retry affordance | Explicitly required by [PRD §4](../00-foundation/02-prd.md). Counts are shown greyed, because an available-count is the thing most likely to be wrong. Base tiles come from the OS map cache; outside it, a neutral background with correct marker positions. |
+| **Map** | Last-known `safe_spots_near` result for the last-viewed viewport; safe-spot details from the 7-day cache | No | **Persistent staleness banner**: "Showing what was available 2 hours ago", with a retry affordance | Explicitly required by [PRD §4](../00-foundation/02-prd.md). Counts are shown greyed, because an available-count is the thing most likely to be wrong. |
+| **Basemap tiles** | Whatever MapLibre's own tile cache happens to hold for recently-viewed areas. **No pre-download, no offline packs in MVP** | N/A | None of its own — a missing tile is not a staleness condition, it is the neutral background of §4.4a | **Offline map packs are [Phase 2](../06-roadmap/01-roadmap.md).** Owning the archive is what makes them achievable ([ADR-0020](adr/ADR-0020-pmtiles-self-hosting.md)) — the archive is already a file — but shipping them in MVP would mean an install-size or download-management conversation against NFR-08 that MVP does not need to have. Until then the honest position is: **the basemap may be blank offline, and the map still works.** |
 | **Exchanges** | Read-only from cache: requests, sessions, schedules, handoff time and place | **No** | Actions disabled with "You're offline" rather than hidden | The scheduled time and safe spot must be readable at the meeting, where connectivity is worst. That is the point of caching them. Transitions require a live view ([Exchange State Machine §5](07-exchange-state-machine.md)). |
 | **Messaging** | Read cached thread history (last 100 messages per thread) | **Queued send**, with an unmistakable pending state | Clock glyph on pending bubbles; the composer stays enabled; a thread-level "Waiting for connection" strip | A queued message that *looks* sent is a safety problem — someone believes they told their counterparty they're running late. See §6.2. |
 | **Notifications inbox** | Read from cache | Mark-read is queued (set semantics) | None needed | |
@@ -1103,7 +1142,7 @@ Stated plainly so they can be argued with.
 
 1. **The client mirrors the exchange state machine, and mirrors drift.** `domain/exchange/machine.ts` decides which buttons render. The transition table is generated from `private.legal_session_transitions` so the *shape* can't drift, but the **guards** (time windows, venue hours, "can transact") are hand-written twice — once in PL/pgSQL, once in TypeScript. The second copy will be wrong at some point, and the symptom will be a button that 409s. Mitigation is that `invalid_transition` is logged as an error rather than swallowed, so drift is visible in Sentry rather than only in support tickets. It is not prevented.
 
-2. **`react-native-maps` under the New Architecture is an unvalidated assumption at the time of writing.** [PRD A5](../00-foundation/02-prd.md) is exactly this, the two-day spike is mandatory, and `MapCanvas` is the insurance. But the insurance only covers the rendering layer — if we move to Mapbox we also inherit a different clustering model, a different offline story, and a per-map-load pricing conversation. The seam bounds the code change, not the product change.
+2. **MapLibre RN under the New Architecture is an unvalidated assumption at the time of writing, and it is a *newly* unvalidated one.** [PRD A5](../00-foundation/02-prd.md) is exactly this, the spike is mandatory, and it has been **reset** by [ADR-0019](adr/ADR-0019-openstreetmap-maplibre.md) — the profiling already done on `react-native-maps` answers a question we are no longer asking. MapLibre has a smaller community than the library it replaced, so a Fabric interop problem means reading source rather than finding an answer. `MapCanvas` is the insurance and it now has a proven claim history, but it bounds the *code* change, not the product one: reverting to ADR-0013 also gives back identical cross-platform rendering and reintroduces a vendor on the viewport path.
 
 3. **MMKV cache persistence widens the offline attack surface.** We persist message bodies and scheduled meeting times (both P1) to disk. It is encrypted with a SecureStore-held key, which is real protection against a stolen device and no protection at all against a rooted device with the app's runtime. The alternative — no offline read for exchanges — makes the app fail at the exact moment it matters (standing outside a library with one bar). Accepted trade, documented in [ADR-0011](adr/ADR-0011-state-management.md).
 
@@ -1117,6 +1156,10 @@ Stated plainly so they can be argued with.
 
 8. **The accessible list view will rot unless it stays on a real user path.** Tying it to the performance degradation ladder (§4.5) is a deliberate structural defence against this, but a feature added to the map and not to the list is a regression that no test will catch. The mitigation is a Definition-of-Done checklist item, which is the weakest kind of mitigation.
 
+9. **We render a basemap we are responsible for, and the client cannot tell a good archive from a rotten one.** That is deliberate (§4.4a) — there is no user-facing tile-staleness signal and there should not be one. It means the only thing between a silently stale basemap and a user is `basemap_age_days` and somebody still watching that alert in month nine. The client-side failure is honest and well-handled; the *operational* failure has no client-side detector by design.
+
+10. **The attribution is one layout change away from a licence breach.** NFR-99 is discharged in the UI, which means a well-meaning redesign — a new bottom banner, a sheet that grows a detent, a safe-area change — can breach ODbL with nothing appearing broken. Mounting `OsmAttribution` inside `MapCanvas` and asserting non-zero measured area geometrically in CI is a real structural defence, but it is defending a *visual* property, and visual properties are the ones tests approximate rather than prove.
+
 ---
 
 ## Change Log
@@ -1124,3 +1167,4 @@ Stated plainly so they can be argued with.
 | Date | Version | Author | Change |
 | --- | --- | --- | --- |
 | 2026-08-08 | 1.0.0 | Architecture | Initial mobile architecture |
+| 2026-08-09 | 1.1.0 | Architecture | Map screen restated for MapLibre over self-hosted OSM vector tiles ([ADR-0019](adr/ADR-0019-openstreetmap-maplibre.md), [ADR-0020](adr/ADR-0020-pmtiles-self-hosting.md)): seam contract now `Camera` + `styleUrl`, markers are a `ShapeSource`/`SymbolLayer` rather than native views, new §4.4a for attribution and tile failure. Lint rule now bans `@maplibre/*` (and the fallback renderers) outside the seam. Offline table splits basemap tiles out — offline packs are Phase 2. Weaknesses 2, 9, 10 |

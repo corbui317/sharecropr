@@ -1,0 +1,65 @@
+{
+  "version": 8,
+  "name": "Sharecropr Basemap",
+  "metadata": {
+    "sharecropr:archive": "{{BASEMAP_ARCHIVE}}",
+    "sharecropr:tile_origin": "{{TILE_ORIGIN}}"
+  },
+  "glyphs": "{{TILE_ORIGIN}}/fonts/{fontstack}/{range}.pbf",
+  "sprite": "{{TILE_ORIGIN}}/sprites/sharecropr-basemap",
+  "sources": {
+    "basemap": {
+      "type": "vector",
+      "url": "pmtiles://{{TILE_ORIGIN}}/{{BASEMAP_ARCHIVE}}",
+      "attribution": "© OpenStreetMap contributors"
+    }
+  },
+  "layers": [
+    {
+      "id": "background",
+      "type": "background",
+      "paint": {
+        "background-color": "#e8ede9"
+      }
+    },
+    {
+      "id": "water",
+      "type": "fill",
+      "source": "basemap",
+      "source-layer": "water",
+      "paint": {
+        "fill-color": "#aad3df"
+      }
+    },
+    {
+      "id": "landuse",
+      "type": "fill",
+      "source": "basemap",
+      "source-layer": "landuse",
+      "paint": {
+        "fill-color": "#e8ede9",
+        "fill-opacity": 0.6
+      }
+    },
+    {
+      "id": "roads",
+      "type": "line",
+      "source": "basemap",
+      "source-layer": "roads",
+      "paint": {
+        "line-color": "#ffffff",
+        "line-width": 1.5
+      }
+    },
+    {
+      "id": "buildings",
+      "type": "fill",
+      "source": "basemap",
+      "source-layer": "buildings",
+      "paint": {
+        "fill-color": "#d6ddd8",
+        "fill-opacity": 0.7
+      }
+    }
+  ]
+}

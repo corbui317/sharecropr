@@ -33,7 +33,7 @@ Applied in order. The first matching rule wins.
 | **PostgREST reads** | `profile_cards`, `crop_kingdoms`, `crop_categories`, `crop_species`, `crop_varieties`, `safe_spots`, `inventory_items`, `listings`, `listing_safe_spots`, `exchange_requests`, `exchange_sessions`, `message_threads`, `messages`, `notifications`, `notification_preferences`, `devices`, `gardens`, `verifications`, `media_assets`, `ratings`, `blocks` | 21 |
 | **PostgREST writes** | `inventory_items` (INSERT/UPDATE), `listings` (INSERT/UPDATE draft/active only), `gardens` (UPDATE non-derived columns), `profiles` (UPDATE self), `notification_preferences` (UPSERT), `messages` (INSERT), `blocks` (INSERT) | 7 |
 | **Postgres RPCs** | Every state transition, every read touching `private`, every spatial or ranked query | 18 |
-| **Edge Functions** | KYC start + webhook, media processing, push drain, content scan, moderation action, account deletion | 7 |
+| **Edge Functions** | KYC start + webhook, media processing, push drain, content scan, moderation action, account deletion, OSM candidate import | 8 |
 
 ### 1.3 The load-bearing negatives
 
@@ -44,6 +44,7 @@ Restating the things that are deliberately *absent*, because their absence is th
 - **`gardens.display_point`, `h3_r7`, `h3_r9` are not client-writable**, enforced by a trigger that raises `42501`, not by an omitted column in a repository function ([Location Privacy §4.3](04-location-privacy.md)).
 - **The `private` schema is not in PostgREST's `db-schemas` setting**, and no role has any grant on it. There is no request that reaches it.
 - **`safe_spots` has no client write path.** Staff-only in MVP ([PRD C7](../00-foundation/02-prd.md)).
+- **`private.osm_spot_candidates` is not reachable at all.** It is in `private` for the same reason `garden_locations` is: "an unreviewed candidate is never discoverable" is then a property of where the row sits, not of a status filter somebody has to remember in every query ([ADR-0021](adr/ADR-0021-osm-safe-spot-sourcing.md), [SPEC-007-R44](../03-specs/SPEC-007-safe-spots.md)). `GET /rest/v1/osm_spot_candidates` 404s at the API layer before it reaches Postgres.
 - **There is no `DELETE` anywhere.** Deletion is soft (`deleted_at` via UPDATE) or goes through `request_account_deletion` → `account-delete`. No table grants `DELETE` to `authenticated`.
 
 ---
@@ -835,6 +836,47 @@ Executes the pipeline in [Privacy & Data Retention](../02-security/04-privacy-an
 
 Idempotent and resumable — it processes users one at a time in a transaction each, so a timeout mid-batch loses no work.
 
+### 6.8 `osm-import`
+
+| | |
+| --- | --- |
+| Invoked by | `pg_cron`, **monthly per active metro** |
+| Auth | `service_role`. **Not reachable with a user JWT**, not callable from the moderation console, and not callable from CI — an allow-list on the invoking role, plus an egress allow-list that names the Overpass host for this function and no other ([SPEC-007-R60](../03-specs/SPEC-007-safe-spots.md)) |
+| Egress | Overpass API only |
+| Writes | `private.osm_spot_candidates` only |
+
+Queries Overpass per launch-metro bounding box, one amenity tag at a time, and writes safe-spot *candidates* for human review ([ADR-0021](adr/ADR-0021-osm-safe-spot-sourcing.md)). On a refresh run it also diffs upstream against linked live spots and raises review flags for deletions, renames, address changes, `opening_hours` changes, and moves over 50 m.
+
+Four properties are the whole contract:
+
+1. **It cannot publish a spot.** The function has no write path to `public.safe_spots` in any status. Promotion is a human action in the moderation console that must satisfy every rule the manual path satisfies, including a separately recorded hours verification ([SPEC-007-R45](../03-specs/SPEC-007-safe-spots.md), [SPEC-007-R49](../03-specs/SPEC-007-safe-spots.md)).
+2. **Nothing auto-applies to a live row.** Every upstream diff becomes a review flag carrying a before/after, never an `UPDATE`. An upstream edit is not a verification, and treating it as one would let anyone with an OSM account reset our 90-day hours-staleness clock.
+3. **Imported `opening_hours` is a reviewer hint that can never reach a user.** It is stored as `suggested_hours_raw` on the candidate, labelled as unverified in the console, and appears in no client-reachable response shape. The candidate table deliberately has no column named `hours` or `hours_verified_at`, so there is nothing for a careless `INSERT … SELECT` to align with.
+4. **Overpass is treated as donated infrastructure with no SLA.** Descriptive `User-Agent` with a contact address, `/api/status` checked before a batch, exponential backoff on `429` and then abandonment rather than retrying past the advertised slot. A failed month delays discovery and affects nothing a user can see.
+
+Failure is recorded as `osm_import_job_result` ([Observability §5.2](../05-operations/04-observability.md)) rather than raised — a monthly discovery job is not something to page anyone about, but a live metro with no successful run in a month is.
+
+---
+
+## 6a. Tiles are not part of this API
+
+The basemap is served outside every mechanism this document describes, and that is deliberate rather than an omission.
+
+| Property | Value |
+| --- | --- |
+| Surface | Sharecropr tile origin — Cloudflare CDN in front of an R2-hosted PMTiles archive ([ADR-0020](adr/ADR-0020-pmtiles-self-hosting.md)) |
+| Method | Plain cacheable HTTPS `GET` with a `Range` header (PMTiles byte offsets) |
+| Auth | **None.** No `Authorization` header, no `apikey`, no cookie, no session token |
+| Identifiers | **None.** No user id, no device id, no `x-request-id`, no `x-client-info` |
+| Addressing | Standard `z/x/y` and byte offsets. **No `?lat=`, no viewport centre, no locality string, no `safe_spot_id`** — in a path, a query parameter, a header, or a body ([SPEC-008-R80](../03-specs/SPEC-008-interactive-map.md)) |
+| Rate limiting | CDN-level only. Not in the Kong table (§7.2) and not in a Postgres token bucket |
+| Errors | HTTP, handled by the client as "no tiles" — never mapped into the §3.4 taxonomy |
+| Style, sprites, glyphs | Same origin. Never fetched from a host we do not control (NFR-102) |
+
+**The absence of a credential is the point.** It means a tile request is not attributable to a user *even by us*, so there is no viewport log to protect, subpoena, or leak. It also means there is no key to rotate, restrict, or accidentally ship in a bundle — one fewer entry in [Environments §6](../05-operations/01-environments.md) and one fewer thing for the secret scanner to catch.
+
+It follows that **§9's location invariant does not need an exception for tiles**. A `z/x/y` address is a public grid index, the same one every client requesting that tile uses; it is not a coordinate in the sense this document means, and the difference is exactly [Location Privacy §6](04-location-privacy.md). The client-side assertion is a wire-level test ([SPEC-008-T79/T80](../03-specs/SPEC-008-interactive-map.md)), because reading imports cannot prove what a transitive dependency puts on the network.
+
 ---
 
 ## 7. Rate limiting
@@ -1004,8 +1046,9 @@ Every other endpoint has **no column, parameter, or payload key** capable of car
 | API-08 | Realtime publication column lists contain no coordinate column and no `handoff_code` | pgTAP over `pg_publication_tables` | Yes |
 | API-09 | EXIF absent from every stored asset, checked against a real geotagged JPEG | Integration (LP-09) | Yes |
 | API-10 | Production canary: synthetic user A cannot obtain user B's garden coordinate by any documented or undocumented endpoint | Scheduled cron, pages on failure (LP-10) | Alerts |
+| API-11 | **Map egress sweep:** every request the map screen makes — tiles, sprites, glyphs, style, geocoding — targets the Sharecropr tile origin or the Sharecropr Supabase origin and nothing else; and no captured tile request carries a credential or a coordinate-shaped value beyond `z/x/y` and byte offsets | Wire-level capture in CI (NFR-102, [SPEC-008-T78…T80](../03-specs/SPEC-008-interactive-map.md)) | Yes |
 
-API-04 and API-10 are the two that matter. Every other check verifies the system we intended to build; those two verify the system we actually deployed.
+API-04 and API-10 are the two that matter. Every other check verifies the system we intended to build; those two verify the system we actually deployed. API-11 is in the same family as API-04 — it inspects traffic rather than source, because a dependency phoning home is invisible to an import audit.
 
 ---
 
@@ -1025,3 +1068,4 @@ API-04 and API-10 are the two that matter. Every other check verifies the system
 | Date | Version | Author | Change |
 | --- | --- | --- | --- |
 | 2026-08-08 | 1.0.0 | Architecture | Initial API contract |
+| 2026-08-09 | 1.1.0 | Architecture | §6a added: basemap tiles are unauthenticated, unidentified, cacheable range `GET`s to our own CDN and sit outside the PostgREST/RPC surface entirely ([ADR-0020](adr/ADR-0020-pmtiles-self-hosting.md)). §6.8 `osm-import` added — scheduled, server-side only, writes candidates and cannot publish a spot ([ADR-0021](adr/ADR-0021-osm-safe-spot-sourcing.md)). `private.osm_spot_candidates` added to §1.3. New CI check API-11 |

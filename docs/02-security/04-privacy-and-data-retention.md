@@ -152,7 +152,7 @@ Identity for a DSAR is established by an authenticated in-app session. Email-onl
 
 | Regime | Position |
 | --- | --- |
-| **GDPR** | Applied globally. Controller for user data; Persona, Supabase, Expo, Sentry, and PostHog are sub-processors under DPAs. Lawful bases in §2. No cross-border transfer of P0 data — it never leaves the primary region. |
+| **GDPR** | Applied globally. Controller for user data; Persona, Supabase, Expo, Cloudflare, Sentry, and PostHog are sub-processors under DPAs. **OpenStreetMap and Overpass are not sub-processors** — no user data reaches them (§7.1). Lawful bases in §2. No cross-border transfer of P0 data — it never leaves the primary region. |
 | **CCPA / CPRA** | We do not sell or share personal information as defined, and there is no advertising model. "Do Not Sell" is presented anyway, and it is honest that there is nothing to opt out of. |
 | **COPPA** | Under-13 prohibited outright. Over-18 required to transact, enforced through KYC. We do not knowingly collect children's data; a report of a minor account is severity-1 and results in immediate suspension pending review. |
 | **State biometric laws (BIPA and similar)** | We collect and store **no** biometric data. The vendor does, under its own consent flow presented before capture. Structural avoidance rather than compliance. |
@@ -171,8 +171,21 @@ Identity for a DSAR is established by an authenticated in-app session. Email-onl
 | Sentry | Crash and performance | Scrubbed diagnostics; no PII, no coordinates | US |
 | PostHog | Product analytics | Pseudonymous ids, H3 r5 max | US |
 | Cloudflare R2 | Media storage | EXIF-stripped images | US |
+| **Cloudflare R2 + CDN** | **Basemap tile serving** | Tile requests: a `z/x/y` address, a byte range, and an IP. **No user identifier, no device identifier, no session token, no credential of any kind** — a tile request is not attributable to a user, including by us ([API Contract §6a](../01-architecture/06-api-contract.md)) | US / global edge |
 
 The register is published, and material changes are notified 30 days in advance with a right to object.
+
+### 7.1 Two clarifications about the map, because the obvious assumption is wrong
+
+**No map vendor receives your viewport.** Until 2026-08-09 the basemap was Apple Maps on iOS and Google Maps on Android, which meant every pan and zoom sent a viewport to a large ad-adjacent company — invisibly, because it arrived bundled with the operating system rather than as a vendor we chose. [ADR-0019](../01-architecture/adr/ADR-0019-openstreetmap-maplibre.md) removed that. **Apple and Google no longer appear in this register in a mapping capacity at all**; their only remaining role is APNs/FCM transport, as listed above.
+
+What replaced them is Cloudflare, which we already needed for media storage. It is a CDN and object store, not a map vendor with a view of user behaviour. It sees tile requests — necessarily, since it serves them — and those requests carry nothing that identifies who made them. There is consequently no viewport log for us to retain, disclose, or be compelled to produce, which is a stronger statement than a retention policy.
+
+We should be honest about the size of this win rather than overstate it: **the operating system already knows precisely where the user is**, continuously, and a tile request revealing that someone is looking at a map of Ann Arbor tells Apple or Google nothing they do not hold ([THR-46](01-threat-model.md)). The real gain is that there is no *additional* processor in that position, no DPA to maintain around one, and nothing to disclose here.
+
+**Overpass and OpenStreetMap receive no user data whatsoever.** They are not sub-processors and do not belong in the table above. OSM is an upstream *source*: Geofabrik extracts feed a monthly tile build, and the Overpass API is queried **only** by a scheduled server-side Edge Function importing civic POIs for human review ([ADR-0021](../01-architecture/adr/ADR-0021-osm-safe-spot-sourcing.md)). No client, no console action, no CI job and no user-triggered path can reach Overpass — asserted from the deployed egress policy, not from source ([SPEC-007-R60](../03-specs/SPEC-007-safe-spots.md), SPEC-007-T75). Data flows from OSM to us and never the other way.
+
+The one thing that would change this is contributing corrections back upstream — publishing which venues we phone-verified would disclose our operating footprint. It is out of MVP scope and is a Product-plus-Legal decision, not an engineering one.
 
 ---
 
@@ -243,3 +256,4 @@ Any feature touching personal data answers these before its spec reaches `Approv
 | Date | Version | Author | Change |
 | --- | --- | --- | --- |
 | 2026-08-08 | 1.0.0 | Security + Legal | Initial privacy and retention policy |
+| 2026-08-09 | 1.1.0 | Security + Legal | §7 sub-processor register updated for the OpenStreetMap decision ([ADR-0019](../01-architecture/adr/ADR-0019-openstreetmap-maplibre.md), [ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md), [ADR-0021](../01-architecture/adr/ADR-0021-osm-safe-spot-sourcing.md)). **Apple and Google no longer receive viewport data** — they appear only as APNs/FCM transport. Cloudflare R2 + CDN added for tile serving, receiving tile requests with no user identifier. New §7.1 records that Overpass is queried server-side only and is not a sub-processor because no user data reaches it |

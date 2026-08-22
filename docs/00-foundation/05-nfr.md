@@ -27,6 +27,8 @@ Requirement IDs are `NFR-##` and are referenced from specs and tests.
 
 **The reference device is a three-year-old mid-range phone, not a current flagship.** It is the device the budget is written against and the one most likely to be skipped in QA. Skipping it is how a product becomes unusable for the half of users who don't upgrade annually.
 
+NFR-01 and NFR-03 are unchanged by the move to MapLibre ([ADR-0019](../01-architecture/adr/ADR-0019-openstreetmap-maplibre.md)), but the shape of the work behind them is different and the budget should be read accordingly. Markers are GPU layers driven by one GeoJSON source, not 200 native marker views crossing the bridge — 200 markers is one source update. The 200-marker cap survives as a privacy and payload bound rather than as a rendering bound, and the new frame-budget risk is style complexity (label collision, sprite count) rather than marker count. NFR-01 now also depends on the tile path: the map must be pannable and tappable before the first tile paints, so a slow edge costs context, never interactivity.
+
 ### 1.2 Backend
 
 | ID | Metric | Budget | Conditions | Verified by |
@@ -213,9 +215,30 @@ MVP ships `en-US` only. Externalizing strings costs nothing now and is expensive
 
 NFR-96 is the one an attacker can drive up directly, which makes its alarm a security control as much as a finance one ([R-07](../06-roadmap/02-open-risks.md)).
 
+Tile serving does not appear here as a per-map-load line because there isn't one. [ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md) makes the basemap a storage-and-egress cost — estimated under $10/month at MVP scale, folded into NFR-95 — rather than a vendor's pricing decision. The number to watch is the trend, and its revisit trigger is $50/month.
+
 ---
 
-## 12. Verification summary
+## 12. Basemap and tiles
+
+We own the basemap now ([ADR-0019](../01-architecture/adr/ADR-0019-openstreetmap-maplibre.md), [ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md)). These four requirements are the price of that, and the first is a licence obligation rather than a quality target.
+
+| ID | Requirement | Budget / threshold | Verified by |
+| --- | --- | --- | --- |
+| NFR-99 | **"© OpenStreetMap contributors" is rendered on the map and on every surface showing OSM-derived safe-spot data, in every UI state, unobscured** | Present, legible, ≥ 4.5:1 contrast, non-zero measured area. Always — not on tile-load success, not behind a tap-to-reveal | CI, blocking. E2E over every map state and sheet detent ([SPEC-008-T69/T70](../03-specs/SPEC-008-interactive-map.md), [SPEC-007-R58](../03-specs/SPEC-007-safe-spots.md)) |
+| NFR-100 | Tile serving latency at the CDN edge in a launch market | **p95 < 300 ms** | Synthetic edge measurement, continuous ([SPEC-008-R72](../03-specs/SPEC-008-interactive-map.md)) |
+| NFR-101 | `basemap_age_days` — days since the served PMTiles archive was built | **≤ 45** | Monitored metric with an alert ([Observability §5.2](../05-operations/04-observability.md)) |
+| NFR-102 | **No map, tile, sprite, glyph, style, or geocoding request leaves Sharecropr-controlled infrastructure** | Zero requests to a non-allowlisted host | CI wire-level capture, blocking ([SPEC-008-T78/T79](../03-specs/SPEC-008-interactive-map.md)) |
+
+NFR-99 is the only requirement in this document that a well-meaning redesign can breach without anything appearing broken, which is why its verification is a geometric assertion in CI and not a review checklist item. Its threshold is one occurrence.
+
+NFR-101 exists because "we own the basemap" is only safe if someone notices when it rots. A stale archive is not a user-visible failure — the map looks fine, it is just wrong about a building that opened last month — so the metric is the only detector.
+
+NFR-102 is the wire-level restatement of the privacy consistency argument in ADR-0019. It is asserted from captured traffic rather than from an import audit, because a transitive dependency phoning home is exactly the case an import audit misses.
+
+---
+
+## 13. Verification summary
 
 | Category | Where enforced |
 | --- | --- |
@@ -228,6 +251,9 @@ NFR-96 is the one an attacker can drive up directly, which makes its alarm a sec
 | Accessibility | Automated per PR, manual per release |
 | Compliance | Release checklist, CI manifest checks |
 | Cost | Billing alerts |
+| **Attribution (NFR-99)** | CI geometric assertion over every map state and sheet detent; client-side `map.attribution_missing` detector in production |
+| **Tile serving (NFR-100, NFR-101)** | Synthetic edge probes per launch market; `basemap_age_days` gauge with a 45-day alert; monthly tile-build job result |
+| **Map egress (NFR-102)** | Wire-level request capture in CI against a host allowlist, blocking |
 
 **A requirement in this document with no verification row is a requirement we are pretending to have.** Adding one requires naming how it will be measured.
 
@@ -238,3 +264,4 @@ NFR-96 is the one an attacker can drive up directly, which makes its alarm a sec
 | Date | Version | Author | Change |
 | --- | --- | --- | --- |
 | 2026-08-08 | 1.0.0 | Engineering | Initial NFRs |
+| 2026-08-09 | 1.1.0 | Engineering | §12 added for the OpenStreetMap basemap ([ADR-0019](../01-architecture/adr/ADR-0019-openstreetmap-maplibre.md), [ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md)): NFR-99 ODbL attribution, NFR-100 tile p95, NFR-101 `basemap_age_days`, NFR-102 no map request leaves our infrastructure. Verification summary extended. §1.1 annotated for GPU-layer marker rendering; the old Verification summary is now §13 |

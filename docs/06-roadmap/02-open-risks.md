@@ -28,6 +28,8 @@ Risks are things that might go wrong strategically. For the smaller, concrete tr
 | [R-12](#r-12--the-dual-spatial-model-will-produce-a-correctness-bug) | Dual spatial model correctness | Medium | High | Backend | Per spatial change |
 | [R-13](#r-13--seasonality-may-kill-retention) | Seasonality may kill retention | High | High | Product | Quarterly |
 | [R-14](#r-14--supabase-is-a-single-strategic-dependency) | Single strategic vendor dependency | Medium | Low | CTO | Annually |
+| [R-15](#r-15--the-basemap-is-now-ours-to-keep-fresh-and-the-tile-pipeline-is-an-operational-tax) | Basemap staleness + tile pipeline toil | Medium | Medium | Platform | Monthly |
+| [R-16](#r-16--osm-data-quality-varies-by-market-and-the-pipeline-may-create-false-confidence) | OSM data quality varies by market | Medium | Medium | Ops | Per market |
 
 ---
 
@@ -49,13 +51,19 @@ The entire documentation set is a well-engineered answer to a supply-side questi
 
 **Severity: High · Likelihood: High**
 
-Every new market needs a human to verify venues, confirm hours, and ideally obtain consent. There is no automation path in this plan. Worse, a library that objects to being listed is both a PR problem and a legal one.
+Every new market needs a human to verify venues, confirm hours, and ideally obtain consent. Worse, a library that objects to being listed is both a PR problem and a legal one.
 
 **This could become the actual constraint on growth, not engineering.**
 
-**Mitigation:** pursue formal partnerships — library systems tend to like this kind of programme and it fits their mission. Build the partner-admin flow ([SPEC-021](../03-specs/SPEC-021-community-groups.md)) earlier than Phase 2 if venues push back. Have a 48-hour takedown SLA ready and published before launch.
+**Partially mitigated by [ADR-0021](../01-architecture/adr/ADR-0021-osm-safe-spot-sourcing.md).** OSM now supplies *discovery*: a scheduled Overpass import writes civic POIs into a private candidate queue, turning a blank page into a review queue. The severity drops; the risk does not close, and it is worth being precise about why.
 
-**Trigger:** more than 2 venue objections, or curation exceeding 40 hours per new metro.
+**What OSM fixes and what it doesn't.** Finding every library in a metro was always the cheap half — a person with a browser and an afternoon can do it, and would probably produce a better list. The expensive half is phoning each venue to confirm hours, visiting to check the entrance is lit and staffed, and negotiating consent. None of that is automated, and all of it still gates the release. **The durable win is the monthly refresh diff, not the initial import**: nobody will manually re-check every venue in every market forever, and a building that quietly closed shows up later as a user standing outside a locked door.
+
+**A new failure mode replaces part of the old one.** A reviewer working through eighty auto-generated candidates is in a different cognitive mode from someone researching a neighbourhood, and queues produce rubber-stamping. [SPEC-007](../03-specs/SPEC-007-safe-spots.md) answers this by making approval impossible via a single button — a reviewer must record a distinct hours-verification action that only a phone call or a visit makes possible. That control is the whole defence, and it is a process control.
+
+**Remaining mitigation:** pursue formal partnerships — library systems tend to like this kind of programme and it fits their mission. Build the partner-admin flow ([SPEC-021](../03-specs/SPEC-021-community-groups.md)) earlier than Phase 2 if venues push back. Have a 48-hour takedown SLA ready and published before launch.
+
+**Trigger:** more than 2 venue objections · curation exceeding 40 hours per new metro · **candidate approval rate above 90%** (rubber-stamping) or **below 30%** (import filter too loose) · any no-show traced to imported data a reviewer approved without verifying.
 
 ---
 
@@ -77,11 +85,17 @@ Separately, an explicit recorded human decision is needed on whether **both** pa
 
 **Severity: High · Likelihood: Medium**
 
-Expo SDK 57 / RN 0.86 / New Architecture / `react-native-maps` is an unvalidated combination, and **the map is the product**. If custom markers, clustering, or the animated avatar have Fabric issues, the flagship screen degrades and the [ADR-0013](../01-architecture/adr/ADR-0013-map-library.md) fallback to `@rnmapbox/maps` costs weeks plus a per-map-load billing model we have not budgeted.
+Expo SDK 57 / RN 0.86 / New Architecture / **`@maplibre/maplibre-react-native`** is an unvalidated combination, and **the map is the product**.
 
-**Mitigation — do this before anything else.** A two-day spike building the actual map screen with 200 clustered custom markers on both platforms under the New Architecture. **Do not start the data model until this passes.**
+**⚠️ Restated after [ADR-0019](../01-architecture/adr/ADR-0019-openstreetmap-maplibre.md), and the likelihood went up, not down.** The original spike targeted `react-native-maps` — a ten-year-old library with a large body of known-issue documentation. That spike passed and **no longer validates the stack we intend to ship**. MapLibre RN is a smaller project with less battle-tested New Architecture interop, so we have swapped a validated component for an unvalidated one on the highest-risk screen in the product. That is a deliberate choice ([ADR-0019](../01-architecture/adr/ADR-0019-openstreetmap-maplibre.md) is honest that the disciplined move would have been to ship first), and it belongs in this register rather than in a footnote.
 
-**Trigger:** the spike fails, or frame rate drops below 45 fps at 200 markers on the reference mid-range device.
+The failure surface has also changed shape. Marker count is no longer the worry — GPU-rendered symbols from one GeoJSON source handle 200 markers trivially. The new constraints are **New Architecture interop** and **style complexity** (label collision, sprite count), neither of which the old spike exercised at all.
+
+**Mitigation — do this before anything else.** Port the spike (4–6 engineer-days) and re-run it against the MapLibre pass criteria in [Roadmap §Before anything else](01-roadmap.md). **Do not start the data model until it passes.**
+
+**The fallback is now cheaper than it was**, which is the one thing that improved: `react-native-maps` behind the same `MapCanvas` seam is ~3 days because the code already exists. A revert loses the OSM basemap but **not** the [ADR-0021](../01-architecture/adr/ADR-0021-osm-safe-spot-sourcing.md) safe-spot pipeline, which is server-side and renderer-independent.
+
+**Trigger:** the reset spike fails · frame rate below 45 fps at 200 markers on the reference device · MapLibre RN falls two minor versions behind the Expo SDK cadence · a blocking upstream issue sits unfixed for four weeks.
 
 ---
 
@@ -211,6 +225,38 @@ Pricing changes, acquisition, or a service change could force a migration. Postg
 
 ---
 
+## R-15 — The basemap is now ours to keep fresh, and the tile pipeline is an operational tax
+
+**Severity: Medium · Likelihood: Medium**
+
+[ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md) moved tile serving in-house: a monthly Protomaps build from Geofabrik extracts, uploaded to R2, with the style pointing at a dated archive. "It's just a file in a bucket" is true on day one and steadily less true afterwards. Someone has to own the monthly build, notice when it silently fails, keep the tooling version pinned, and diagnose a cartography regression after an upstream schema change.
+
+**Two distinct failure modes.** The first is **staleness** — a library that opened last month is missing until the next build, and unlike a vendor basemap nobody else is going to fix it. The second is **toil**: a recurring job that quietly becomes someone's unowned chore on a team whose binding constraints are [R-01](#r-01--liquidity-not-architecture-decides-whether-this-works) and [R-02](#r-02--safe-spot-curation-is-an-unbounded-operational-cost), neither of which this helps.
+
+**Mitigation:** `basemap_age_days` is a monitored metric with an alert at 45 days — staleness is measurable rather than discovered by a user. Rollback is a URL repoint, so a bad build costs minutes. And the fallback is deliberately cheap: switching to MapTiler or Stadia is a style-URL change plus a key in EAS secrets, roughly a day.
+
+**Be willing to take the fallback.** [ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md)'s steel-man is that a managed free tier would very likely cover the entire MVP at zero cost and zero operational surface. If the build becomes a recurring source of toil, that is the signal to take it — **not** a reason to build more automation around it.
+
+**Trigger:** the tile build fails or is skipped **twice in a quarter** · `basemap_age_days` exceeds 45 more than once · serving cost exceeds $50/month · tile p95 latency above 300 ms at the CDN edge in a launch market.
+
+---
+
+## R-16 — OSM data quality varies by market, and the pipeline may create false confidence
+
+**Severity: Medium · Likelihood: Medium**
+
+OSM civic-POI coverage in our two launch metros is excellent, which is precisely why this risk is easy to miss. Coverage is uneven geographically: a smaller or more rural market may yield a fraction of the candidates, and the team will have built a workflow that assumes the queue fills itself.
+
+The subtler version is **false confidence**. A pipeline that works well twice becomes the way expansion is planned, and a market with thin OSM coverage then looks like a market with few safe spots rather than a market needing manual sourcing. That is a market-selection error caused by a tooling assumption.
+
+There is also an **upstream data-integrity** angle: OSM is openly editable, so vandalised or simply wrong POI data can reach the candidate queue. The human verification gate is the control ([SPEC-007](../03-specs/SPEC-007-safe-spots.md)), and it is the same control that [R-02](#r-02--safe-spot-curation-is-an-unbounded-operational-cost) notes is vulnerable to rubber-stamping — the two risks share a single point of failure.
+
+**Mitigation:** measure candidate yield per metro *before* committing to a market, and treat low yield as "needs manual sourcing" rather than "poor fit". Keep manual sourcing as a documented, exercised path rather than a legacy one — a capability nobody has used in a year is not a capability.
+
+**Trigger:** a target market yields **fewer than 20 usable candidates** · any safe spot reaching `active` with materially wrong OSM-derived data · an expansion decision made primarily on candidate count.
+
+---
+
 ## Review
 
 | Cadence | Attendees | Scope |
@@ -229,3 +275,4 @@ Adding a risk requires an ID, an owner, a severity, and a **concrete trigger**. 
 | Date | Version | Author | Change |
 | --- | --- | --- | --- |
 | 2026-08-08 | 1.0.0 | CTO | Initial risk register |
+| 2026-08-09 | 1.1.0 | CTO | **OpenStreetMap decision.** R-02 severity reduced — [ADR-0021](../01-architecture/adr/ADR-0021-osm-safe-spot-sourcing.md) automates discovery — but the risk stays open with rubber-stamping as a new failure mode, and the durable win named as the refresh diff rather than the initial import. **R-04 restated and its likelihood raised**: the passing `react-native-maps` spike no longer validates the shipping stack, and MapLibre RN's New Architecture interop is less battle-tested. R-15 (basemap staleness + tile pipeline toil) and R-16 (OSM data quality by market) added. |

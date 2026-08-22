@@ -2,17 +2,23 @@
 
 **Status:** Approved · **Version:** 1.0.0 · **Owner:** Product + CTO
 
+> This document says *what* ships and *why*. The [Delivery Backlog](03-delivery-backlog.md) is the executable layer beneath it — epics, stories, estimates, dependencies, and a sprint schedule. **The two disagree on duration**, deliberately and in writing: see [Capacity reality check](03-delivery-backlog.md#capacity-reality-check).
+
 ---
 
 ## Before anything else — the map spike
 
 **Two days. Blocking. Do not start the data model until it passes.**
 
-Build the [SPEC-008](../03-specs/SPEC-008-interactive-map.md) map screen with 200 clustered custom markers and an animated avatar, on both platforms, under the New Architecture. The map is the product; if `react-native-maps` misbehaves under Fabric, that changes the plan before anything is written, not after. [R-04](02-open-risks.md#r-04--the-map-stack-is-unvalidated).
+Build the [SPEC-008](../03-specs/SPEC-008-interactive-map.md) map screen with 200 clustered markers and an animated avatar, on both platforms, under the New Architecture. The map is the product; if the renderer misbehaves under Fabric, that changes the plan before anything is written, not after. [R-04](02-open-risks.md#r-04--the-map-stack-is-unvalidated).
 
-**Pass criteria:** 60 fps pan and zoom at 200 markers on a 3-year-old mid-range device, custom marker views rendering correctly, cluster expansion working, on both iOS and Android.
+> **⚠️ The spike has been reset.** [ADR-0019](../01-architecture/adr/ADR-0019-openstreetmap-maplibre.md) moved the renderer from `react-native-maps` to `@maplibre/maplibre-react-native` over self-hosted OpenStreetMap vector tiles. The existing spike code in `src/features/map/` is built on the old renderer and **no longer validates the stack we intend to ship**. Budget **4–6 engineer-days** to port it, then re-run. Do not treat the earlier green result as evidence.
 
-**If it fails:** switch to `@rnmapbox/maps` per [ADR-0013](../01-architecture/adr/ADR-0013-map-library.md), add two weeks, and budget for per-map-load billing.
+**Pass criteria:** 60 fps pan and zoom at 200 markers on a 3-year-old mid-range device; `ShapeSource`/`SymbolLayer` symbols rendering and colliding correctly; cluster expansion working; camera control (zoom, not deltas) behaving; ODbL attribution visible and unobscured; tiles loading from the PMTiles archive — on both iOS and Android.
+
+**The two things this spike must answer that the old one did not:** whether MapLibre RN's New Architecture interop is solid at our SDK version, and whether style complexity (label collision, sprite count) rather than marker count is now the frame-budget constraint.
+
+**If it fails:** fall back to [ADR-0013](../01-architecture/adr/ADR-0013-map-library.md)'s `react-native-maps` behind the same `MapCanvas` seam — roughly 3 days, since that code already exists. That reverts the basemap to Apple/Google and forfeits [ADR-0021](../01-architecture/adr/ADR-0021-osm-safe-spot-sourcing.md)'s rationale-by-association but not the OSM safe-spot pipeline, which is server-side and renderer-independent.
 
 ---
 
@@ -25,7 +31,9 @@ Build the [SPEC-008](../03-specs/SPEC-008-interactive-map.md) map screen with 20
 | Auth | Email/password, Apple, Google. TOTP 2FA. Password reset, email change with re-auth, account deletion. |
 | Onboarding | Profile, one garden, geotagged garden photo → review queue, contextual permission screens |
 | Identity | Persona hosted flow; pass/fail stored; gates transacting only |
-| Map | Safe-spot nodes, avatar with follow mode, inventory FAB, bottom sheet, clustering, category filters, list alternative |
+| Map | **OpenStreetMap vector tiles via MapLibre**, identical on both platforms. Safe-spot nodes, avatar with follow mode, inventory FAB, bottom sheet, client-side clustering, category filters, list alternative, **mandatory ODbL attribution** |
+| Basemap ops | Protomaps **PMTiles** archive built monthly from Geofabrik extracts, served from Cloudflare R2 + CDN. Style JSON versioned in-repo; rollback is a URL repoint ([ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md)) |
+| Safe-spot sourcing | Scheduled **Overpass** import into a private candidate queue + monthly refresh diff; human verification gate before anything goes live ([ADR-0021](../01-architecture/adr/ADR-0021-osm-safe-spot-sourcing.md)) |
 | Inventory | CRUD, taxonomy picker, quantity and unit, photos, offline read/write |
 | Listings | Publish to 1–3 safe spots, wishlist species, expiry window |
 | Exchange | Full lifecycle with dual handoff confirmation and all eight concurrency controls |
@@ -98,6 +106,8 @@ gantt
 | Facebook + X OAuth, multi-garden, iPad, Spanish | — | Straightforward; deferred purely for MVP focus |
 | App Attest / Play Integrity on garden verification | SPEC-004 v2 | Raises the cost of fake-garden farming once it's worth farming |
 | Read replica + nightly warehouse export | — | **Before** analytics degrades the OLTP path, not after |
+| **Offline map packs** | SPEC-008 v3 | The PMTiles archive is already a file, so this is an extension rather than a rewrite ([ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md)). A per-metro download means the map works in a library car park with no signal — which is precisely where users are when they need it |
+| **Self-hosted Photon geocoding** | SPEC-008 v3 | MVP ships a bundled locality gazetteer covering two metros. It stops scaling the moment a third market lands; Photon over our existing Geofabrik extract is the answer, and it keeps geocoding off any third party |
 
 **Phase 2 is reordered by launch data, not by this table.** If retention is fine and liquidity is the problem, groups jump ahead of harvest planning.
 
@@ -123,7 +133,10 @@ Things we have deliberately not decided, with the moment we must.
 
 | When | Decision |
 | --- | --- |
-| After the map spike | `react-native-maps` or Mapbox — determines the map budget |
+| ~~After the map spike~~ | ~~`react-native-maps` or Mapbox~~ — **resolved** by [ADR-0019](../01-architecture/adr/ADR-0019-openstreetmap-maplibre.md): MapLibre over OSM. The reset spike now decides only whether that holds, with ADR-0013 as the fallback |
+| **After the reset spike** | Does MapLibre RN's New Architecture interop hold at our SDK version? A no-go reverts the basemap but not the OSM safe-spot pipeline |
+| **Month 2 of the tile pipeline** | Is the monthly PMTiles build a routine job or a recurring source of toil? Two failures or skips in a quarter means taking MapTiler's free tier ([ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md)) |
+| **Week 4 of the candidate queue** | Is the OSM candidate approval rate above 90% (rubber-stamping) or below 30% (filter too loose)? ([ADR-0021](../01-architecture/adr/ADR-0021-osm-safe-spot-sourcing.md)) |
 | Before vendor contract | Persona or Stripe Identity at 200k-signup volume |
 | Before launch | Does the alternate trust path exist at all? Both parties KYC-verified without exception? |
 | Week 4 post-launch | Is the liquidity problem supply or demand? Determines all of Phase 2. |

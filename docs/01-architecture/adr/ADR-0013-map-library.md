@@ -1,12 +1,20 @@
 # ADR-0013: `react-native-maps` behind a `MapCanvas` seam
 
+> ## ⚠️ Superseded by [ADR-0019](ADR-0019-openstreetmap-maplibre.md)
+>
+> **Sharecropr now renders OpenStreetMap vector tiles via MapLibre React Native.** This ADR is retained because its reasoning is still load-bearing in two places: the `MapCanvas` seam it introduced is what made the swap affordable and survives in revised form, and its steel-man correctly predicted that `Region` with `latitudeDelta`/`longitudeDelta` would not survive a renderer change — which is exactly what happened.
+>
+> **Its decision is no longer in force.** `react-native-maps` remains the documented fallback if the MapLibre spike fails.
+>
+> One claim here is now known to be wrong and is worth reading as a caution: the Consequences section lists "no additional vendor" as a positive. There were two vendors — Apple and Google — and they were invisible only because they ship with the OS. See [ADR-0019 §Context](ADR-0019-openstreetmap-maplibre.md#context).
+
 | Field | Value |
 | --- | --- |
-| **Status** | Accepted |
+| **Status** | **Superseded** |
 | **Date** | 2026-08-08 |
 | **Deciders** | Architecture, Mobile |
 | **Supersedes** | — |
-| **Superseded by** | — |
+| **Superseded by** | [ADR-0019](ADR-0019-openstreetmap-maplibre.md) (2026-08-09) |
 
 ## Context
 

@@ -25,6 +25,8 @@ Step-by-step procedures for when something is wrong. Written to be followed by s
 | [11](#11--moderation-console-outage) | Moderation console outage | P1 |
 | [12](#12--bad-migration-in-production) | Bad migration in production | P0 |
 | [13](#13--compromised-credential) | Compromised credential | P0 |
+| [14](#14--tile-serving-outage-or-bad-basemap-build) | Tile serving outage / bad basemap build | P2 |
+| [15](#15--osm-import-produced-bad-candidates) | OSM import produced bad candidates | P1 |
 | [14](#14--handoff-code-key-rotation) | Handoff-code key rotation | Controlled |
 
 ---
@@ -298,6 +300,60 @@ The old key is still present until step 5, so the rollback is to stop using the 
 **Never:** rotate during a metro's peak exchange hours, or with an open severity-1 dispute in the working set.
 
 > **Rehearse this before you need it.** SPEC-010-T73b covers the mechanics; it does not cover an operator reading this page at 2am. Run it once against a seeded staging database with live `scheduled` sessions before the first production rotation ([Development Notes N-03](../07-review/02-development-notes.md#n-03--vault-is-now-on-the-critical-path-of-a-physical-meeting)).
+
+---
+
+## 14 — Tile serving outage or bad basemap build
+
+**Trigger:** `tile_error_rate` or `tile_request_p95_ms` alert, `tile_build_result` failure, `basemap_age_days` > 45, or reports of a blank/wrong map.
+
+**Severity is P2, and that is deliberate.** The basemap is context, not function. Markers stay correctly positioned on a neutral background and the exchange flow is unaffected ([SPEC-008](../../docs/03-specs/SPEC-008-interactive-map.md) §5.10). **Do not page for this.** If someone reports "the map is broken" and exchanges still work, this is the runbook.
+
+1. **Establish which failure it is.** Blank tiles for everyone (serving), wrong or ugly cartography (bad build), or slow tiles in one region (CDN edge)?
+2. **Confirm the client degraded correctly** — neutral background, markers present and tappable, attribution still rendered. If markers vanished too, that is a *client* bug and a different, more serious problem.
+3. **If it is a bad build — roll back by repointing the style at the previous dated archive.** This is the whole reason archives are immutable and date-stamped. No app release, no cache invalidation, effective in minutes.
+   ```bash
+   pnpm ops:set-basemap --archive sharecropr-basemap-2026-07.pmtiles --env production
+   ```
+4. **If it is a serving outage**, check the R2 bucket and Cloudflare status. There is no origin server to restart — if the object is intact and the CDN is healthy, the problem is the style URL or DNS.
+5. **If it is latency in one region only**, it is likely a cold edge. Confirm it warms; if it persists, that is an [ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md) revisit trigger, not an incident.
+6. **Verify** the attribution still renders after any change. A rollback that silently drops attribution is a licence breach.
+7. **Root-cause the build.** Pinned tooling version? Upstream Geofabrik schema change? Extract that failed to download? Fix the pipeline, not just the artifact.
+8. **Count it.** Two build failures or skips in a quarter is the [R-15](../06-roadmap/02-open-risks.md) trigger to take the managed-provider fallback. Resist the urge to write more automation instead — that is the exact trap [ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md)'s steel-man names.
+
+---
+
+## 15 — OSM import produced bad candidates
+
+**Trigger:** a reviewer reports nonsense candidates, `osm_candidate_approval_rate` outside the 30–90% band, or — the serious case — a **live safe spot** is found to carry wrong OSM-derived data.
+
+**This is P1 rather than P2 because of one scenario: bad data that got past a human and is now sending people to a real place.**
+
+1. **Halt the scheduled import** before anything else, so the queue stops growing while you work.
+   ```bash
+   pnpm ops:osm-import --disable
+   ```
+2. **Determine whether anything was promoted.** This is the question that sets the severity.
+   ```sql
+   SELECT s.id, s.name, s.status, s.osm_type, s.osm_id, s.approved_by, s.approved_at
+     FROM public.safe_spots s
+    WHERE s.source = 'osm_import'
+      AND s.approved_at > :suspect_window_start;
+   ```
+3. **If a live spot is wrong**, treat it as a safety matter, not a data matter:
+   - Set `status = 'suspended'` immediately — it disappears from discovery.
+   - Check for **scheduled sessions** at that spot. If any exist, notify both parties directly and help them re-schedule. Someone may otherwise drive to a locked door.
+   - Only then investigate.
+4. **Purge unreviewed candidates** from the affected import run. They are in `private.osm_spot_candidates` and were never client-visible, so this is safe and reversible by re-running the import.
+   ```sql
+   UPDATE private.osm_spot_candidates
+      SET review_state = 'rejected', rejection_reason = 'bad import run <ref>'
+    WHERE review_state = 'pending' AND first_seen_at > :run_start;
+   ```
+5. **Find the cause.** Overpass returning unexpected geometry? Way/relation centroid landing off-site? A retag upstream? **Vandalism?** If the source data was deliberately falsified, that is [THR — OSM as an untrusted external source](../02-security/01-threat-model.md) and worth reporting upstream to OSM.
+6. **Audit the human gate.** If bad data reached `active`, the verification requirement was bypassed or performed carelessly. That is [R-02](../06-roadmap/02-open-risks.md)'s rubber-stamping failure mode arriving in production — review the reviewer's recent approvals, not just this one.
+7. **Re-enable the import** only after the filter is fixed and a sample run has been eyeballed.
+8. **Post-mortem if anything reached `active`.** Blameless, but the question is specific: what made it possible to approve a spot without verifying it?
 
 ---
 

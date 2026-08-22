@@ -3,20 +3,22 @@
 | Field | Value |
 | --- | --- |
 | **Status** | Review |
-| **Version** | 1.0.0 |
+| **Version** | 2.0.0 |
 | **Owner** | Mobile Engineering |
 | **Phase** | MVP |
 | **Security review** | not required |
 | **Schema depends on** | [SPEC-005](SPEC-005-crop-taxonomy.md), [SPEC-007](SPEC-007-safe-spots.md), [SPEC-009](SPEC-009-listings-and-offers.md) |
 | **Behaviourally coupled with** | SPEC-009, SPEC-010 |
-| **Related ADRs** | [ADR-0013](../01-architecture/adr/ADR-0013-map-library.md), [ADR-0005](../01-architecture/adr/ADR-0005-geospatial-model.md), [ADR-0009](../01-architecture/adr/ADR-0009-safe-spots-only.md), [ADR-0011](../01-architecture/adr/ADR-0011-state-management.md) |
-| **Last updated** | 2026-08-08 |
+| **Related ADRs** | [ADR-0019](../01-architecture/adr/ADR-0019-openstreetmap-maplibre.md), [ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md), [ADR-0013](../01-architecture/adr/ADR-0013-map-library.md) (superseded), [ADR-0005](../01-architecture/adr/ADR-0005-geospatial-model.md), [ADR-0009](../01-architecture/adr/ADR-0009-safe-spots-only.md), [ADR-0011](../01-architecture/adr/ADR-0011-state-management.md) |
+| **Last updated** | 2026-08-09 |
 
 ---
 
 ## 1. Summary
 
 The map is Sharecropr's front door: it opens centred on the user, shows curated safe spots styled by how much is available at each, and lets a gardener go from "I have too many courgettes" to "there's a library 1.2 km away with four things I want" in two taps. It is also the app's hardest performance problem and its most load-bearing privacy surface, because it is the only screen that consumes precise coordinates at all. **No other user's location is ever rendered — not fuzzed, not clustered, not aggregated into a heat map.** Listings attach to safe spots, not to people, and `safe_spots_near` has no column that could carry a garden coordinate.
+
+The basemap is **OpenStreetMap vector tiles rendered by `@maplibre/maplibre-react-native`**, served from a PMTiles archive we host ourselves ([ADR-0019](../01-architecture/adr/ADR-0019-openstreetmap-maplibre.md), [ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md)). Three consequences run through the whole of this spec. The map renders **identically on iOS and Android**, so every pixel below is specified once rather than twice. **No third party serves a tile**, so panning the map does not stream a viewport to a company outside our infrastructure. And **ODbL attribution is a legal obligation with a test attached** (§5.10) — "© OpenStreetMap contributors" is not a design element that a redesign may quietly drop.
 
 ## 2. Goals
 
@@ -27,6 +29,9 @@ The map is Sharecropr's front door: it opens centred on the user, shows curated 
 - Make location denial a first-class, fully functional path, not a dead end.
 - Ship the accessible list view as a real screen on a real user path, because an accessibility path only accessibility users touch is one that breaks silently.
 - Be honest about the cold-start liquidity problem: at launch, most viewports are empty, and an empty map that says nothing is the fastest uninstall in the product.
+- **Render the same map on both platforms.** One style, one renderer, one set of screenshots, one design review. The class of bug that reads "correct on iOS, wrong on Android" is designed out rather than tested for.
+- **Degrade honestly when tiles fail.** Markers are the product; the basemap is context. A tile failure must cost the user context, never the ability to find a spot and arrange an exchange.
+- **Discharge the ODbL attribution obligation in the UI, and prove it in CI.** Attribution that depends on nobody redesigning the map chrome is not compliance.
 
 ## 3. Non-Goals
 
@@ -35,7 +40,8 @@ The map is Sharecropr's front door: it opens centred on the user, shows curated 
 - **Background location.** The entitlement is absent from `app.json` so it cannot be requested by accident ([Mobile Architecture §7](../01-architecture/02-mobile-architecture.md)).
 - **Server-side clustering.** Rejected explicitly: a server cluster index needs the user's viewport at high precision on every pan, which is exactly the query-pattern side channel [Location Privacy §12.4](../01-architecture/04-location-privacy.md) warns about. Clustering stays on the client.
 - **Realtime map updates.** Broadcasting count deltas to every client in a metro is a fanout problem with no product payoff ([Realtime & Notifications §8.3](../01-architecture/08-realtime-and-notifications.md)). The map polls on a 60 s `staleTime`.
-- **Offline map tiles.** We use whatever the OS map SDK has cached. Bundling tiles is a licensing and bundle-size conversation we are not having in MVP.
+- **Offline map packs.** Deliberately **Phase 2**, not MVP ([Roadmap](../06-roadmap/01-roadmap.md)). Self-hosted PMTiles makes downloadable per-metro packs achievable ([ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md)) — which is exactly why it is tempting to pull forward and exactly why we are not. MVP ships last-known-state plus a staleness banner (§8.2), and outside the tile cache a neutral background with correctly positioned markers. Bundling tiles in the binary is separately rejected against [NFR-08](../00-foundation/05-nfr.md).
+- **A third-party tile or geocoding vendor.** No MapTiler, no Stadia, no Google, no Apple, in the map path. The tile origin is ours; the location-denied search path is a bundled gazetteer (R71). This is a `MUST NOT` with a wire-level test (T78), not a preference.
 - **Saved searches, "notify me when tomatoes appear".** That is [SPEC-020](SPEC-020-harvest-planning.md) surplus alerts.
 - **A radius above 40 km.** Capped server-side. A 200 km "search" is a scraping request wearing a product costume.
 
@@ -88,18 +94,26 @@ The map is Sharecropr's front door: it opens centred on the user, shows curated 
 
 ### 5.3 Markers, styling, and clustering
 
+Markers are **GPU layers, not views**. The entire marker set is one GeoJSON `FeatureCollection` handed to one MapLibre `ShapeSource`, drawn by a `SymbolLayer` whose icon, badge, and text are data-driven style expressions over the feature's properties. Nothing about a marker is a React component and nothing about a marker crosses the JS/native boundary per marker.
+
+This is why the swap to MapLibre improves marker performance rather than trading it away ([ADR-0019](../01-architecture/adr/ADR-0019-openstreetmap-maplibre.md)). Under `react-native-maps`, 200 markers were 200 native views, each re-rasterising on camera change unless explicitly told not to — which is what made `tracksViewChanges` the most dangerous prop on the screen and what produced this spec's original 200-marker anxiety. Under MapLibre, 200 markers are **one source update**. Rendering cost is a function of the number of *source updates*, not the number of features, so the marginal cost of the 200th marker is approximately zero.
+
+**The 200-cap therefore stays, but it is no longer a performance cap.** It is a privacy and payload cap: it is the `LIMIT 200` on `safe_spots_near` (§7.1), which bounds what a scraper harvests per call and bounds the response size on a cellular connection. Nothing in this section may be relaxed on the argument that "the renderer can handle more" — the renderer was never the reason.
+
 | ID | Req | Statement |
 | --- | --- | --- |
-| R19 | **MUST** | A safe spot marker MUST be styled by availability in three bands: **empty** (`listing_count = 0`), **some** (1–4), **many** (≥ 5). The band MUST be conveyed by shape or fill *and* by the count badge, never by colour alone. |
-| R20 | **MUST** | A marker MUST carry its category glyph (library, police station, city hall, …) so that a user who will not enter one category can avoid it visually. |
+| R19 | **MUST** | A safe spot marker MUST be styled by availability in three bands: **empty** (`listing_count = 0`), **some** (1–4), **many** (≥ 5). The band MUST be conveyed by shape or fill *and* by the count badge, never by colour alone. The band MUST be expressed as a data-driven style expression over the feature's `listing_count` property, so a count change repaints from the same source rather than remounting anything. |
+| R20 | **MUST** | A marker MUST carry its category glyph (library, police station, city hall, …) so that a user who will not enter one category can avoid it visually. Glyphs MUST ship as a sprite sheet in the style bundle, not as runtime-loaded images, so a marker never renders glyph-less while an icon downloads. |
 | R21 | **MUST** | Clustering MUST use `supercluster` on the client with `radius: 56`, `maxZoom: 15`, `minZoom: 3`, `minPoints: 3`, `extent: 512`. |
 | R22 | **MUST** | `getClusters` MUST be called on **integer** zoom. Reclustering on fractional zoom makes markers visibly jitter mid-pinch. |
 | R23 | **MUST** | A cluster badge MUST show the **summed `listing_count`** of its member spots, not the number of spots. "23 things available" is more useful to a gardener than "7 spots". |
 | R24 | **MUST** | Tapping a cluster MUST animate to `getClusterExpansionZoom` for that cluster. |
-| R25 | **MUST** | Every marker MUST set `tracksViewChanges={false}` except for a ~300 ms window after its count changes. This is the single most important prop on the screen; with it `true`, every marker re-rasterises on every pan frame. |
-| R26 | **MUST** | `SafeSpotMarker` MUST be `React.memo`'d with an explicit comparator over `(id, count, selected)`, and MUST receive coordinates as primitives rather than a `coordinate` object literal. |
+| R25 | **MUST** | Markers MUST be rendered exclusively through `ShapeSource` + `SymbolLayer`. No marker, cluster, or selection halo may be a `PointAnnotation`, a `MarkerView`, or any other per-feature native view. Per-marker views are the failure mode this renderer exists to remove, and one of them on the screen reintroduces the whole class. |
+| R26 | **MUST** | The `FeatureCollection` handed to the `ShapeSource` MUST be memoised over `(id, listing_count, selected)` across the whole set and MUST be a new object reference **only** when one of those changes. A new array identity per render pushes a full source update to native on every frame, which is this renderer's version of the `tracksViewChanges` bug. |
 | R27 | **MUST** | The supercluster index MUST be rebuilt only when the query result changes, never on camera change. |
 | R28 | **SHOULD** | An empty spot (`listing_count = 0`) SHOULD still render. Hiding empty spots makes a cold-start metro look like it has no meeting places at all, which is a worse lie than "nothing here yet". |
+| R69 | **MUST** | The marker set MUST reach `MapCanvas` as a single `FeatureCollection` of `Point` features whose properties are exactly `(id, listing_count, category, label, selected)`. No property carrying or derived from a user coordinate may appear on a feature, and the seam's `MapMarker` type ([ADR-0019](../01-architecture/adr/ADR-0019-openstreetmap-maplibre.md)) is the only shape permitted across it. |
+| R70 | **MUST NOT** | MapLibre's built-in source clustering (`cluster`, `clusterRadius`, `clusterMaxZoom`, `clusterProperties`) MUST NOT be enabled on the `ShapeSource`. Clustering is R21's `supercluster` index and only R21's index; two clustering implementations that disagree at a zoom boundary produce a bug with no owner and no reproducible case. |
 
 ### 5.4 Filters, search, and radius
 
@@ -135,9 +149,10 @@ The map is Sharecropr's front door: it opens centred on the user, shows curated 
 | R46 | **MUST NOT** | The app MUST NOT request background location, and the entitlement MUST be absent from the built `Info.plist` and `AndroidManifest.xml`, asserted in CI. |
 | R47 | **MUST** | With location denied, the map MUST be fully functional via locality search: the user types a town or postcode, the map centres there, and every other feature (radius, filters, species search, sheet, listing, requesting) works unchanged. |
 | R48 | **MUST** | With location denied, the avatar dot and the recentre button MUST be absent, not disabled. A disabled control the user cannot enable is noise. |
-| R49 | **MUST** | Locality search MUST resolve through the OS geocoder (`expo-location`'s `geocodeAsync`), and the resolved coordinate MUST be quantized identically to a device fix before it reaches `safe_spots_near`. |
+| R49 | **MUST** | Locality search MUST resolve against the **bundled locality gazetteer** (R71), and the resolved coordinate MUST be quantized identically to a device fix before it reaches `safe_spots_near`. It MUST NOT call the OS geocoder (`expo-location`'s `geocodeAsync`) or any hosted geocoding service: the OS geocoder is a third-party lookup wearing a platform API, and it would hand a user-typed place name to Apple or Google on a screen whose entire premise is that we do not do that. |
 | R50 | **SHOULD** | The last locality the user searched SHOULD persist, so a location-denied user does not retype their town on every launch. |
 | R51 | **MUST** | A user who denies permission MUST be able to grant it later from within the map screen (a single "Use my location" affordance that deep-links to OS settings when the OS will no longer prompt). |
+| R71 | **MUST** | The gazetteer MUST be a versioned dataset in the repo, bundled with the app, covering the launch metros and their surrounding counties — a few hundred rows of `(name, aliases, postal codes, admin region, centroid, default zoom)`. Search MUST be a local prefix-and-alias match over it with no network call, and a miss MUST say so honestly (§8.3) rather than falling back to any remote lookup. This is deliberately a small, dumb dataset: it covers exactly the geography where the product functions, and self-hosted Photon is the documented Phase 2 answer if we outgrow it ([ADR-0019](../01-architecture/adr/ADR-0019-openstreetmap-maplibre.md)). |
 
 ### 5.7 Performance budget and degradation
 
@@ -148,8 +163,12 @@ The map is Sharecropr's front door: it opens centred on the user, shows curated 
 | R54 | **MUST** | When the budget is exceeded, degradation MUST follow this order and no other: (1) drop marker glyph detail to flat dots, (2) raise clustering aggression to `minPoints: 2` / `radius: 80`, (3) raise the refetch debounce from 400 ms to 1200 ms and show the staleness affordance, (4) drop base map tiles to a neutral background with markers still correctly positioned, (5) offer the list view persistently. |
 | R55 | **MUST NOT** | Degradation MUST NOT reduce the query radius. Silently showing a user less of the world than they asked for is a correctness bug wearing a performance costume. |
 | R56 | **MUST** | The marker layer MUST be wrapped in its own error boundary, so a rendering crash in a marker cannot take down the tab bar, the FAB, or the "View as list" escape. |
-| R57 | **MUST** | `react-native-maps` MUST be imported in exactly one file, `src/features/map/components/MapCanvas.tsx`, enforced by lint ([Mobile Architecture §1.1](../01-architecture/02-mobile-architecture.md)). |
-| R58 | **MUST** | Cold start to interactive map MUST be p95 < 2.5 s, measured from the app-start transaction to the first `onMapReady` with markers painted. |
+| R57 | **MUST** | `@maplibre/maplibre-react-native` MUST be imported in exactly one file, `src/features/map/components/MapCanvas.tsx`, enforced by lint ([Mobile Architecture §1.1](../01-architecture/02-mobile-architecture.md), [ADR-0019](../01-architecture/adr/ADR-0019-openstreetmap-maplibre.md)). The same lint rule MUST ban `react-native-maps` and `@rnmapbox/maps` anywhere in the tree, so the superseded renderer cannot return by accident. |
+| R58 | **MUST** | Cold start to interactive map MUST be p95 < 2.5 s, measured from the app-start transaction to the first frame with markers painted. **Tiles are explicitly not part of this measurement** — a map with markers over a blank background is interactive, and letting tile latency into the cold-start number would make our headline metric a function of CDN edge warmth. |
+| R72 | **MUST** | Tile requests MUST serve p95 **< 300 ms** at the CDN edge in a launch market, measured server-side. This is [ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md)'s own revisit trigger; breaching it is a signal to take the managed-tiles fallback, not to add client-side workarounds. |
+| R73 | **MUST** | Time to first painted tile MUST be p95 **< 1.0 s** from map-canvas mount on the reference device against a warm edge, and the map MUST be pannable and tappable before the first tile arrives. A map that blocks interaction on tiles has made the basemap load-bearing, which R77 says it is not. |
+
+> **R53 is the shipping floor; the spike gate is stricter.** [ADR-0019](../01-architecture/adr/ADR-0019-openstreetmap-maplibre.md) sets the reset spike's pass criterion at **60 fps pan/zoom at 200 markers** on the Android floor device. R53's ≥ 55 fps with no frame over 32 ms is what we hold in production across the device fleet. If the spike cannot reach 60 on the floor device, the answer is ADR-0013's renderer behind the seam (§14) — not a quiet renegotiation of R53.
 
 ### 5.8 The list view
 
@@ -171,6 +190,22 @@ The map is Sharecropr's front door: it opens centred on the user, shows curated 
 | R67 | **SHOULD** | Case (a) SHOULD state honestly that Sharecropr has not launched in this area and offer to notify the user when it does. Pretending a metro exists where it doesn't is how a review reads "empty app". |
 | R68 | **MUST** | An empty map MUST NOT render a spinner, a zero, or a bare "No results". Every empty state carries a next action. |
 
+### 5.10 Basemap, tiles, and attribution
+
+The basemap used to be somebody else's problem. It is now ours, and the requirements below are the price of that ([ADR-0019](../01-architecture/adr/ADR-0019-openstreetmap-maplibre.md), [ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md)). Two of them — R75 and R76 — are legal obligations under ODbL 1.0 rather than product decisions, and they are the only requirements in this spec that a well-meaning redesign could breach without anything appearing broken.
+
+| ID | Req | Statement |
+| --- | --- | --- |
+| R74 | **MUST** | The map style MUST be a single style JSON versioned in the repo (`src/features/map/style/sharecropr-basemap.json`), reviewed like code, pointing at a specific dated PMTiles archive ([ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md)). The client MUST NOT fetch a style, a sprite sheet, or a font glyph range from any host we do not control, and MUST NOT construct a style at runtime from a remote descriptor. |
+| R75 | **MUST** | **"© OpenStreetMap contributors" MUST be rendered on the map, legibly, unconditionally, in every state.** Not on tile-load success; not once tiles arrive; not when the user is online. It MUST also appear on every screen that displays OSM-derived safe-spot data ([SPEC-007-R58](SPEC-007-safe-spots.md)) and on a credits screen. This is an ODbL 1.0 obligation: removing it is a licence breach first and a failing test second. |
+| R76 | **MUST NOT** | The attribution MUST NOT be obscured, clipped, faded below the contrast floor, or collapsed behind a tap-to-reveal affordance by any other UI. The sheet at any detent, the offline banner, the rate-limit countdown, the degraded chip, the empty-state card, the FAB, and the chip row MUST reposition it rather than cover it, and the layout MUST guarantee this rather than achieve it by luck of z-order. An "ⓘ" button that reveals the notice on tap does not satisfy R75. |
+| R77 | **MUST** | Tile failure — network error, 404 on the archive, CDN outage, cold cache in airplane mode — MUST degrade to a neutral background with markers still rendered at correct geographic positions, the camera still functional, and the attribution still present (R75). It MUST NOT show a modal, MUST NOT block, and MUST NOT prevent a user opening a spot, sending a request, or completing any step of the exchange flow. A non-blocking chip (§8.3) is the entire user-facing treatment. |
+| R78 | **MUST** | Tile requests MUST be plain, cacheable HTTP `GET`s with range headers to our own tile origin, carrying **no API key, no `Authorization` header, no cookie, no session token, and no user or device identifier**. The absence of a credential is the point: it means a tile request is not attributable to a user even by us, and it means there is no key to rotate, leak, or restrict. |
+| R79 | **MUST NOT** | No request originating from the map screen — tiles, sprites, glyphs, style, or geocoding — may go to a host other than the Sharecropr tile origin or the Sharecropr Supabase origin. Asserted at the wire level (T78) rather than by reading imports, because a transitive dependency phoning home is exactly the case an import audit misses. |
+| R80 | **MUST NOT** | No coordinate may appear in a tile request beyond the standard `z/x/y` addressing implied by the viewport, plus PMTiles byte-range offsets. No viewport centre, no user position, no `safe_spot_id`, no locality string, in a URL, a query parameter, a header, or a body. `z/x/y` is a public grid index; a `?lat=&lng=` is a coordinate, and the difference is the whole of [Location Privacy §6](../01-architecture/04-location-privacy.md). |
+| R81 | **MUST NOT** | Basemap freshness is a **server-side concern**. The client MUST NOT compute, display, or branch on basemap age, and MUST NOT show a "map may be out of date" notice. A stale basemap is detected by `basemap_age_days` in [ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md)'s pipeline and fixed by repointing the style — with no app release and no client logic. The staleness banner in §8.2 is about **listing counts**, which change hourly; conflating it with basemap age would teach users to ignore the one that matters. |
+| R82 | **MUST** | The map MUST render identically on iOS and Android for the same style, camera, and marker set. Parity MUST be asserted by a screenshot diff in CI over a fixed fixture at three zoom levels, with a perceptual threshold tight enough to catch a missing sprite or a font-fallback difference. Identical rendering is the main product benefit of owning the renderer ([ADR-0019](../01-architecture/adr/ADR-0019-openstreetmap-maplibre.md)); untested, it is just an aspiration. |
+
 ## 6. Data
 
 | Table | Access | Notes |
@@ -182,7 +217,17 @@ The map is Sharecropr's front door: it opens centred on the user, shows curated 
 | `private.garden_locations` | **none** | Named to be explicit: the map has no path to it, and `safe_spots_near` has no column that could carry its contents |
 | `public.blocks` | read (inside `app.is_blocked_either_way`, definer) | Applied inside the count aggregate, so a blocked user's listings do not contribute to a count the blocker sees |
 
-**New schema objects introduced by this spec:** none. `safe_spots_near` is defined in [Location Privacy §6](../01-architecture/04-location-privacy.md) and `search_listings` in [API Contract §5.3](../01-architecture/06-api-contract.md); this spec consumes them and adds no schema. The only new artefacts are client-side: `MapCanvas`, `useMapMarkers`, `useFollowMode`, `useViewportQuery`, and `domain/geo/quantize.ts`.
+Columns of `public.safe_spots` this spec reads beyond the marker payload, all **P3** and all added by [SPEC-007](SPEC-007-safe-spots.md)'s migration ([Data Model §9](../01-architecture/03-data-model.md#9-safe-spots)):
+
+| Column | Why the map cares |
+| --- | --- |
+| `source` (`safe_spot_source`) | `'osm_import'` marks a row as OSM-derived, which is what makes R75's attribution obligation apply to the screen showing it |
+| `osm_type` / `osm_id` | Provenance. Not rendered; read by the credits screen's aggregate count and by support when a pin is wrong |
+| `osm_source_licence` | `'ODbL-1.0'`. The attribution string is a constant, not derived from this column — but a row whose licence is not ODbL would be a data bug we want to be able to find |
+
+The map does **not** branch on `source`: an OSM-imported spot and a hand-curated one render identically, because both have passed the same human verification gate ([SPEC-007 §5.7](SPEC-007-safe-spots.md)). Provenance is a compliance and support fact, not a quality signal to show a user.
+
+**New schema objects introduced by this spec:** none. `safe_spots_near` is defined in [Location Privacy §6](../01-architecture/04-location-privacy.md) and `search_listings` in [API Contract §5.3](../01-architecture/06-api-contract.md); this spec consumes them and adds no schema. The only new artefacts are client-side: `MapCanvas`, `useMapMarkers`, `useFollowMode`, `useViewportQuery`, `domain/geo/quantize.ts`, the versioned style JSON and sprite sheet (R74), and the bundled locality gazetteer (R71).
 
 **PII touched:** the caller's own device position, transiently, as `p_lat`/`p_lng`. Classified **P1**. It is quantized to ~100 m before transmission, never persisted client-side (R10), excluded from statement logging for this function, and removed by the telemetry scrubber's coordinate rule. It is not stored anywhere at any point. No other user's location data is read, derived, or rendered by any code path in this spec.
 
@@ -249,7 +294,9 @@ Sheet detail. Shape in [API Contract §4.3](../01-architecture/06-api-contract.m
 | --- | --- |
 | `get_my_garden_location` | The map has no use for the caller's own garden coordinate. Calling it here would put an exact point into the map screen's memory for no product reason, and the 10/min limit exists because any volume on it is anomalous. |
 | Any realtime channel | Map counts are polled at 60 s. A `map:` channel would mean per-metro fanout for a number that changes slowly ([Realtime & Notifications §8.3](../01-architecture/08-realtime-and-notifications.md)). |
-| A tile or geocoding service of ours | Base tiles come from the OS map SDK. Locality geocoding uses the OS geocoder (R49), so no locality string of ours reaches a third party under our API key. |
+| **Any third-party tile vendor** (MapTiler, Stadia, Mapbox, Google, Apple) | Tiles come from our own PMTiles archive on our own CDN ([ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md)). Whoever serves tiles learns every user's viewport continuously; there is no vendor in that position because there is no vendor. R79 asserts it on the wire, and R78 means the requests carry nothing to attribute anyway. |
+| **Any third-party geocoder**, including the OS geocoder | Locality search is a local lookup in the bundled gazetteer (R71). `expo-location`'s `geocodeAsync` is a platform API wrapping a vendor service, and calling it would send a user-typed place name to Apple or Google from the one screen in the app whose purpose is that this does not happen. |
+| `tile.openstreetmap.org` | Prohibited by the [OSMF Tile Usage Policy](https://operations.osmfoundation.org/policies/tiles/) for app-scale use, and enforced by User-Agent blocking. Listed explicitly so nobody proposes it as a quick fix during a CDN incident ([ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md)). |
 
 ## 8. UI / UX
 
@@ -273,7 +320,7 @@ Map chrome layout, top to bottom: search field (floating, top, respecting the sa
 | Empty | Four distinct cases (R64). (a) **No coverage:** a centred card over a dimmed map, "Sharecropr isn't here yet", with a notify-me action. (b) **Spots, no listings:** markers render in the empty band, plus a bottom card with the widen-radius and publish actions. (c) **Filtered out:** the filter chips stay visible and highlighted, plus a card with "Clear filters". (d) **Offline, no cache:** the offline state below. |
 | Error (recoverable) | Viewport query failed (5xx, timeout). Last successful markers stay on screen, a persistent bottom banner appears with the copy in §8.3 and a Retry action. The map remains pannable; panning re-arms the debounce and retries naturally. |
 | Error (terminal) | Only two cases reach terminal: the map SDK failed to initialise, and the marker layer's error boundary caught a crash. Both render an in-place error card with two actions — "Try again" and "View as list" — because the list is a complete escape from every map failure. The tab bar stays alive. |
-| Offline | Last-known `safe_spots_near` result for the last-viewed viewport renders with counts greyed, plus a **persistent** staleness banner: counts are the thing most likely to be wrong. Safe-spot details come from the 7-day cache. Base tiles come from the OS cache; outside it, a neutral background with correctly positioned markers. The banner is never a toast — this is a condition, not an event. |
+| Offline | Last-known `safe_spots_near` result for the last-viewed viewport renders with counts greyed, plus a **persistent** staleness banner: counts are the thing most likely to be wrong. Safe-spot details come from the 7-day cache. Tiles come from MapLibre's on-disk tile cache for areas the user has already viewed; outside it, a neutral background with correctly positioned markers and the tile-failure chip (R77). Attribution renders throughout (R75) — the cached tiles are still OSM, and the spot data still is too. The banner is never a toast — this is a condition, not an event. **There are no offline map packs in MVP** (§3): last-known-state plus this banner is the whole offline story. |
 | Permission denied | The avatar dot and recentre button are absent (R48). The search field's placeholder becomes "Search a town or postcode". A one-line, dismissible-per-session strip offers "Use my location" which deep-links to OS settings when the OS will no longer prompt. Every other control works. |
 | Rate limited | 429 on `safe_spots_near`. Viewport queries stop for `Retry-After` seconds. Existing markers stay. A bottom banner shows a live countdown ("Too many map updates. Refreshing in 38 s"). Panning is not blocked — only the query is. No auto-retry. |
 
@@ -346,6 +393,26 @@ Where `{relative_time}` is "2 hours", "yesterday", "3 days" — never a raw time
 **Rate-limit banner**
 > Too many map updates. Refreshing in {n} s.
 
+**Map attribution (R75 — rendered unconditionally, on the map and on every screen showing OSM-derived spot data)**
+> © OpenStreetMap contributors
+
+Exact string, including the `©` character and the capitalisation of "OpenStreetMap". It is **not** localised, **not** abbreviated to "© OSM", and **not** truncated with an ellipsis at any type size — above 130% dynamic type the map chrome reflows around it. Its `accessibilityLabel` is "Map data from OpenStreetMap contributors", and it is tappable to reach the credits screen, but the tap is an addition to the visible notice and never a replacement for it (R76).
+
+**Tile-failure chip (non-blocking, bottom-left, above the radius pill)**
+> Map background unavailable
+
+**Tile-failure explainer (on tap)**
+> **The map background didn't load.**
+> Everything else is working. The places shown are in their real positions, and you can open them and arrange an exchange as normal.
+>
+> Button: `Try again`
+
+Not a dialog, not a banner, and not shown at all when the offline staleness banner is already up — offline already explains it, and two notices about one condition read as two problems.
+
+**Locality search, no match in the gazetteer**
+> **We don't know that place yet.**
+> Sharecropr is live in two metro areas, so we only carry place names from those. Try a nearby town or postcode.
+
 **Degraded chip**
 > Simplified view
 
@@ -388,6 +455,7 @@ Where `{relative_time}` is "2 hours", "yesterday", "3 days" — never a raw time
 | Can any response path expose an exact coordinate or PII? | Yes, exactly one, deliberately: `safe_spots.point` via `safe_spots_near.lat/lng`. That is a public building and is one of the two entries on the CI coordinate-column allowlist (API-04, [API Contract §9.1](../01-architecture/06-api-contract.md)). No response on this screen carries a garden coordinate, an H3 r9 cell, a `display_point`, or a user's position. The caller's own position travels **inbound only**, quantized, and is never echoed. |
 | What is logged, and is it scrubbed? | `p_lat`/`p_lng` are excluded from Supabase statement logging for `safe_spots_near` and `search_listings` ([Location Privacy §6.1](../01-architecture/04-location-privacy.md)). Client-side, the Sentry `beforeSend` scrubber deletes any key matching `/lat|lng|latitude|longitude|coord|point|geohash|h3_r[89]/i` at any depth, and the PostHog wrapper rejects any property that parses as a coordinate. Map analytics events carry `safe_spot_id`, zoom band, and radius — never a viewport centre. |
 | Does this need step-up authentication? | No. Browsing is never gated on identity verification, let alone AAL2 ([Mobile Architecture §3.2](../01-architecture/02-mobile-architecture.md)). An unverified user gets the full map. |
+| Who learns which map areas a user looks at? | **Nobody outside our infrastructure.** A tile request necessarily reveals a viewport to whoever serves the tile, at whatever zoom, whenever the user pans — so under a platform-native basemap, Apple and Google received a continuous stream of that. We serve tiles ourselves ([ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md)), so no third party is in that position, and R78 means the requests carry no credential or identifier that would let even us attribute them to a user. **This is a secondary benefit and this spec will not oversell it**, per [ADR-0019](../01-architecture/adr/ADR-0019-openstreetmap-maplibre.md)'s own strongest-argument-against: Apple and Google already know where the user is continuously at the OS level, so a tile request telling them the user is looking at a map of Ann Arbor discloses nothing new. The honest framing is consistency — we spent an entire architecture preventing third parties from learning where users are, and a basemap that streamed viewports to an ad-adjacent company was an inconsistency that would have needed a threat-model entry and a sub-processor disclosure. Removing it is tidiness with a real but modest security value, not a mitigation of a live threat. |
 | Abuse / rate-limit controls | `safe_spots_near`: 30/min/user, Postgres token bucket — the primary anti-scraping control, and the one that a scraper with 50 accounts cannot defeat with IP rotation. `search_listings`: 30/min/user. Kong applies a per-IP layer above both. Client-side, the 400 ms debounce and quantized cache key mean ordinary panning generates a small fraction of the budget; a client hitting 429 through normal use is a bug in the debounce, and the §11 alert on that is how we would find out. |
 
 ## 10. Edge Cases & Failure Modes
@@ -407,10 +475,14 @@ Where `{relative_time}` is "2 hours", "yesterday", "3 days" — never a raw time
 | EC-11 | A species search returns results at 200 spots and the user then applies a category filter that excludes all of them. | Empty case (c). The search text and the filter chips both remain visible, and "Clear filters" clears only the filters, not the search. Two independent narrowings need two independent escapes. |
 | EC-12 | `search_listings` succeeds but `safe_spots_near` 429s in the same interaction. | The marker set is derived from the search result for the duration of the limit; the rate-limit banner shows. The screen degrades to search-only rather than going blank. |
 | EC-13 | Cold start on a device whose persisted cache is from a different contract version. | The persistence `buster` includes the schema contract version, so the cache is discarded rather than rehydrated into a screen that reads a missing column ([Mobile Architecture §2.3](../01-architecture/02-mobile-architecture.md)). The map shows the loading state and paints from the network. |
-| EC-14 | Base map tiles fail (SDK network error) but the RPC succeeds. | Markers render at correct positions over a neutral background. This is step 4 of the degradation ladder and is a fully usable map ([System Architecture §2](../01-architecture/01-system-architecture.md)). No error is shown; a tile failure the user can still work through is not worth a dialog. |
+| EC-14 | Base map tiles fail (CDN error, missing PMTiles archive, cold cache) but the RPC succeeds. | Markers render at correct positions over a neutral background, and the attribution stays (R75, R77) — the spot data is still OSM-derived even when no tile loaded. The non-blocking chip appears; no dialog, no blocked flow. This is also step 4 of the degradation ladder and is a fully usable map ([System Architecture §2](../01-architecture/01-system-architecture.md)). |
 | EC-15 | A screen-reader user has the sticky preference set to "map" from before enabling the reader. | R61 wins on the launch where the reader is detected as enabled: the list is shown, and a one-time note explains it with a "Use the map instead" escape that updates the sticky preference. Detection overrides a stale preference exactly once, then defers to the user. |
 | EC-16 | The user sets radius to 40 km in a rural area and 200 spots come back at 39 km. | Handled as EC-04. Additionally, the "Simplified view" ladder is likely to engage; the list view is offered prominently, and for a rural user scanning 40 km, the list is usually the better screen anyway. |
 | EC-17 | Two viewport queries race: a slow one from an earlier pan resolves after a faster later one. | TanStack Query keys are per-quantized-viewport, so the stale response lands in its own cache entry and is never rendered for the current viewport. No manual sequencing needed — this is why R13 is a `MUST`. |
+| EC-18 | The style JSON points at a PMTiles archive that has been deleted or reverted server-side. | Identical to EC-14 from the client's point of view — the client has no concept of "wrong archive" (R81). The fix is repointing the style at the previous dated archive, which needs no app release ([ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md)); detection is `map.tiles_failed` in §11, not anything on the device. |
+| EC-19 | The launch metro's tiles are fine but the user pans to a region outside the regional extract. | Empty tiles over the neutral background, markers absent because `safe_spots_near` returns none, and empty case (a) renders. The tile-failure chip is **not** shown: an area we deliberately do not cover is not a failure, and calling it "unavailable" would imply a bug ([ADR-0020 §Coverage strategy](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md)). |
+| EC-20 | A place label falls back to a different font on Android than on iOS. | An R82 parity failure, caught by the CI screenshot diff rather than in the field. Glyph ranges are served from our own style bundle (R74) precisely so that label rendering does not depend on what fonts the OS happens to have. |
+| EC-21 | A UI change adds a bottom banner that lands on top of the attribution. | R76 violation, caught by T77's geometric assertion rather than by a reviewer noticing. Treated as a licence incident, not a layout bug: the fix ships in the next update and the occurrence is recorded, because "we breached ODbL for six weeks and nobody checked" is the failure this test exists to prevent. |
 
 ## 11. Observability
 
@@ -432,7 +504,11 @@ Where `{relative_time}` is "2 hours", "yesterday", "3 days" — never a raw time
 | `map.permission_result` | product event | `granted`, `was_reprompt` | Denial rate > 40% ⇒ the pre-permission explainer copy is not working |
 | `map.list_view_used` | product event | `reason` (`screen_reader`\|`preference`\|`degradation`\|`manual`) | — |
 | `map.rate_limited` | error event | `endpoint` | > 0.5% of sessions ⇒ the debounce is wrong, not the limit |
-| `map.tiles_failed` | error event | `platform` | > 2% of sessions ⇒ SDK or network-policy issue |
+| `map.tiles_failed` | error event | `platform`, `style_version` | > 2% of sessions ⇒ CDN, archive, or network-policy issue — check `basemap_age_days` and the archive URL before suspecting the client |
+| `map.tile_load_ms` | histogram | `platform`, `z`, `cache` (`cold`\|`warm`) | **p95 > 300 ms** at the edge (R72) — an [ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md) revisit trigger, not a client bug |
+| `map.time_to_first_tile_ms` | histogram | `platform`, `device_class` | p95 > 1000 ms (R73) |
+| `map.attribution_missing` | error event | `screen`, `state` | **Any occurrence.** A client-side assertion fires if the attribution node is unmounted or has zero measured area while the map is visible. This is a licence-breach detector, and its threshold is one |
+| `map.locality_search` | product event | `matched` boolean, `metro_slug` when matched | Miss rate > 30% ⇒ the gazetteer's coverage is too narrow for where users actually are (R71) |
 
 **Never emitted, at any threshold:** the viewport centre, the device position, the resolved locality coordinate, or any property from which one could be derived. `map.empty_viewport` carries `metro_slug`, which is a coarse label attached to safe spots, not a user-derived cell. Spatial analytics are capped at H3 r5 ([Location Privacy §8](../01-architecture/04-location-privacy.md)).
 
@@ -446,6 +522,7 @@ Where `{relative_time}` is "2 hours", "yesterday", "3 days" — never a raw time
 - Filter chips: `accessibilityRole="button"` with `accessibilityState={{ selected }}`. Selection is never conveyed by colour alone — a selected chip carries a checkmark glyph and its label reads "{category}, selected".
 - The radius control is a discrete stepper (R34) with `accessibilityRole="adjustable"`, `accessibilityValue={{ text: "Within 8 kilometres" }}`, and increment/decrement actions. A continuous slider is unusable with a screen reader and produces a query per pixel.
 - Availability bands are conveyed by shape and by the count badge, never by colour alone (R19).
+- The attribution (R75) is a static, focusable text element in the reading order, meeting the 4.5:1 contrast floor against every basemap and every degraded background, and scaling with dynamic type rather than truncating. It is never conveyed as an icon, and its accessible name is "Map data from OpenStreetMap contributors" — a screen-reader user receives the attribution too, which is what an ODbL obligation on a "reasonably visible" notice means when the user cannot see.
 - The offline banner and the rate-limit countdown use `accessibilityLiveRegion="polite"`. The degraded-view chip does not — it would interrupt on every hysteresis crossing.
 - Sheet detent changes move focus to the newly revealed heading; dismissing the sheet returns focus to the marker or row that opened it, via `AccessibilityInfo.setAccessibilityFocus` on a ref rather than left to chance.
 - All hit targets ≥ 44 × 44 dp, including filter chips and the recentre button. The `Pressable` primitive applies a default `hitSlop` that brings anything smaller up to 44 dp, so correct is the default.
@@ -478,8 +555,8 @@ Where `{relative_time}` is "2 hours", "yesterday", "3 days" — never a raw time
 | T18 | unit | R21, R22, R27 | Supercluster configured as specified; `getClusters` called with `Math.round(zoom)`; index rebuilt only on data change (call counter) |
 | T19 | unit | R23 | Cluster badge equals the sum of member `listing_count`, not the member count |
 | T20 | e2e | R24 | Cluster press animates to the expansion zoom and the cluster resolves into its members |
-| T21 | unit | R25 | `tracksViewChanges` is false at rest, true for ≤ 350 ms after a count change |
-| T22 | unit | R26 | Re-render with a structurally identical `markers` array produces zero `SafeSpotMarker` re-renders |
+| T21 | unit | R25 | Rendered tree under `MapCanvas` contains exactly one `ShapeSource`/`SymbolLayer` pair and zero `PointAnnotation` / `MarkerView` nodes, including for the selected marker and cluster badges |
+| T22 | unit | R26 | Re-render with a structurally identical marker array yields the **same** `FeatureCollection` object reference and zero source updates pushed to native; changing one spot's `listing_count` yields exactly one |
 | T23 | unit | R28 | A spot with `listing_count = 0` is present in the rendered marker set |
 | T24 | integration | R29 | Category filter is sent as `p_category_ids`; no client-side marker filtering occurs |
 | T25 | integration | R30, R31 | Species search calls `search_listings`; result count rendered; marker set restricted to matching spots |
@@ -495,19 +572,28 @@ Where `{relative_time}` is "2 hours", "yesterday", "3 days" — never a raw time
 | T35 | e2e | R44 | FAB long-press offers both actions; both are also reachable from the Inventory tab |
 | T36 | e2e | R45, R47, R48 | Deny permission at first open: no avatar, no recentre button, locality search centres the map, sheet and requests work end to end |
 | T37 | integration | R46 | CI asserts no `NSLocationAlwaysAndWhenInUseUsageDescription` in the built `Info.plist` and no `ACCESS_BACKGROUND_LOCATION` in `AndroidManifest.xml` |
-| T38 | unit | R49 | Geocoded locality coordinate passes through the same quantizer before reaching the repository |
+| T38 | unit | R49 | Gazetteer-resolved locality coordinate passes through the same quantizer before reaching the repository; the map feature contains no call to `geocodeAsync` and no network request is made during a locality search |
 | T39 | integration | R50 | Last locality persists across a cold start |
 | T40 | e2e | R51 | "Use my location" deep-links to OS settings when the OS will no longer prompt |
 | T41 | perf | R52, R53, R58 | Device-farm run: 200 features, ≤ 60 rendered markers, ≥ 55 fps sustained, no frame > 32 ms, cold start p95 < 2.5 s |
 | T42 | integration | R54 | Synthetic frame-budget failure drives the ladder in order; each step asserted; hysteresis prevents oscillation |
 | T43 | integration | R55 | No degradation step alters `p_radius_m` |
 | T44 | unit | R56 | A throwing marker component is caught by the marker error boundary; tab bar, FAB, and list button remain mounted |
-| T45 | integration | R57 | Lint rule: `react-native-maps` imported only in `MapCanvas.tsx` |
+| T45 | integration | R57 | Lint rule: `@maplibre/maplibre-react-native` imported only in `MapCanvas.tsx`; `react-native-maps` and `@rnmapbox/maps` imported nowhere, asserted over the whole tree including transitive re-exports |
 | T46 | e2e | R59, R60, R63 | List view shows identical data for the same filters/radius/search; header button always present |
 | T47 | integration | R61, R62 | With `isScreenReaderEnabled` mocked true, the list is default; the choice persists across launches |
 | T48 | e2e | R64–R68 | All four empty causes render their distinct copy and actions; none renders a bare spinner or "No results" |
 | T49 | e2e | §8.2 | Offline: airplane mode with a warm cache renders greyed counts and the persistent staleness banner |
 | T50 | manual | §12 | VoiceOver and TalkBack pass over `/map/list` and the sheet; focus return verified; 200% type verified |
+| T68 | unit | R69, R70 | The `FeatureCollection` handed to `ShapeSource` carries exactly the five permitted properties and nothing coordinate-derived beyond geometry; the source is configured with `cluster` absent or `false`, asserted from the rendered props |
+| T69 | e2e | R75 | Attribution is present and legible on the map at first paint, before any tile has loaded, and on the safe-spot sheet, the list rows, both spot pickers, and the credits screen |
+| T70 | e2e | R75, R76 | **Attribution survives every UI state.** Parameterised over all §8.2 states — loading, empty (a)(b)(c)(d), recoverable error, terminal error, offline, permission denied, rate limited, degraded, search-with-zero-results — and over the sheet at 25 / 55 / 92%. In each, the attribution node is mounted, has non-zero measured area, and meets the contrast floor |
+| T71 | e2e | R77 | Tile origin stubbed to fail: neutral background renders, marker screen positions match the tile-success run within 2 px, no modal appears, and a full flow (open spot → open listing → send request) completes |
+| T72 | perf | R72, R73 | Synthetic edge measurement asserts tile p95 < 300 ms in each launch market; on-device run asserts time-to-first-tile p95 < 1.0 s and that pan/tap are responsive before the first tile paints |
+| T73 | visual | R82 | Cross-platform render parity: identical style, camera, and fixture marker set on iOS and Android at z11 / z13 / z15; perceptual diff under threshold; a deliberately removed sprite fails the test |
+| T74 | unit | R74, R78, R79, R80 | Static half of the tile-request rules: the style is loaded from the in-repo JSON; the style, sprite, glyph, and tile URLs all resolve to the Sharecropr tile origin; the request builder attaches no credential and no parameter beyond `z/x/y` and a `Range` header; no code path assigns a style or tile URL from a remote response or a remote config value. T78–T80 assert the same three requirements on the wire, which is where a transitive dependency would be caught |
+| T75 | integration | R71 | Gazetteer resolves every launch-metro locality and its aliases and postal codes with zero network calls; a miss renders the §8.3 no-match copy and issues no request |
+| T76 | integration | R81 | Static check: no symbol matching `/basemap.*(age\|stale\|version)/i` is read by any client render path, and no user-facing string mentions the basemap being out of date |
 
 ### 13.2 Negative & security tests
 
@@ -530,15 +616,22 @@ Where `{relative_time}` is "2 hours", "yesterday", "3 days" — never a raw time
 | T65 | Malicious `search_listings` query `p_query` with 10 KB of text | `validation_failed` 400 on length; the trigram index is never asked to process it |
 | T66 | Unauthenticated (`anon`) call to `safe_spots_near` | 401 `unauthenticated`. `anon` may read `safe_spots` rows but not the proximity RPC — the RPC is the rate-limited, capped path and it requires a user to limit |
 | T67 | Two accounts on one device rapidly switching, each panning | Buckets are per user id, so one account exhausting its budget does not affect the other; asserted so the bucket key is never accidentally the device or IP |
+| T77 | **Try to hide the attribution.** (a) Open the sheet to 92% with the offline banner, rate-limit countdown, degraded chip, chip row, and FAB all present simultaneously. (b) Set dynamic type to 200%. (c) Delete the attribution component from the tree. | (a) and (b): the attribution's measured frame intersects no other rendered view's frame and is not clipped by any parent — a geometric assertion, not a snapshot. (c) The test suite fails and `map.attribution_missing` fires. There is no configuration, feature flag, remote-config value, or theme under which the notice is absent (R75, R76) |
+| T78 | Capture the wire for a full map session (cold cache, pan across the metro, locality search, sheet open, request sent) and enumerate every request host | Every host is in a two-entry allowlist: the Sharecropr tile origin and the Sharecropr Supabase origin. Any other host — a tile vendor, a geocoder, an SDK phoning home, `tile.openstreetmap.org` — fails the test (R79). Run at the wire rather than over the import graph, because a transitive dependency is exactly what an import audit misses |
+| T79 | Regex every captured tile request URL, header, and body for coordinate-shaped values | Only `z/x/y` path segments and PMTiles `Range:` byte offsets present. No decimal degrees, no `lat`/`lng`/`center`/`bbox` parameter, no locality string, no `safe_spot_id` (R80) |
+| T80 | Inspect tile requests for credentials | No `Authorization` header, no cookie, no `key=`/`api_key=`/`token=` query parameter, no device or user identifier in any header. The request is indistinguishable from any other client's request for the same tile (R78) |
+| T81 | Point the style at a non-Sharecropr host in a build and run the suite | T74 and T78 both fail. Asserted so that switching to the [ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md) managed fallback is a deliberate, documented change rather than something a config edit can do quietly |
 
 ### 13.3 Manual QA
 
-- [ ] Two-day `react-native-maps` New Architecture spike completed and its result recorded against [PRD A5](../00-foundation/02-prd.md) **before any other map implementation work**.
+- [ ] **Reset spike on `@maplibre/maplibre-react-native`** completed on the Android floor device and its result recorded in the [go/no-go doc](../07-review/03-map-spike-go-no-go.md) and against [PRD A5](../00-foundation/02-prd.md), **before any other map implementation work**. New Architecture interop is the first question it must answer ([ADR-0019](../01-architecture/adr/ADR-0019-openstreetmap-maplibre.md)).
 - [ ] Walk a real route in a launch metro with follow mode on; confirm smooth tracking and no self-clearing recentre button.
 - [ ] Pan hard for 30 seconds on the reference Android device; confirm ≥ 55 fps and that no viewport query fires mid-gesture.
 - [ ] Confirm the degradation ladder by artificially loading 200 spots in a 2 km radius; observe each step in order and confirm hysteresis on exit.
 - [ ] Deny location on a fresh install and complete a full journey: search a town → open a spot → open a listing → send a request.
-- [ ] Confirm on both platforms that the map renders with tiles disabled (airplane mode after a cold cache clear) and markers remain correctly positioned.
+- [ ] Confirm on both platforms that the map renders with tiles disabled (airplane mode after a cold cache clear) and markers remain correctly positioned, and that the attribution is still on screen.
+- [ ] Put an iOS and an Android device side by side on the same camera and confirm the map looks the same. This is the benefit we bought with the migration and it is worth looking at once with human eyes, not only in a diff.
+- [ ] Confirm the attribution is visible at 200% type, in light and dark themes, with the sheet at 92% and the offline banner showing.
 - [ ] Screen-reader pass on `/map/list` end to end, including expanding a spot into its listings and reaching a request.
 - [ ] Confirm the empty-state copy for all four causes on a real device, at 200% type, in both light and dark themes.
 - [ ] Confirm the "Simplified view" explainer and the list escape are reachable while degraded.
@@ -551,7 +644,8 @@ Where `{relative_time}` is "2 hours", "yesterday", "3 days" — never a raw time
 | Feature flag | `map.list_default_for_screen_reader` (R61) ships default-on and is flagged only so it can be disabled if detection proves unreliable on a platform version. The map itself is not flagged — it is the default tab and there is no fallback product. |
 | Migration required | No. `safe_spots_near` and `search_listings` are created by [SPEC-007](SPEC-007-safe-spots.md) and [SPEC-009](SPEC-009-listings-and-offers.md) migrations respectively. |
 | Backfill required | No. |
-| Rollback plan | Client-only. An EAS Update reverts the map bundle; the RPCs are unchanged and older clients keep working. If the map SDK itself regresses, the escape is the `MapCanvas` seam ([Mobile Architecture §4.1](../01-architecture/02-mobile-architecture.md)) — roughly 300 lines to swap vendors, which bounds the code change but not the product change (different clustering model, different offline story, different pricing conversation). |
+| Rollback plan | Client-only. An EAS Update reverts the map bundle; the RPCs are unchanged and older clients keep working. If the renderer itself regresses, the escape is the `MapCanvas` seam ([Mobile Architecture §4.1](../01-architecture/02-mobile-architecture.md)) — roughly 300 lines to swap renderers, which bounds the code change but not the product change (different clustering model, different offline story, different attribution obligation). Separately, a **bad basemap build is rolled back server-side** by repointing the style at the previous dated PMTiles archive, with no client release at all ([ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md)). |
+| Renderer gate | **The spike must be re-run on MapLibre before implementation.** [ADR-0013](../01-architecture/adr/ADR-0013-map-library.md)'s spike is invalidated: `src/features/map/` was built on `react-native-maps`, and the New Architecture interop story for MapLibre RN is the primary unknown. Budget 4–6 engineer-days to port plus the spike itself; the [go/no-go doc](../07-review/03-map-spike-go-no-go.md) is reset accordingly. **If the reset spike fails its pass criteria, ADR-0013's `react-native-maps` is the documented fallback behind the seam** (~3 days) — and taking it means R74–R82 need re-derivation against a vendor basemap, which is the real cost of that fallback rather than the 3 days. |
 | Client version floor | None. |
 
 ## 15. Open Questions
@@ -564,9 +658,11 @@ Where `{relative_time}` is "2 hours", "yesterday", "3 days" — never a raw time
 | Q4 | Is 60 s the right `staleTime` for counts at peak season, when a listing can be claimed within a minute of publishing? Shorter multiplies RPC load against a 30/min budget. | Mobile + Architecture | Post-launch data |
 | Q5 | Should species search persist across launches like radius does? It is arguably a standing intent ("I always want tomatoes") rather than a session one. | Product | Post-launch |
 | Q6 | Does the availability band (0 / 1–4 / 5+) match how users actually read the map, or should the badge simply show the number at all times? Bands are cheaper to render at 60 markers; numbers are more honest. | Design | Post-launch, first usability round |
+| Q7 | **Where does clustering live?** [ADR-0019](../01-architecture/adr/ADR-0019-openstreetmap-maplibre.md)'s seam table says "server-side H3 r7 aggregation remains authoritative — the device renders what it is given", while §3 of this spec rejects server-side clustering outright (a viewport-precision side channel, [Location Privacy §12.4](../01-architecture/04-location-privacy.md)) and R21 mandates client-side `supercluster`. Both cannot be true. R21 and §3 are unchanged in this revision because nothing in the renderer swap bears on the privacy argument, and R70 bans the third option (MapLibre's built-in clustering) either way — but the ADR's wording needs correcting or this spec needs a documented exception. Not an implementation decision to be made in code. | Architecture | **Before implementation begins** |
 
 ## 16. Change Log
 
 | Date | Version | Author | Change |
 | --- | --- | --- | --- |
+| 2026-08-09 | 2.0.0 | Mobile Engineering | **OpenStreetMap / MapLibre migration.** Renderer moves from `react-native-maps` (Apple Maps on iOS, Google Maps on Android) to `@maplibre/maplibre-react-native` over self-hosted OSM vector tiles ([ADR-0019](../01-architecture/adr/ADR-0019-openstreetmap-maplibre.md), [ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md)); [ADR-0013](../01-architecture/adr/ADR-0013-map-library.md) superseded. Behaviour-breaking, hence the major bump: §5.3 markers become one `ShapeSource`/`SymbolLayer` instead of native marker views (R25, R26 restated; the `tracksViewChanges` hazard no longer exists and the 200-cap is re-characterised as a privacy and payload cap); R49 replaces the OS geocoder with a bundled locality gazetteer; R57 changes which package is seam-locked. New §5.10 (R74–R82) covers the style JSON, mandatory ODbL attribution, tile-failure degradation, credential-free tile requests, the tile-host allowlist, server-side basemap staleness, and cross-platform render parity. New R69–R73 add the feature-collection contract, the built-in-clustering ban, the gazetteer, and tile-latency budgets. Offline map packs moved to a Phase 2 non-goal. Tests T68–T81 added, T21/T22/T38/T45 restated. Q7 raised: the ADR-0019 clustering wording contradicts §3 and R21. |
 | 2026-08-08 | 1.0.0 | Mobile Engineering | Initial spec |

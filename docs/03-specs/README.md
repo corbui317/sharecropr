@@ -104,7 +104,7 @@ flowchart LR
 
 Generated from `Schema depends on` only. A valid order: **001 → 002 → 003 → 004 → 005 → 006 → 007 → 009 → 008 → 010 → 011 → 012 → 013 → 900.**
 
-**Before any of it**, run the map spike from [R-04](../06-roadmap/02-open-risks.md): build the SPEC-008 map screen with 200 clustered custom markers on both platforms under the New Architecture. The map is the product, and if `react-native-maps` misbehaves under Fabric, that changes the plan before the data model is written, not after.
+**Before any of it**, run the **reset** map spike from [R-04](../06-roadmap/02-open-risks.md): build the SPEC-008 map screen with 200 clustered symbols on both platforms under the New Architecture, on `@maplibre/maplibre-react-native` over self-hosted OSM tiles ([ADR-0019](../01-architecture/adr/ADR-0019-openstreetmap-maplibre.md)). The map is the product, and if the renderer misbehaves under Fabric, that changes the plan before the data model is written, not after. **The earlier `react-native-maps` spike passed but no longer validates the shipping stack** — do not carry its result forward.
 
 **Parallelizable early:** SPEC-005 (taxonomy) depends on nothing at all, and SPEC-007 (safe spots) depends only on auth. Both are mostly data curation — start them on day one. SPEC-007 in particular has a long lead time because it requires physically verifying venue hours in two metros.
 

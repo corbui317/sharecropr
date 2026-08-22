@@ -210,6 +210,57 @@ TC-GEO-32 matters more than it sounds: unstable quantization means every GPS tic
 
 ---
 
+## 8a. Basemap, tiles, and OSM sourcing
+
+We own the basemap and we seed the safe-spot queue from OpenStreetMap ([ADR-0019](../01-architecture/adr/ADR-0019-openstreetmap-maplibre.md), [ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md), [ADR-0021](../01-architecture/adr/ADR-0021-osm-safe-spot-sourcing.md)). Both introduce failures in the same two silent directions this plan already worries about: something legally required stops being rendered, or something unverified reaches a user. Neither crashes.
+
+### 8a.1 Attribution — a licence obligation with a geometric test
+
+| # | Assertion | Level |
+| --- | --- | --- |
+| TC-GEO-37 | **"© OpenStreetMap contributors" is present, mounted, and has non-zero measured area in every map state**: first paint before any tile has loaded, tiles-failed, offline, stale, empty (every empty variant), recoverable error, terminal error, permission-denied, rate-limited, degraded, and search-with-zero-results — and with the safe-spot sheet at 25%, 55%, and 92% | e2e |
+| TC-GEO-38 | The attribution is **not obscured, clipped, or faded below 4.5:1** by any other chrome. Asserted geometrically: the attribution's rect intersects no other rendered node's rect, at 100% and 200% dynamic type, in light and dark themes, with the offline banner and the degraded chip both showing | e2e |
+| TC-GEO-39 | Attribution is present on every surface displaying OSM-derived spot data — the sheet at every detent showing spot fields, list rows, both spot pickers, the credits screen — **including for a spot whose `source = 'manual'`**. Attribution that appears on some rows and not others is a layout change away from vanishing on the row that needed it | e2e |
+| TC-GEO-40 | The string is exact: `© OpenStreetMap contributors`. Not localised, not abbreviated to "© OSM", not ellipsised at any type size. A tap-to-reveal "ⓘ" affordance in place of the visible notice **fails** | unit + e2e |
+
+> TC-GEO-38 is the unusual one and it is the one that will catch a real breach. NFR-99 is discharged in pixels, so the only honest test of it is geometric. The failure it exists to prevent is not "someone deleted the attribution" — nobody does that — it is "someone added a bottom banner in an unrelated PR", and the resulting incident is *"we breached ODbL for six weeks and nobody checked."* It is recorded as a licence incident, not a layout bug.
+
+### 8a.2 Tile serving and egress
+
+| # | Assertion | Level |
+| --- | --- | --- |
+| TC-GEO-41 | **No request from the map screen — tiles, sprites, glyphs, style, geocoding — targets a host outside the allowlist** (Sharecropr tile origin, Sharecropr Supabase origin). Captured at the wire, not inferred from imports, because a transitive dependency phoning home is exactly what an import audit misses (NFR-102) | integration, blocking |
+| TC-GEO-42 | No captured tile request carries a credential: no `Authorization`, no cookie, no `key=`/`api_key=`/`token=`, no device or user identifier in any header. **One user's request for a tile is byte-identical to another's** | integration |
+| TC-GEO-43 | No captured tile request carries a coordinate beyond `z/x/y` path segments and PMTiles `Range:` byte offsets — no decimal degrees, no `lat`/`lng`/`center`/`bbox` parameter, no locality string, no `safe_spot_id`. This is the same regex family as TC-GEO-20, applied to a different transport | integration |
+| TC-GEO-44 | **Tile-failure degradation preserves marker geometry.** With the tile origin stubbed to fail, every marker's *screen position* matches the tile-success run within 2 px at z11, z13, and z15; the camera still responds; no modal appears; and a full flow — open spot, open listing, send request — completes | e2e |
+| TC-GEO-45 | Locality search resolves against the bundled gazetteer with **zero network requests**, for every launch-metro locality plus aliases and postal codes. A miss renders the no-match state and issues no request. The OS geocoder is never called | integration |
+
+> TC-GEO-44 is the recall-direction test for the basemap. A tile failure that also shifted markers by a few pixels would be invisible in QA and would send someone to the wrong side of a building. Asserting *screen position parity against the working run* is the only way to catch a projection or centre-offset difference between the tiled and untiled paths, and it is why the assertion is in pixels rather than in "markers still render".
+
+### 8a.3 Archive integrity and coverage
+
+| # | Assertion | Level |
+| --- | --- | --- |
+| TC-GEO-46 | The served PMTiles archive is **readable, well-formed, and covers every launch metro plus its declared buffer** at every zoom the style requests. Sampled at metro centre, at each metro's bounding-box corners, and at four points just outside the buffer — the last must return empty tiles cleanly, not an error the client renders as a failure | integration, per build |
+| TC-GEO-47 | Every active `safe_spots.point` falls inside the served archive's coverage. A verified spot that renders over a blank background is a coverage bug, and it is the one that appears first when a metro is added ahead of the extract | nightly |
+| TC-GEO-48 | The style JSON validates against the MapLibre style schema, references **only** our own tile, sprite, and glyph URLs, and names one explicit dated archive — never "latest" | CI, blocking |
+| TC-GEO-49 | `basemap_age_days` computed from the archive the style actually points at is **≤ 45**. Computed from the served archive, not from the most recent build, so a repointed-but-not-promoted rollback is visible | nightly |
+| TC-GEO-50 | The build is **reproducible**: the same extract and pinned tooling version produce an identical archive. Without this, diagnosing a cartography regression is guesswork | per build |
+
+### 8a.4 OSM candidate sourcing — the safety-critical half
+
+| # | Assertion | Level |
+| --- | --- | --- |
+| TC-GEO-51 | **An imported `opening_hours` never reaches `safe_spots.hours`.** Import a fixture element carrying `opening_hours`, promote it, and assert `hours` is exactly what the human entered, `hours_verified_at` reflects the human action, and the imported string appears nowhere in any client-reachable response shape. Schema assertion alongside it: `private.osm_spot_candidates` has no column named `hours` or `hours_verified_at`, so there is nothing for a careless `INSERT … SELECT` to align with | integration + schema, blocking |
+| TC-GEO-52 | **A `private.osm_spot_candidates` row is never returned by `safe_spots_near`.** Seed a viewport dense with `pending` candidates and assert zero candidate-derived rows — plus that `anon` and `authenticated` receive permission-denied on the table via PostgREST, direct SQL, and any view. Same structural argument as `private.garden_locations`: the row is unreachable, not filtered | rls, blocking |
+| TC-GEO-53 | An end-to-end import run against a fixture metro produces **zero** rows in `public.safe_spots` in any status. The import path has no privilege the manual path lacks | integration |
+| TC-GEO-54 | Upstream changes to a linked live spot — `name`, `addr:*`, `opening_hours`, a move over 50 m, deletion of the element — each raise a review flag and leave `name`, address columns, `point`, `hours`, `hours_verified_at`, and the 90-day staleness clock **unchanged**. An OSM edit is not a verification, and must not be able to reset our clock or move our pin | integration |
+| TC-GEO-55 | A promoted OSM-derived spot satisfies TC-GEO-26 (valid point on land), TC-GEO-27 (no two active spots within 50 m — the dedupe path), and TC-GEO-28 (`h3_r8` matches its point) exactly as a hand-curated one does. **Provenance changes nothing about the data-quality bar** | nightly |
+
+> TC-GEO-51 and TC-GEO-52 are the two in this section that are worth the most. Stale hours are the largest generator of no-shows, and a no-show is a wasted trip for a real person who drove somewhere; an unreviewed candidate surfacing to a user is worse still. Both failures are silent — the map looks fine, the spot looks fine, and the person is standing outside a locked door.
+
+---
+
 ## 9. Running the suite
 
 | Suite | When | Duration |
@@ -221,8 +272,14 @@ TC-GEO-32 matters more than it sounds: unstable quantization means every GPS tic
 | Performance (21–25) | Nightly + on any spatial migration | ~6 min |
 | Data quality (26–30) | Nightly against production | ~1 min |
 | Client (31–36) | Every PR | ~10 s |
+| Attribution (37–40) | Every PR | ~50 s |
+| Tile egress and degradation (41–45) | Every PR | ~90 s |
+| Archive integrity (46–50) | **On every tile build**, plus 47 and 49 nightly | ~3 min |
+| OSM sourcing (51–55) | 51–54 every PR; 55 nightly | ~40 s |
 
 The 10,000-garden property tests use a fixed seed so failures are reproducible. Nightly, they run with a random seed as well — a fixed seed proves the implementation works for those 10,000 gardens, which is not quite the same as proving it works.
+
+**The archive-integrity group runs on a schedule the rest of this plan does not have: per tile build, monthly.** That is deliberate and it is also the weak point. Everything else here runs on a PR, where somebody is watching. TC-GEO-46 and TC-GEO-49 run when a cron job fires, and a check nobody is watching fails quietly — which is precisely the class of failure `basemap_age_days` exists to catch. If the monthly build result stops appearing on the dashboard, treat that as the alert, not the absence of one.
 
 ---
 
@@ -231,3 +288,4 @@ The 10,000-garden property tests use a fixed seed so failures are reproducible. 
 | Date | Version | Author | Change |
 | --- | --- | --- | --- |
 | 2026-08-08 | 1.0.0 | Backend + Security | Initial geospatial test plan |
+| 2026-08-09 | 1.1.0 | Backend + Security | §8a added for the OpenStreetMap basemap and OSM safe-spot sourcing ([ADR-0019](../01-architecture/adr/ADR-0019-openstreetmap-maplibre.md), [ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md), [ADR-0021](../01-architecture/adr/ADR-0021-osm-safe-spot-sourcing.md)): TC-GEO-37…40 ODbL attribution, 41…45 tile egress and failure degradation, 46…50 archive integrity and coverage, 51…55 candidate isolation and imported-hours containment |

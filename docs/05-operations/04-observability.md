@@ -122,6 +122,13 @@ The last two have no error budget by design. A missed safety escalation and a lo
 | `content_scan_backlog` | gauge | > 500 |
 | `kyc_inquiry_starts` | counter | > 150% of 7-day baseline |
 | `kyc_monthly_spend` | gauge | > 130% of forecast |
+| `tile_request_p95_ms` | histogram | > 300 ms at the CDN edge in a launch market |
+| `tile_error_rate` | rate | > 1% over 10 min |
+| `basemap_age_days` | gauge | **> 45** — the basemap is ours now, so staleness is our failure ([R-15](../06-roadmap/02-open-risks.md)) |
+| `tile_build_result` | event | **Any failure, and any skipped monthly run** |
+| `osm_candidate_queue_depth` | gauge | > 200 pending, or oldest > 30 days |
+| `osm_candidate_approval_rate` | gauge | **> 90%** (rubber-stamping) or **< 30%** (import filter too loose) |
+| `osm_import_run_result` | event | Any failure; two in a quarter is an [R-15](../06-roadmap/02-open-risks.md) trigger |
 | `report_sla_breach` | counter | **Any severity-1 breach** |
 | `moderation_queue_depth` | gauge | > 50, or oldest > 18 h |
 | `unaudited_moderator_read` | counter | **Any** |
@@ -226,8 +233,11 @@ Any failure pages immediately, at any hour. Check 4 exists because a canary that
 | **KYC inquiries** | > 130% of forecast, or > 150% of the 7-day baseline in a day |
 | Storage egress | > 130% |
 | Sentry event volume | > 130% |
+| **Tile storage + egress** (R2) | **> $50/month** — an [ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md) revisit trigger |
 
 KYC is the one to watch: it is the only cost that an attacker can drive up directly, and the alarm is a security control as much as a finance one ([THR-30](../02-security/01-threat-model.md), [R-07](../06-roadmap/02-open-risks.md)).
+
+**There is no map-load billing line, deliberately.** [ADR-0019](../01-architecture/adr/ADR-0019-openstreetmap-maplibre.md) and [ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md) removed the whole category: tile cost is bytes on object storage, not a vendor's per-request price. R2 charges no egress fee, which is why the number is single-digit dollars rather than a line item anyone watches nervously. The $50 threshold exists not because we expect to hit it but because a self-hosted cost that starts creeping is the signal to take the managed fallback rather than to optimise ([R-15](../06-roadmap/02-open-risks.md)).
 
 ---
 

@@ -96,6 +96,7 @@ CREATE TYPE request_status       AS ENUM ('pending','accepted','declined','withd
 CREATE TYPE session_state        AS ENUM ('scheduling','scheduled','in_progress','completed','cancelled','disputed','no_show');
 CREATE TYPE safe_spot_category   AS ENUM ('public_library','police_station','city_hall','community_center','college_campus','fire_station','farmers_market','park_pavilion','other_municipal');
 CREATE TYPE safe_spot_status     AS ENUM ('proposed','under_review','active','suspended','retired');
+CREATE TYPE safe_spot_source     AS ENUM ('manual','osm_import','partner','user_proposed');
 CREATE TYPE message_kind         AS ENUM ('user','system','safety_notice');
 CREATE TYPE report_reason        AS ENUM ('no_show','misrepresented_goods','harassment','unsafe_meeting','spam','impersonation','underage','other');
 CREATE TYPE report_status        AS ENUM ('open','triaged','actioned','dismissed','escalated');
@@ -403,13 +404,51 @@ The only precise coordinates a client ever receives — because they are public 
 | `has_cameras` | `boolean` NULL | P3 | |
 | `partner_org_id` | `uuid` NULL | P3 | Phase 2 |
 | `approved_by` / `approved_at` | `uuid` / `timestamptz` NULL | P3 | |
+| `source` | `safe_spot_source` NOT NULL DEFAULT `'manual'` | P3 | `'manual'` \| `'osm_import'` \| `'partner'` \| `'user_proposed'` |
+| `osm_type` | `text` NULL, CHECK IN (`'node'`,`'way'`,`'relation'`) | P3 | OSM element type |
+| `osm_id` | `bigint` NULL | P3 | OSM element id — the join key for refresh diffs |
+| `osm_last_synced_at` | `timestamptz` NULL | P3 | When the refresh job last saw this element |
+| `osm_source_licence` | `text` NULL DEFAULT `'ODbL-1.0'` | P3 | **Provenance for ODbL compliance** — we must always know which rows are OSM-derived |
 | `created_at` / `updated_at` | `timestamptz` NOT NULL | — | |
 
 ```sql
 CREATE INDEX safe_spots_gix    ON public.safe_spots USING GIST (point);
 CREATE INDEX safe_spots_h3_idx ON public.safe_spots (h3_r8) WHERE status = 'active';
 CREATE INDEX safe_spots_cat_idx ON public.safe_spots (category) WHERE status = 'active';
+
+-- One safe spot per OSM element. The refresh diff joins on this.
+CREATE UNIQUE INDEX safe_spots_osm_key ON public.safe_spots (osm_type, osm_id)
+  WHERE osm_id IS NOT NULL;
 ```
+
+### `private.osm_spot_candidates`
+
+Raw Overpass import staging. **Never client-reachable** — an unreviewed candidate must not be discoverable, and putting it in `private` makes that structural rather than a matter of remembering a status filter. See [ADR-0021](adr/ADR-0021-osm-safe-spot-sourcing.md).
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | `uuid` PK | |
+| `osm_type` / `osm_id` | `text` / `bigint` | UNIQUE together |
+| `metro_key` | `text` NOT NULL | Which market import produced this |
+| `suggested_category` | `safe_spot_category` NOT NULL | Mapped from the OSM amenity tag |
+| `name` | `text` NOT NULL | **Import rejects unnamed elements** |
+| `point` | `geography(Point,4326)` NOT NULL | Centroid for ways and relations |
+| `raw_tags` | `jsonb` NOT NULL | Full OSM tag set, for reviewer context |
+| `suggested_hours_raw` | `text` NULL | **A hint shown to the reviewer. Never copied to `safe_spots.hours` by any automated path.** |
+| `review_state` | `text` NOT NULL DEFAULT `'pending'` | `pending` \| `approved` \| `rejected` \| `duplicate` |
+| `rejection_reason` | `text` NULL | |
+| `promoted_safe_spot_id` | `uuid` NULL FK | Set when a reviewer promotes it |
+| `first_seen_at` / `last_seen_at` | `timestamptz` NOT NULL | `last_seen_at` drives "disappeared from OSM" detection |
+| `reviewed_by` / `reviewed_at` | `uuid` / `timestamptz` NULL | |
+
+```sql
+CREATE UNIQUE INDEX osm_candidates_key ON private.osm_spot_candidates (osm_type, osm_id);
+CREATE INDEX osm_candidates_queue_idx ON private.osm_spot_candidates (first_seen_at)
+  WHERE review_state = 'pending';
+REVOKE ALL ON private.osm_spot_candidates FROM anon, authenticated;
+```
+
+> **`suggested_hours_raw` is deliberately a different column name from `hours`.** Making the imported value structurally impossible to confuse with the live value is cheaper than a code review that catches someone copying it across. Stale hours are the top cause of no-shows, and a no-show is a real person's wasted afternoon — see [SPEC-007](../03-specs/SPEC-007-safe-spots.md).
 
 ---
 

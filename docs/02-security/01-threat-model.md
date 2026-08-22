@@ -78,6 +78,11 @@ flowchart TB
         OBS["Sentry / PostHog"]
     end
 
+    subgraph Supply["Boundary 6 — untrusted upstream data"]
+        OSM["OpenStreetMap / Overpass<br/>anyone may edit · no SLA · no warranty"]
+        TILE["Sharecropr tile origin<br/>PMTiles archive + style JSON"]
+    end
+
     DEV --> KONG
     RAW --> KONG
     KONG --> REST --> PUB
@@ -88,9 +93,14 @@ flowchart TB
     KYC -->|HMAC webhook| KONG
     PUB --> PUSH
     DEV -->|scrubbed| OBS
+    DEV -->|unauthenticated tile GET| TILE
+    OSM -->|monthly build| TILE
+    OSM -->|scheduled Overpass import| KONG
 ```
 
 **Boundary 3 is the one the whole design leans on.** Boundaries 1 and 2 are conventional and will eventually have a bug in them. Boundary 3 is enforced by a `REVOKE`, which has no logic to get wrong.
+
+**Boundary 6 is new and is a different shape from the others.** It is not a place an attacker breaks in; it is a place *data* comes in. OpenStreetMap is world-editable, has no warranty, and now feeds two things we ship: the tiles a user looks at and the candidate rows a reviewer promotes into a place we tell a stranger to meet another stranger. The control on that boundary is not a `REVOKE` — it is a human, which makes it the weakest control in this document by construction (THR-47, THR-48).
 
 ---
 
@@ -112,6 +122,9 @@ flowchart TB
 | **THR-10** | Message content leaked via logs | P1 | Us | L | Moderate | Bodies never logged; scrubber drops `body`/`message`/`text` properties; [SPEC-011-T36](../03-specs/SPEC-011-messaging.md) | Low |
 | **THR-11** | Insider (moderator/DBA) looks up a specific person | P0 | Employee | **M** | Severe | Console has zero grants on `private`; break-glass needs two people, is time-boxed to 60 min, notifies the security channel on activation, and every statement is audited | **Moderate — detection, not prevention. Stated plainly.** |
 | **THR-12** | Enumeration of thread/listing IDs to confirm existence | P2 | Any user | M | Low | RLS returns empty sets rather than 403 — no existence oracle. [SPEC-011-T25/T26](../03-specs/SPEC-011-messaging.md) | Low |
+| **THR-46** | **Basemap tile requests as a viewport side channel** — whoever serves tiles learns, continuously, which map area each user is looking at, at what zoom, when | P1 | A tile vendor; anyone who compromises the tile origin | L | Moderate | Tiles come from our own PMTiles archive on our own CDN, so **no third party is in that position** ([ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md)). Requests carry **no credential and no user or device identifier**, so they are not attributable to a user even by us — there is no viewport log to subpoena or leak ([API Contract §6a](../01-architecture/06-api-contract.md)). No coordinate beyond `z/x/y` and byte offsets, asserted on the wire (NFR-102, [SPEC-008-T79/T80](../03-specs/SPEC-008-interactive-map.md)) | Low — **and this entry should not be oversold.** See below |
+
+> **THR-46 is a real threat that we should be honest is a secondary one.** [ADR-0019](../01-architecture/adr/ADR-0019-openstreetmap-maplibre.md) says so in its own steel-man and this document should not say otherwise: Apple and Google already know precisely where the user is, continuously, at the operating-system level. A tile request telling them the user is looking at a map of Ann Arbor discloses nothing they do not already hold. Treating that as the *justification* for owning the basemap confuses a purity preference with a threat model. What the self-hosted design genuinely buys is **consistency and the absence of a new asset**: no additional sub-processor with a stream of viewport coordinates, no DPA and disclosure to maintain around it, and no credential in the map path. The honest reason we own the basemap is optionality and the safe-spot pipeline; this row is a benefit, not the case.
 
 ### 4.2 Spoofing
 
@@ -137,6 +150,8 @@ flowchart TB
 | **THR-25** | Illegal exchange state transition via a crafted request | Exchange integrity | M | Moderate | No client UPDATE policy on `exchange_requests`/`exchange_sessions`; `guard_session_transition` trigger enforces the transition table at the storage layer | Very low |
 | **THR-26** | Race to double-accept a listing | Exchange integrity | M | Moderate | `FOR UPDATE` lock ordering; in-lock state assertion; `listings_single_reservation` partial unique index **on `(reserved_request_id)`** — the `(id) WHERE status = 'reserved'` form SPEC-010 carried until 2026-08-09 constrains nothing, so for the whole first draft this row named a control that was two-thirds of what it claimed; [SPEC-010-T30](../03-specs/SPEC-010-exchange-lifecycle.md) at 50 concurrent acceptors | Very low |
 | **THR-27b** | Read live handoff codes from a database dump, backup, PITR snapshot, or read replica | Exchange integrity | L | Moderate | Column encrypted at rest with a Vault key ([Exchange State Machine §3.3](../01-architecture/07-exchange-state-machine.md)); `SELECT` `REVOKE`d from `authenticated`; single audited decrypt path gated on `state = 'scheduled'`; SPEC-010-T73a sweeps a dump for plaintext. Does **not** defend against an attacker holding both `service_role` and the Vault key | Very low |
+| **THR-47** | **Poisoned or vandalised OSM data reaches a live safe spot** — an attacker edits OpenStreetMap (anyone can) to create a plausible `amenity=library` at an address of their choosing, move an existing civic POI's centroid, or retag a private building as public, and our monthly import turns it into a candidate | **Physical safety** | Anyone with an OSM account | **M** — OSM vandalism is common and cheap; *targeted* vandalism aimed at us is not | **Catastrophic** | **A human must verify every candidate before it can be promoted** ([ADR-0021](../01-architecture/adr/ADR-0021-osm-safe-spot-sourcing.md), [SPEC-007-R45](../03-specs/SPEC-007-safe-spots.md)) — and promotion requires a *separately recorded* hours verification by phone, visit, or official website ([SPEC-007-R49](../03-specs/SPEC-007-safe-spots.md)), which is an action a fabricated venue cannot survive. Candidates live in `private` and are unreachable by any client role (R44). Unnamed elements, `access=private`/`no`, and unmapped tags are auto-rejected at import (R40–R42). Upstream edits to a *linked live spot* — name, address, `opening_hours`, geometry, deletion — raise a review flag and **never auto-apply** (R53–R55), so an OSM edit cannot move, close, or re-hour an existing spot | **Moderate. The control is a human, and humans working a queue rubber-stamp — see THR-49.** The R49 verification action is what makes it more than a click |
+| **THR-48** | **Tile archive or style JSON substitution** — an attacker with write access to the R2 bucket, the CDN configuration, or the style file in the repo serves a doctored basemap: a fabricated street, a moved building label, or a style that points sprites and glyphs at a host they control | Map integrity; NFR-102 | Compromised cloud credential; a malicious or careless PR | L | **Moderate–High** | The style JSON is **versioned in the repo and reviewed like code**, and the client will not fetch a style, sprite sheet, or glyph range from a host we do not control ([SPEC-008-R74](../03-specs/SPEC-008-interactive-map.md)). Archives are **immutable and date-stamped**; the style names one explicitly, so a substitution is a diff rather than a silent overwrite. Bucket credentials are CI-scoped and rotated on the standard schedule ([Environments §6](../05-operations/01-environments.md)). NFR-102's wire-level sweep fails the build on any request to a non-allowlisted host. **Rollback is repointing the style at the previous archive** — instant, no app release ([Runbook 15](../05-operations/05-runbooks.md)) | Low. **But note what is not mitigated:** we do not sign or checksum the archive at the client, so an attacker holding both the bucket credential and repo write access could serve a bad basemap that looks correct. Markers are positioned from `safe_spots.point`, not from tile geometry, so a doctored basemap misleads a user's *context* and cannot move a meeting point |
 | **THR-27a** | Brute-force a handoff code to fabricate a completion | Exchange integrity, ratings | M | Moderate | 5 attempts per session per rolling 15 min, both parties alerted on lockout, constant-time comparison ([SPEC-010 R49](../03-specs/SPEC-010-exchange-lifecycle.md), SPEC-010-T35, SPEC-010-T71). **The attempt counter must survive the failed attempt** — SPEC-010 R49a. In the first draft the counter, the lockout, and the alerts shared a transaction with the `RAISE` that aborted them, so this mitigation did not exist at runtime and the bound was unlimited attempts against 10⁶ codes with no notification | Low. The code is a coordination device, never an anti-fraud control ([SPEC-010 R52](../03-specs/SPEC-010-exchange-lifecycle.md)) |
 
 ### 4.4 Repudiation
@@ -177,6 +192,7 @@ flowchart TB
 | **THR-43** | Burglary during a scheduled exchange window | L | High | Exact home location never exposed; session times visible only to the two parties | Low, but the attacker only needs to complete one exchange with the target to learn their rough area |
 | **THR-44** | Stalking via the exchange mechanic itself — request, meet, follow home | L | **Catastrophic** | ID verification raises the cost of doing this under a real name; ratings and reports; block teardown | **Irreducible. No software control prevents someone following a car.** |
 | **THR-45** | Grooming or exploitation of a minor | L | Catastrophic | Over-18 requirement enforced through KYC before any transacting; under-13 prohibited outright | Low |
+| **THR-49** | **Rubber-stamping the candidate queue** — a reviewer working through eighty auto-generated candidates approves an unsuitable venue: an unstaffed fire station, a campus centroid in the middle of a quad, a "library" that is a book drop, a building that closed | **Physical safety** | **Us**, at volume, under a deadline | **M** | **Catastrophic** | This is the failure mode the pipeline *creates* and [ADR-0021](../01-architecture/adr/ADR-0021-osm-safe-spot-sourcing.md) names it in its own steel-man: researching a neighbourhood and working a queue are different cognitive modes, and queues produce rubber stamps. Controls: promotion requires an explicitly recorded `safe_spot.hours_verified` audit event naming a `verification_method` and its source detail, which only a phone call, a visit, or an official website makes possible ([SPEC-007-R49](../03-specs/SPEC-007-safe-spots.md)); the console presents an **empty form** rather than a pre-filled one; a second approver is required (R16); the pin must be moved off the OSM centroid by hand (R12); and **approval rate is monitored per reviewer**, alerting above 90% ([Observability §5.2](../05-operations/04-observability.md)) | **Moderate, and honestly stated: we have moved work rather than removed it, and the new failure is quieter than the old one.** The old process forced attention; this one has to manufacture it. Deliberately not mitigated by an artificial delay — we do not rate-limit judgement, and someone would route around it |
 
 ---
 
@@ -231,6 +247,11 @@ flowchart TB
 | THR-24, THR-25, THR-26, THR-40 | RLS + definer RPCs + transition guard + lock ordering | [RLS Design](../01-architecture/05-rls-design.md), [State Machine](../01-architecture/07-exchange-state-machine.md) | [RLS Test Plan](../04-testing/02-rls-test-plan.md), SPEC-010-T30 |
 | THR-38 | `security_invoker` assertion on every view | [RLS Design §4](../01-architecture/05-rls-design.md) | RLS Test Plan |
 | THR-41, THR-42, THR-44 | Safe spots, verification, reports, on-call paging | [Trust & Safety](05-trust-and-safety.md), [SPEC-012](../03-specs/SPEC-012-trust-and-safety.md) | Manual / operational |
+| THR-46 | Self-hosted tile origin; unauthenticated, unidentified tile requests | [ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md), [API Contract §6a](../01-architecture/06-api-contract.md) | NFR-102 · SPEC-008-T78, T79, T80 |
+| THR-47 | Candidates land in `private`; human promotion gate; upstream diffs never auto-apply | [ADR-0021](../01-architecture/adr/ADR-0021-osm-safe-spot-sourcing.md), [SPEC-007 §5.7](../03-specs/SPEC-007-safe-spots.md) | SPEC-007-T54, T55, T61, T63, T71, T72 |
+| THR-48 | In-repo reviewed style JSON; immutable dated archives; same-origin sprites and glyphs | [SPEC-008-R74](../03-specs/SPEC-008-interactive-map.md), [ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md) | NFR-102 · SPEC-008-T78 · [Runbook 15](../05-operations/05-runbooks.md) |
+| THR-49 | Separately recorded hours verification; empty review form; second approver; approval-rate alerting | [SPEC-007-R49/R50](../03-specs/SPEC-007-safe-spots.md), [Observability §5.2](../05-operations/04-observability.md) | SPEC-007-T59, T74 · [Runbook 16](../05-operations/05-runbooks.md) |
+| NFR-99 (attribution) | Rendered by `MapCanvas` itself, geometrically asserted | [SPEC-008 §5.10](../03-specs/SPEC-008-interactive-map.md), [ADR-0021 §Licence obligations](../01-architecture/adr/ADR-0021-osm-safe-spot-sourcing.md) | SPEC-008-T69, T70 · SPEC-007-T67 |
 
 ---
 
@@ -247,6 +268,8 @@ Ranked. Where a control is detection rather than prevention, it says so.
 7. **THR-19 — the handoff code proves co-presence only if both parties are honest.** Stated in the spec; never describe it as fraud prevention.
 8. **THR-30 — KYC cost is an unbounded liability against a signup funnel we don't control.** [R-07](../06-roadmap/02-open-risks.md).
 9. **THR-42 — users will share addresses in chat.** `content-scan` measures the rate; it does not stop it. If the rate is high, the safe-spot policy is buying friction without safety and [ADR-0009](../01-architecture/adr/ADR-0009-safe-spots-only.md) must be revisited with data. [R-09](../06-roadmap/02-open-risks.md).
+10. **THR-47 / THR-49 — a safety-critical judgement now arrives as a queue item.** OSM makes safe-spot discovery cheap, and cheap discovery produces volume, and volume produces rubber-stamping. The mitigations are good — an empty form, a separately recorded verification action, a second approver, an approval-rate alert — but every one of them is a **process** control on a human, which is the same category the [R-05](../06-roadmap/02-open-risks.md) discussion already says holds only while discipline holds. The difference here is that a lapse does not return data to the wrong person; it sends a real one to a place we said was safe. Treat any no-show or safety report traced to an approved-without-verification candidate as an **incident**, not a bug ([ADR-0021](../01-architecture/adr/ADR-0021-osm-safe-spot-sourcing.md) revisit trigger).
+11. **THR-46 is listed for completeness, not because it ranks.** The viewport side channel is closed, and closing it was cheap. It was never the reason to own the basemap, and this document would be misleading if its ordering implied otherwise.
 
 ---
 
@@ -257,6 +280,7 @@ Ranked. Where a control is detection rather than prevention, it says so.
 | Scheduled | Full review every 6 months |
 | Any change to `private`, a definer function, or an RLS policy | Targeted review in the same PR |
 | Any new external integration | New trust-boundary analysis before merge |
+| Any change to the tile origin, the style JSON's remote references, or the OSM import's tag mapping or promotion gate | Targeted review in the same PR — boundary 6 controls are all that stand between world-editable data and a physical meeting |
 | Any real-world safety incident | Immediate out-of-band review, regardless of the schedule |
 | Before public launch | **External RLS-focused security review, findings closed** — a release gate in [PRD §7](../00-foundation/02-prd.md) |
 | A new feature touching location, identity, messaging, or moderation | Security sign-off before the spec reaches `Approved` |
@@ -270,3 +294,4 @@ Ranked. Where a control is detection rather than prevention, it says so.
 | 2026-08-08 | 1.0.0 | Security | Initial threat model |
 | 2026-08-09 | 1.1.0 | Security | Workflow-architect review fixes ([review](../07-review/01-workflow-architect-review.md)). Threat IDs renamed `T-##` → `THR-##` to end the collision with SPEC test IDs. THR-26's mitigation corrected — the index form SPEC-010 carried was a no-op. THR-27a added for handoff-code brute force, whose stated mitigation was rolled back by its own exception and therefore did not exist |
 | 2026-08-09 | 1.2.0 | Security | THR-27b added: handoff codes readable from a dump, backup, or replica — now mitigated by at-rest encryption. Stale "Threat IDs are T-##" line corrected |
+| 2026-08-09 | 1.3.0 | Security | OpenStreetMap adoption ([ADR-0019](../01-architecture/adr/ADR-0019-openstreetmap-maplibre.md), [ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md), [ADR-0021](../01-architecture/adr/ADR-0021-osm-safe-spot-sourcing.md)). Boundary 6 added for untrusted upstream data. THR-46 tile viewport side channel — closed by self-hosting, and explicitly recorded as a *secondary* concern rather than the justification. THR-47 poisoned or vandalised OSM POI data reaching a safe spot. THR-48 tile archive / style JSON substitution. THR-49 rubber-stamping the candidate queue — the failure mode the pipeline itself creates. Traceability and residual risk updated |

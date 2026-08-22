@@ -95,6 +95,8 @@ This PRD defines *what* Sharecropr does at the capability level. Each capability
 - Each carries name, category, address, coordinates, hours of operation, accessibility notes, parking notes, and a photo.
 - Only Sharecropr staff can create or approve a safe spot in MVP. User proposals are Phase 2.
 - Safe spot coordinates are **public data** and are the only precise coordinates the client ever receives.
+- **Candidates are sourced from OpenStreetMap; verification is human.** A scheduled server-side Overpass import writes civic POIs into a private candidate queue, and a monthly refresh diffs upstream changes against live spots. **No import path publishes a spot.** A person confirms hours by phone, website, or visit, assesses whether the place is actually suitable for a handoff, and moves the pin to a real entrance before anything becomes discoverable. Imported `opening_hours` is a reviewer hint and can never reach a user. [ADR-0021](../01-architecture/adr/ADR-0021-osm-safe-spot-sourcing.md), [SPEC-007 §5.7](../03-specs/SPEC-007-safe-spots.md).
+- Because that data is OSM-derived, **"© OpenStreetMap contributors" is displayed on every surface showing spot data**. That is an ODbL 1.0 obligation, not a design choice.
 
 ### C8 — Interactive map & discovery
 
@@ -104,6 +106,10 @@ This PRD defines *what* Sharecropr does at the capability level. Each capability
 - Filter chips by crop category; search by species.
 - Default discovery radius 8 km, user-adjustable from 2 km to 40 km.
 - **No other user's location is ever rendered.** Listings are attached to safe spots, not to people.
+- **The basemap is OpenStreetMap vector tiles, rendered by MapLibre from a tile archive we host ourselves** ([ADR-0019](../01-architecture/adr/ADR-0019-openstreetmap-maplibre.md), [ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md)). No Apple Maps, no Google Maps, no tile vendor, no API key. The map therefore **renders identically on iOS and Android** — design is done once, and a whole class of "correct on iOS, wrong on Android" defects does not exist.
+- **Attribution is an obligation, not a preference.** "© OpenStreetMap contributors" is on the map in every state, including before any tile loads and when every tile fails. Removing or obscuring it is a licence breach (ODbL 1.0), and it is tested as such.
+- **A tile failure costs context, never capability.** The map degrades to a neutral background with markers still at correct positions; opening a spot and arranging an exchange keep working.
+- Offline map packs are **Phase 2**. Location-denied locality search resolves against a bundled gazetteer for the two launch metros — there is no third-party geocoder, including the OS one.
 
 ### C9 — Listings & offers
 
@@ -159,7 +165,8 @@ Full detail in [Non-Functional Requirements](05-nfr.md). Headlines:
 | Crash-free sessions | ≥ 99.5% |
 | API availability | 99.9% monthly |
 | Accessibility | WCAG 2.2 AA equivalent for mobile; full screen-reader support on all core flows |
-| Offline | Inventory and taxonomy fully readable; map shows last-known state with a staleness banner |
+| Offline | Inventory and taxonomy fully readable; map shows last-known state with a staleness banner. Offline **tile** packs are Phase 2 |
+| Attribution | "© OpenStreetMap contributors" present in every map state and on every surface showing OSM-derived spot data (NFR-99) |
 
 ---
 
@@ -173,7 +180,10 @@ Full detail in [Non-Functional Requirements](05-nfr.md). Headlines:
 | Google Play data deletion | Play Console | Public web deletion URL required |
 | Background location review | Both stores | We do **not** request background location in MVP, specifically to avoid this review burden |
 | No money | Product decision | No payments SDK may be added without a new ADR and legal review |
-| Two launch metros | Ops capacity | Safe-spot curation is manual and headcount-bound |
+| Two launch metros | Ops capacity | Safe-spot **verification** is manual and headcount-bound. Discovery is not — OSM supplies candidates ([ADR-0021](../01-architecture/adr/ADR-0021-osm-safe-spot-sourcing.md)) |
+| **ODbL 1.0** | OpenStreetMap licence | Attribution is mandatory wherever OSM-derived data is shown, and it is tested. Share-alike does not bite today because we publish no derived database — **any** safe-spot export, public API, or partner feed needs legal review before it ships |
+| **No map vendor** | [ADR-0019](../01-architecture/adr/ADR-0019-openstreetmap-maplibre.md), [ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md) | There is no Google Maps API key, no Mapbox account, and no tile-vendor key to hold, restrict, or rotate — and no per-map-load billing to forecast. The cost of that is a monthly tile build we own |
+| **OpenStreetMap and Overpass have no SLA** | Donated community infrastructure | Tiles are served from our own archive, so an upstream outage cannot break the map. A failed Overpass month delays candidate discovery and nothing else |
 
 ---
 
@@ -185,9 +195,9 @@ Full detail in [Non-Functional Requirements](05-nfr.md). Headlines:
 | A2 | Safe-spot-only meetings are acceptable, not merely tolerable | Users route around the app; revisit [ADR-0009](../01-architecture/adr/ADR-0009-safe-spots-only.md) with data |
 | A3 | Libraries and municipal venues will not object to being listed | Partnership program moves ahead of Phase 2 |
 | A4 | Seasonal usage collapse in winter is survivable | Phase 2 harvest planning moves into MVP |
-| A5 | `react-native-maps` performs acceptably under the New Architecture with 200+ clustered markers | Mapbox fallback; see [R-04](../06-roadmap/02-open-risks.md) |
+| A5 | `@maplibre/maplibre-react-native` performs acceptably under the New Architecture, rendering 200 clustered markers as GPU symbol layers over self-hosted OSM vector tiles | Fall back to `react-native-maps` behind the `MapCanvas` seam per [ADR-0013](../01-architecture/adr/ADR-0013-map-library.md), which [ADR-0019](../01-architecture/adr/ADR-0019-openstreetmap-maplibre.md) retains for exactly this; see [R-04](../06-roadmap/02-open-risks.md) |
 
-Assumption A5 is validated by a **mandatory two-day spike before any other implementation work.**
+Assumption A5 is validated by a **mandatory spike before any other implementation work.** [ADR-0019](../01-architecture/adr/ADR-0019-openstreetmap-maplibre.md) supersedes [ADR-0013](../01-architecture/adr/ADR-0013-map-library.md), which means **the spike is reset** — the profiled `react-native-maps` spike does not answer this question, and MapLibre RN's New Architecture interop is the specific unknown it must close first.
 
 ---
 
@@ -212,3 +222,4 @@ MVP does not ship unless all of the following are true:
 | Date | Version | Author | Change |
 | --- | --- | --- | --- |
 | 2026-08-08 | 1.0.0 | Product | Initial PRD |
+| 2026-08-09 | 1.1.0 | Product | OpenStreetMap decision reflected: C8 restated for MapLibre over self-hosted OSM vector tiles with mandatory ODbL attribution; C7 restated for OSM candidate sourcing with a human verification gate; constraints table gains ODbL, no-map-vendor, and no-SLA rows; A5 and its spike restated for MapLibre. [ADR-0019](../01-architecture/adr/ADR-0019-openstreetmap-maplibre.md), [ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md), [ADR-0021](../01-architecture/adr/ADR-0021-osm-safe-spot-sourcing.md) |
