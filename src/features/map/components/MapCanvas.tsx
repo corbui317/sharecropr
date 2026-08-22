@@ -8,6 +8,7 @@ import {
   Map,
   type MapRef,
   type PressEventWithFeatures,
+  type StyleSpecification,
 } from '@maplibre/maplibre-react-native';
 import type { NativeSyntheticEvent } from 'react-native';
 
@@ -68,7 +69,10 @@ export const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(function Ma
   const cameraRef = useRef<CameraRef>(null);
   const firstTileReported = useRef(false);
 
-  const mapStyle = useMemo(() => resolveBasemapStyle(), []);
+  const mapStyle = useMemo(
+    () => resolveBasemapStyle() as unknown as StyleSpecification,
+    [],
+  );
 
   const markerSignature = useMemo(() => markerCollectionSignature(markers), [markers]);
   const markerCollection = useMemo(

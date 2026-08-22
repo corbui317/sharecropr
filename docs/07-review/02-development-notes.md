@@ -32,6 +32,7 @@ Organised by **when each one bites**, not by topic. A note filed under "the firs
 | [N-16](#n-16--the-highest-value-row-in-the-database-has-a-90-day-fuse) | Time-and-place has a 90-day fuse | Ongoing | High |
 | [N-17](#n-17--phase-3-proximity-would-replace-the-handoff-model-not-extend-it) | Phase 3 proximity replaces the model | Phase 3 | Medium |
 | [N-18](#n-18--every-rate-limit-is-a-guess-and-two-of-them-are-load-bearing) | Rate limits are guesses | 30 days | Medium |
+| [N-19](#n-19--expo-modules-jsi-5705-needs-a-temporary-patch-on-xcode-26) | `expo-modules-jsi@57.0.5` needs a patch on Xcode 26 | Day one (iOS dev client) | High — blocks iOS build |
 
 ---
 
@@ -54,6 +55,18 @@ The reason to restate it here is that spikes are the first thing dropped when a 
 Nothing in this documentation improves the odds of a user opening the map and seeing something. The whole set — the RLS design, the concurrency work, the location invariant — is a well-built answer to *"how do we make this safe and correct?"* and none of it is an answer to *"is there anything here?"*
 
 **The trigger is already written down** ([R-01](../06-roadmap/02-open-risks.md)): fewer than 8 active listings per active safe spot at week 4 means stop feature work. Put that number on the dashboard from day one, because it is much easier to agree to a trigger before you are emotionally invested in continuing.
+
+### N-19 — `expo-modules-jsi@57.0.5` needs a temporary patch on Xcode 26
+
+Expo SDK 57 pulls `expo-modules-jsi@57.0.5`, which annotates two `RuntimeScheduler` **constructors** in `RuntimeScheduler.h` with `SWIFT_RETURNS_RETAINED`. Swift 6.3 / Xcode 26 treats that as invalid (constructors are not returning a `SWIFT_SHARED_REFERENCE` type), emits warnings, and the nested `[CP-User] Build ExpoModulesJSI xcframework` CocoaPods script fails with exit code 65 — even though the underlying compile often succeeds.
+
+Upstream: [expo/expo#49214](https://github.com/expo/expo/issues/49214).
+
+**Workaround in repo:** `patch-package` applies `patches/expo-modules-jsi+57.0.5.patch`, which removes only those two annotations. On some macOS/Xcode 26 hosts the same patch also disables codesigning in the nested `build-xcframework.sh` invocation (`CODE_SIGNING_ALLOWED=NO`) because provenance xattrs on build products trigger `resource fork, Finder information, or similar detritus not allowed` during CodeSign. `npm ci` / `npm install` must run postinstall so the patch is applied before `npx expo run:ios`.
+
+**Remove the patch when:** a fixed `expo-modules-jsi` version **newer than 57.0.5** ships (check the upstream issue and `npm view expo-modules-jsi versions`). Then delete `patches/expo-modules-jsi+57.0.5.patch`, remove `patch-package` if no other patches remain, and verify a clean `npm ci && npx expo run:ios` on Xcode 26 without the patch.
+
+**Do not confuse with:** MapLibre, New Architecture, PMTiles, or missing `jsi.h` — those were red herrings in the initial diagnosis.
 
 ---
 
