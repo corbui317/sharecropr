@@ -51,7 +51,7 @@ export default tseslint.config(
     },
   },
   {
-    ignores: ['src/features/map/components/MapCanvas.tsx'],
+    ignores: ['src/features/map/components/MapCanvas.tsx', 'src/api/supabase.ts', 'src/api/auth-types.ts'],
   },
   {
     files: ['src/**/*.{ts,tsx}'],
@@ -73,6 +73,11 @@ export default tseslint.config(
             {
               name: '@rnmapbox/maps',
               message: 'Mapbox is not permitted. Use MapCanvas (ADR-0019).',
+            },
+            {
+              name: '@supabase/supabase-js',
+              message:
+                'Import the client from src/api/supabase.ts. Exactly one file may touch the SDK.',
             },
           ],
           patterns: [

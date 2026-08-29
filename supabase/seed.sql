@@ -44,7 +44,10 @@ INSERT INTO auth.users (
    '{"provider":"email","providers":["email"]}', '{"display_name":"Canary A"}', now(), now()),
   ('22222222-2222-2222-2222-222222222202', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
    'canary_b@test.local', crypt('testpassword12', gen_salt('bf')), now(),
-   '{"provider":"email","providers":["email"]}', '{"display_name":"Canary B"}', now(), now())
+   '{"provider":"email","providers":["email"]}', '{"display_name":"Canary B"}', now(), now()),
+  ('33333333-3333-3333-3333-333333333301', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+   'reviewer@sharecropr.app', crypt('testpassword12', gen_salt('bf')), now(),
+   '{"provider":"email","providers":["email"]}', '{"display_name":"App Reviewer"}', now(), now())
 ON CONFLICT (id) DO NOTHING;
 
 -- Profiles created by handle_new_user trigger; patch verification/garden states
@@ -60,7 +63,8 @@ UPDATE public.verifications SET status = 'passed', is_over_18 = true, verified_a
    '11111111-1111-1111-1111-111111111109',
    '11111111-1111-1111-1111-11111111110a',
    '22222222-2222-2222-2222-222222222201',
-   '22222222-2222-2222-2222-222222222202'
+   '22222222-2222-2222-2222-222222222202',
+   '33333333-3333-3333-3333-333333333301'
  );
 
 UPDATE public.profiles SET is_suspended = true
@@ -125,8 +129,16 @@ INSERT INTO tests.fixtures_users (handle, id, staff_role) VALUES
   ('admin', '11111111-1111-1111-1111-11111111110a', 'admin'),
   ('deleted', '11111111-1111-1111-1111-11111111110b', 'authenticated'),
   ('canary_a', '22222222-2222-2222-2222-222222222201', 'authenticated'),
-  ('canary_b', '22222222-2222-2222-2222-222222222202', 'authenticated')
+  ('canary_b', '22222222-2222-2222-2222-222222222202', 'authenticated'),
+  ('reviewer', '33333333-3333-3333-3333-333333333301', 'authenticated')
 ON CONFLICT DO NOTHING;
+
+INSERT INTO private.review_bypass_accounts (user_id, reason, expires_at)
+VALUES (
+  '33333333-3333-3333-3333-333333333301',
+  'App Store reviewer account (SCR-0312)',
+  now() + interval '45 days'
+) ON CONFLICT DO NOTHING;
 
 INSERT INTO tests.fixtures_named (name, id) VALUES
   ('owner', '11111111-1111-1111-1111-111111111101'),
