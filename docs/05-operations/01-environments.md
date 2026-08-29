@@ -108,6 +108,7 @@ Restore is rehearsed quarterly against staging. A restore procedure that has nev
 | Feature flags | Database table, cached client-side | Server-controlled, changeable without a release |
 | Basemap style URL | `app.config.ts` per EAS profile | Points at one explicit dated archive (§11). Public by design — it addresses an unauthenticated public bucket |
 | R2 write credential (tile bucket) | GitHub Actions secrets, tile-build workflow only | Write is CI-only. **No runtime component holds it**, and nothing in the app has any credential for the tile origin at all |
+| `handoff_code_key` (Vault) | Supabase Vault in each project; provisioned by migration `20260822_0006_vault_handoff_key.sql` locally | **Symmetric key for `pgp_sym_encrypt` on `exchange_sessions.handoff_code`.** Readable only by `service_role` and `SECURITY DEFINER` RPCs (`get_handoff_code`, `accept_exchange_request`). **Custody:** Platform Engineering + Security (two-person) for production rotation per [Runbook 14](05-runbooks.md). Local dev uses a documented placeholder — never reuse in staging/production. Client and `authenticated` roles cannot call `vault.get_secret`. |
 
 Rotation: quarterly for service keys, immediately on any suspected exposure, and on any personnel change with access.
 

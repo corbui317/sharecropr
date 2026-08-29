@@ -10,7 +10,15 @@
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src app --max-warnings 0",
-    "postinstall": "patch-package"
+    "postinstall": "patch-package",
+    "db:start": "supabase start",
+    "db:reset": "supabase db reset",
+    "db:test": "bash scripts/run-pgtap.sh",
+    "ci:assert-negative-ratio": "bash scripts/ci-assert-negative-ratio.sh",
+    "ci:assert-rls": "bash scripts/ci-assert-rls.sh",
+    "ci:assert-no-private-grants": "bash scripts/ci-assert-no-private-grants.sh",
+    "ci:assert-definer-allowlist": "bash scripts/ci-assert-definer-allowlist.sh",
+    "location-canary": "npm run build --prefix packages/location-canary && npm run check --prefix packages/location-canary"
   },
   "dependencies": {
     "@maplibre/maplibre-react-native": "^11.3.6",

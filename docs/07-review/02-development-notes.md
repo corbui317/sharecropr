@@ -258,6 +258,33 @@ It also requires the background-location entitlement that is **deliberately abse
 
 ---
 
+## Session notes
+
+### 2026-08-22 — EPIC-02 (Data Model, RLS & Test Harness)
+
+**Status:** Baseline landed in-repo; ready for EPIC-03 auth to depend on SCR-0202.
+
+| Story | Status | Notes |
+| --- | --- | --- |
+| SCR-0201 | Done | `supabase/config.toml`, schemas, extensions, enums, `20260822_0001_baseline.sql` |
+| SCR-0202 | Done | profiles, verifications, blocks, vendor refs, signup trigger, RLS + column REVOKE |
+| SCR-0203 | Done | gardens, `private.garden_locations`, fuzz trigger, H3/geohash helpers, `get_my_garden_location` |
+| SCR-0204 | Done | `app.is_moderator`, `is_blocked_either_way`, `can_transact`, session/thread participants; stub `exchange_sessions` / `message_threads` |
+| SCR-0205 | Done | pgTAP harness, `scripts/run-pgtap.sh`, `.github/workflows/db.yml`, npm `db:*` scripts |
+| SCR-0206 | Done | `ci:assert-negative-ratio` |
+| SCR-0207 | Done | `private.idempotency_keys`, probe/record, autovacuum tuning, sweep cron |
+| SCR-0208 | Done | Vault `handoff_code_key` local provision; custody in [Environments §6](../05-operations/01-environments.md) |
+| SCR-0209 | **Deferred** | Blocked on SCR-1210 (handoff RPC) — vault rotation rehearsal not run |
+| SCR-0210 | Scaffold | `packages/location-canary/` + pg_cron LP-01/LP-11 jobs; LP-08/09/10/12 partial |
+| SCR-0211 | Done | `audit.events` append-only + metadata coordinate CHECK |
+| SCR-0212 | Done | `tests.assert_query_under_ms` + `query_timing.test.sql` |
+
+**Not yet verified on device/CI:** `supabase db reset && npm run db:test` needs Docker + Supabase CLI in CI (workflow committed). Physical go/no-go unchanged.
+
+**Open items carried forward:** N-03 key custody now documented; SCR-0209 rotation rehearsal still outstanding; full LP-02 static allowlist and production-shaped perf seed deferred to EPIC-18.
+
+---
+
 ## Change Log
 
 | Date | Version | Author | Change |
