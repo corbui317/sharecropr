@@ -1,6 +1,6 @@
 # Dependency Risk Register
 
-**Status:** Partially accepted — DR-01…DR-03 accepted by owner, DR-04 proposed · **Version:** 0.2.0 · **Owner:** Platform Engineering
+**Status:** Approved — all entries accepted by owner · **Version:** 0.3.0 · **Owner:** Platform Engineering
 
 ## 1. Purpose
 
@@ -23,7 +23,7 @@ An entry counts as accepted only once "Accepted by" is filled by the product own
 | DR-01 | GHSA-vfj7-8cjw-p6xm | braces@3.0.3 | high | micromatch@4.0.8 ← metro-file-map 0.84.5 (← @expo/metro ← expo), Jest 29 internals, find-yarn-workspace-root (← patch-package 8) | No. Bundler, test runner and postinstall only; glob patterns come from repo config. | No patched braces exists (3.0.3 is latest) | braces > 3.0.3, then `npm update braces` | issue #17 | 2027-01-22 | Corey, 2026-10-22 (issue #17 closed `wontfix`) |
 | DR-02 | GHSA-86w9-cpqp-85rv | node-forge@1.4.0 | high | @expo/cli 57.0.17; @expo/code-signing-certificates 0.0.6 | No. CLI code-signing and dev-cert tooling; no expo-updates in the app. | No patched node-forge exists (1.4.0 is latest) | node-forge > 1.4.0, or @expo/cli dropping it | issue #13 | 2027-01-22 | Corey, 2026-10-22 (issue #13 closed `wontfix`) |
 | DR-03 | GHSA-vcc3-ghjq-m6fr | decode-uri-component@0.2.2 | moderate | query-string@7.1.3 ← expo-router 57.0.15 | **Yes.** expo-router parses every incoming deep link. A crafted link with malformed percent-encoding can stall the JS thread (self-DoS); no data exposure; location invariants unaffected. | The fix (0.5.0) is ESM-only, and query-string 7 `require()`s it, so an override breaks linking. | Expo SDK 58 (expo-router ≥ 58.0.13) | Dependabot alert #2 | SDK 58 or 2027-01-22 | Corey, 2026-10-22 — deferred to the Expo SDK 58 upgrade |
-| DR-04 | GHSA-hp3w-g68c-fv3c | sprintf-js@1.0.3 | moderate | argparse@1.0.10 ← js-yaml@3.15.2 ← @istanbuljs/load-nyc-config ← babel-plugin-istanbul ← Jest 29 | No (dev only) | No patched sprintf-js exists | A sprintf-js fix, or a Jest major that drops babel-plugin-istanbul 6 | none | 2027-01-22 | _pending_ |
+| DR-04 | GHSA-hp3w-g68c-fv3c | sprintf-js@1.0.3 | moderate | argparse@1.0.10 ← js-yaml@3.15.2 ← @istanbuljs/load-nyc-config ← babel-plugin-istanbul ← Jest 29 | No (dev only) | No patched sprintf-js exists | A sprintf-js fix, or a Jest major that drops babel-plugin-istanbul 6 | none | 2027-01-22 | Corey, 2026-10-22 |
 
 ## 4. Inherited entries
 
@@ -54,3 +54,4 @@ node -e 'const r=JSON.parse(require("fs").readFileSync(process.argv[1]));console
 | --- | --- | --- | --- |
 | 2026-10-22 | 0.1.0 | Platform Engineering | Initial register: DR-01…DR-04 proposed after the WP-DEPS in-range refresh |
 | 2026-10-22 | 0.2.0 | Corey | DR-01 (braces) and DR-02 (node-forge) accepted as residual risk; issues #13 and #17 labelled `wontfix`. DR-03 (decode-uri-component) accepted until the Expo SDK 58 upgrade. DR-04 still proposed |
+| 2026-10-22 | 0.3.0 | Corey | DR-04 (sprintf-js) accepted as residual risk; register fully approved |
