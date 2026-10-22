@@ -1,6 +1,6 @@
 # Runbooks
 
-**Status:** Approved · **Version:** 1.0.0 · **Owner:** Platform Engineering
+**Status:** Approved · **Version:** 1.0.1 · **Owner:** Platform Engineering
 
 Step-by-step procedures for when something is wrong. Written to be followed by someone tired, at 3 a.m., who did not write the system.
 
@@ -284,8 +284,8 @@ Then, always: rotate, audit, notify, post-mortem — **in that order**. Rotating
       FOR UPDATE;
    UPDATE public.exchange_sessions
       SET handoff_code = pgp_sym_encrypt(
-            pgp_sym_decrypt(handoff_code, vault.get_secret('handoff_code_key'))::text,
-            vault.get_secret('handoff_code_key_next'))
+            pgp_sym_decrypt(handoff_code, private.get_handoff_key())::text,
+            (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'handoff_code_key_next'))
     WHERE state IN ('scheduling','scheduled','in_progress','disputed');
    COMMIT;
    ```
@@ -377,3 +377,4 @@ The old key is still present until step 5, so the rollback is to stop using the 
 | Date | Version | Author | Change |
 | --- | --- | --- | --- |
 | 2026-08-08 | 1.0.0 | Platform Engineering | Initial runbooks |
+| 2026-10-22 | 1.0.1 | Platform Engineering | Runbook 14 step 3: the old key comes from `private.get_handoff_key()`, the new key from `vault.decrypted_secrets` (SCR-0208). |

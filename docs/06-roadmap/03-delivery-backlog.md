@@ -1,6 +1,6 @@
 # Delivery Backlog
 
-**Status:** Draft · **Version:** 0.1.1 · **Date:** 2026-08-09 · **Owner:** Product + Engineering
+**Status:** Draft · **Version:** 0.1.2 · **Date:** 2026-08-09 · **Owner:** Product + Engineering
 **Authored by:** Product Manager · Software Architect · Workflow Architect (merged lenses)
 
 The [Roadmap](01-roadmap.md) says *what* ships and *why*. The [Spec Register](../03-specs/README.md) says *what is specified*. This document is the layer between them: the **executable plan** — epics, stories, estimates, dependencies, and acceptance criteria that a team can pull from on a Monday morning.
@@ -438,7 +438,7 @@ The roadmap estimates **14–18 engineer-weeks** for MVP. This backlog decompose
 
 **AC — SCR-1213 (the eight hazards).** Each of the eight has a named test that **provokes the race**, not one that merely asserts the guard exists. Two accepts of the same request from two devices at the same millisecond; an accept racing a withdrawal; an accept racing a listing withdrawal; a schedule confirm racing a cancel; a handoff confirm racing a dispute; a safe-spot takedown racing a schedule confirm; a block racing an accept; a deletion racing an in-flight session. A guard with no adversarial test is an assumption.
 
-**AC — SCR-1216 (Vault down at the worst possible moment).** When `vault.get_secret('handoff_code_key')` is unavailable, `get_handoff_code` and `confirm_handoff` return a **distinct** error code with the string *"we can't verify your code right now — try again in a moment"*, not a generic `server_error`. There is no cached path and there must not be one. This is the message two people read while standing next to each other in a library lobby.
+**AC — SCR-1216 (Vault down at the worst possible moment).** When the handoff key is unavailable (`private.get_handoff_key()` raises `handoff_key_unavailable`, SQLSTATE 55000), `get_handoff_code` and `confirm_handoff` return a **distinct** error code with the string *"we can't verify your code right now — try again in a moment"*, not a generic `server_error`. There is no cached path and there must not be one. This is the message two people read while standing next to each other in a library lobby.
 
 **AC — SCR-1218 (moderator edges).** This test fails closed and is **treated as a security review to change**, per N-05. The next engineer adding a session RPC will see two legal transitions and no compile-time reason to avoid them; this test is the only thing standing there.
 
@@ -665,3 +665,4 @@ This schedule is **generated, not asserted** — every story is placed in the ea
 | --- | --- | --- | --- |
 | 2026-08-09 | 0.1.0 | Product + Engineering | Initial backlog decomposed from the roadmap and spec register |
 | 2026-10-22 | 0.1.1 | Product + Engineering | H3 removed; renamed to location tiers per [ADR-0023](../01-architecture/adr/ADR-0023-postgis-location-tiers.md). SCR-0203 wording. |
+| 2026-10-22 | 0.1.2 | Product + Engineering | SCR-1216 AC names `private.get_handoff_key()` and its 55000 error (SCR-0208). |

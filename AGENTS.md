@@ -89,7 +89,7 @@ If your work runs into one of these, **stop and surface it**. Picking a side in 
 | SPEC-022's security-review classification | [Spec Register](docs/03-specs/README.md), SPEC-022 §15 Q1 |
 | ~~`composted` exists in two vocabularies~~ | **Resolved 2026-10-21** — `inventory_status` only; dropped from `archive_reason`. [SPEC-006 Q3](docs/03-specs/SPEC-006-crop-inventory.md#15-open-questions) |
 | ~~H3 vs PostGIS-only~~ | **Resolved 2026-10-22**: PostGIS only, named location tiers, [ADR-0023](docs/01-architecture/adr/ADR-0023-postgis-location-tiers.md) (supersedes ADR-0005) |
-| Who can read `handoff_code_key` | [N-03](docs/07-review/02-development-notes.md) — belongs in Environments, currently unstated |
+| ~~Who can read `handoff_code_key`~~ | **Resolved 2026-10-22**: only definer RPCs via `private.get_handoff_key()` (no client EXECUTE, fails closed); custody in [Environments §6](docs/05-operations/01-environments.md) |
 
 ---
 

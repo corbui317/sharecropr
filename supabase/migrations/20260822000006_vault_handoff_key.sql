@@ -1,21 +1,30 @@
--- SCR-0208: Vault handoff_code_key provisioning for local dev
--- Key custody documented in docs/05-operations/01-environments.md §6
+-- SCR-0208: handoff_code_key accessor (Exchange State Machine §3.3, Environments §6).
+-- Edited in place before first apply (Data Model §15 rule 12): the local placeholder secret moved to
+-- supabase/seed.sql so no hosted project ever receives it, and the invalid
+-- COMMENT ON FUNCTION vault.get_secret (Supabase Vault has no such function) is gone.
 
-DO $$
+CREATE OR REPLACE FUNCTION private.get_handoff_key()
+RETURNS text
+LANGUAGE plpgsql STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog
+AS $$
+DECLARE v_key text;
 BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM vault.secrets WHERE name = 'handoff_code_key'
-  ) THEN
-    PERFORM vault.create_secret(
-      'local-dev-handoff-key-replace-before-production',
-      'handoff_code_key',
-      'Symmetric key for pgp_sym_encrypt on exchange_sessions.handoff_code'
-    );
+  SELECT s.decrypted_secret INTO v_key
+    FROM vault.decrypted_secrets s
+   WHERE s.name = 'handoff_code_key'
+   LIMIT 1;
+  IF v_key IS NULL OR v_key = '' THEN
+    -- Fail closed: there is no fallback key, ever (SPEC-010 R30; client mapping is SCR-1216).
+    RAISE EXCEPTION 'handoff_key_unavailable' USING ERRCODE = '55000';
   END IF;
+  RETURN v_key;
 END;
 $$;
 
--- Demonstrate encrypt/decrypt path (Exchange State Machine §3.3)
-COMMENT ON FUNCTION vault.get_secret(text) IS
-  'handoff_code_key: used by get_handoff_code and accept_exchange_request. '
-  'Custody: Edge Function secrets + CI secrets only. See Environments §6.';
+REVOKE ALL ON FUNCTION private.get_handoff_key() FROM PUBLIC, anon, authenticated;
+
+COMMENT ON FUNCTION private.get_handoff_key() IS
+  'The only read path for handoff_code_key, for get_handoff_code / accept_exchange_request. '
+  'No client EXECUTE. Raises handoff_key_unavailable (55000) when absent. Custody: Environments §6.';
