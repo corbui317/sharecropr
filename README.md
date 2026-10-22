@@ -6,7 +6,7 @@ Home gardeners inventory surplus crops and barter with nearby gardeners — meet
 
 ## Prerequisites
 
-- **Node.js 22 LTS, ≥ 22.13** — pinned in [`.nvmrc`](.nvmrc) (`nvm use`) and `package.json` `engines`. Node 20 does not work: `@supabase/supabase-js` requires ≥ 22, React Native 0.86 / Metro require ≥ 22.13 on the 22 line, and `npm run test:auth-domain` uses `node --experimental-strip-types`. Node 23 is not supported by React Native; Node 24 ≥ 24.3 is.
+- **Node.js 22 LTS, ≥ 22.13** — pinned in [`.nvmrc`](.nvmrc) (`nvm use`) and `package.json` `engines`. Node 20 does not work: `@supabase/supabase-js` requires ≥ 22, and React Native 0.86 / Metro require ≥ 22.13 on the 22 line. Node 23 is not supported by React Native; Node 24 ≥ 24.3 is.
 - Docker + [Supabase CLI](https://supabase.com/docs/guides/local-development/cli/getting-started) — for the local database
 - iOS Simulator (Xcode) and/or Android emulator or device
 - **Expo dev client** — MapLibre does not run in Expo Go
@@ -16,7 +16,7 @@ Home gardeners inventory surplus crops and barter with nearby gardeners — meet
 npm only. The full table, including database and CI gates, is in [AGENTS.md § Commands](AGENTS.md#commands).
 
 ```bash
-npm run lint && npm run typecheck && npm run test:auth-domain
+npm run lint && npm run typecheck && npm test   # Jest + React Native Testing Library
 npm run db:start && npm run db:reset && npm run db:test   # needs Docker + Supabase CLI
 ```
 

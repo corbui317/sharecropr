@@ -1,7 +1,6 @@
 /**
  * Frame-interval ring buffer and summary for the EPIC-01 map spike profiler (SCR-0103).
- * Pure: no React / React Native imports, erasable TypeScript only — scripts/map-tests loads it
- * with node --experimental-strip-types.
+ * Pure: no React / React Native imports. Unit-tested under Jest in lib/__tests__/profiler.test.ts.
  */
 
 export type FrameSample = { timestamp: number; frameMs: number };

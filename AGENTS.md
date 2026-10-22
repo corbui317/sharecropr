@@ -53,7 +53,7 @@ Full index: [docs/README.md](docs/README.md).
 ## 4. Working agreements
 
 - **Traceability is required.** Every spec `MUST` maps to a test ID in that spec's §13, and the test source echoes the namespaced ID (`// SPEC-001-T34`, never a bare `T34`). The CI gate that would enforce this (`ci:spec-traceability`) **is not built yet** ([N-07](docs/07-review/02-development-notes.md#n-07--the-ci-gates-are-described-not-built)) — until it is, check it yourself.
-- **CI today is three workflows:** `app.yml` (bridge check, doc-gates schema-graph/register check + its fixture self-test, lint incl. the import seams, `lint:fixtures`, typecheck, auth-domain and dependency-audit unit tests), `db.yml` (pgTAP, RLS negative ratio, private-grant and definer allowlist gates), and `dependency-audit.yml` (weekly + manual `npm audit`; opens/updates one `security` issue per GHSA, never blocks a PR). Every other check in [CI/CD §2](docs/05-operations/02-cicd.md) is planned, not running — do not assume it will catch you.
+- **CI today is three workflows:** `app.yml` (bridge check, doc-gates schema-graph/register check + its fixture self-test, lint incl. the import seams, `lint:fixtures`, typecheck, Jest unit + component tests via `npm test`, dependency-audit script tests), `db.yml` (pgTAP, RLS negative ratio, private-grant and definer allowlist gates), and `dependency-audit.yml` (weekly + manual `npm audit`; opens/updates one `security` issue per GHSA, never blocks a PR). Every other check in [CI/CD §2](docs/05-operations/02-cicd.md) is planned, not running — do not assume it will catch you.
 - **Two dependency relations, and only one orders work.** `Schema depends on` must be a DAG and is the only thing that constrains build order. `Behaviourally coupled with` may cycle freely and must be symmetric. Conflating them makes the plan look unbuildable. See [Spec Register](docs/03-specs/README.md#build-order).
 - **Spec numbers are permanent and never reused.** Claim one in a small PR before writing.
 - **Backlog keys (`SCR-EENN`) are permanent and never reused.**
@@ -101,7 +101,7 @@ npm, not pnpm — `pnpm …` scripts named in `docs/` are planned and mostly do 
 | Install | `npm install` |
 | Run (dev client; Expo Go cannot run MapLibre) | `npx expo run:ios` · `npx expo run:android` |
 | Lint · typecheck | `npm run lint` · `npm run typecheck` |
-| Unit (auth domain) | `npm run test:auth-domain` |
+| Unit + component (Jest + RNTL; `src/domain` runs RN-free) | `npm test` |
 | Database: start · reset · pgTAP | `npm run db:start` · `npm run db:reset` · `npm run db:test` |
 | RLS / grant gates | `npm run ci:assert-rls` · `ci:assert-negative-ratio` · `ci:assert-no-private-grants` · `ci:assert-definer-allowlist` |
 | Location canary | `npm run location-canary` |
@@ -135,6 +135,7 @@ Both Claude Code and Cursor read this file. Neither can see the other's chat his
 
 **Session-scoped notes go in `docs/07-review/`, not here.** This file is loaded into every agent session in both tools; it earns its size back only if everything in it is durable.
 
+- `[2026-10-21] [claude] SCRUM-64: the one unit/component runner is Jest (jest-expo 57.0.4) + React Native Testing Library 14, not Vitest. jest.config.js has a domain project (src/domain, plain Node, no RN preset) and an app project (everything else, jest-expo). RNTL 14 render/fireEvent are async: always await them (lint enforces it in __tests__). Only scripts/ repo tooling stays on node:test — [Test Strategy §2](docs/04-testing/01-test-strategy.md).`
 - `[2026-10-21] [claude] ESLint flat config REPLACES no-restricted-imports options per matching block — never merges. eslint.config.js therefore gives each glob one complete entry built from shared constants, has no global ignores, and seam files restate the list minus their one exemption. Prove any change with npm run lint:fixtures (must-fail + must-pass cases). supabase.ts's AppState-only react-native exemption is pending SCRUM-62 — [mobile-arch §1.1a](docs/01-architecture/02-mobile-architecture.md).`
 - `[2026-10-21] [claude] Client privileges on public tables are revoke-then-grant (a column REVOKE is a no-op under Supabase's default table grants); new public tables start with no client grants. Other users' profiles are readable via profiles_select_visible, so every column granted on profiles is public to visible users; owner-only columns come from get_my_profile(). Client-callable app helpers are caller-scoped (can_transact(), is_blocked_with(other)) because the app schema is PostgREST-exposed. Step-up is AAL2 only when a factor is enrolled. The pgTAP harness lives in supabase/seed_harness.sql, not a migration — [ADR-0022](docs/01-architecture/adr/ADR-0022-profiles-other-user-reads.md).`
 - `[2026-10-21] [claude] N-15 resolved: `composted` is an inventory_status value only and is not in the archive_reason vocabulary — SPEC-006 v1.1.0 Q3.`

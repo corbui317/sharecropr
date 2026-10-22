@@ -149,4 +149,10 @@ export default tseslint.config(
     files: ['src/features/map/components/MapCanvas.tsx'],
     rules: { 'no-restricted-imports': restrict({ patterns: [SUPABASE_SDK] }) },
   },
+  // 6. Jest + RNTL tests (SCRUM-64): RNTL 14's render, fireEvent and userEvent return promises.
+  //    An un-awaited one overlaps act() scopes and the next query reads a stale tree.
+  {
+    files: ['src/**/__tests__/**/*.{ts,tsx}', 'app/**/__tests__/**/*.{ts,tsx}'],
+    rules: { '@typescript-eslint/no-floating-promises': 'error' },
+  },
 );

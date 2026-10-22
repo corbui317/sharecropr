@@ -52,11 +52,8 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Unit — auth domain
-        run: npm run test:auth-domain
+      - name: Unit + component — Jest (src/domain, src/features, app)
+        run: npm test -- --ci
 
       - name: Unit — dependency audit script
         run: npm run test:dependency-audit
-
-      - name: Unit — map
-        run: npm run test:map

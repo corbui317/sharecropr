@@ -1,6 +1,6 @@
 # CI/CD
 
-**Status:** Approved · **Version:** 1.0.1 · **Owner:** Platform Engineering
+**Status:** Approved · **Version:** 1.0.2 · **Owner:** Platform Engineering
 
 GitHub Actions for verification, EAS for building and shipping. The pipeline's job is to make the [five rules](../README.md) mechanically enforced rather than culturally enforced, because culture degrades under deadline pressure and a `grep` in CI does not.
 
@@ -42,7 +42,7 @@ None of these are advisory once built. A PR cannot merge with any *running* chec
 | --- | --- | --- |
 | `lint` | ESLint errors; `src/domain` or `src/api` importing React Native; any file but the seam importing `@supabase/*` or a map renderer — proved by `npm run lint:fixtures` | **Running** — `app.yml` |
 | `typecheck` | Any TS error; `any` in `src/domain` | **Running** — `app.yml` |
-| `unit` | Any failure | **Partial** — `app.yml` runs `test:auth-domain` only |
+| `unit` | Any failure | **Running** — `app.yml` `npm test` (Jest + RNTL over `src/` and `app/`; [Test Strategy §2](../04-testing/01-test-strategy.md#2-the-pyramid-weighted-for-this-system)) |
 | `migrate` | Migration fails against a production-shaped seed | **Partial** — `db.yml` `supabase db reset`; no production-shaped seed |
 | `migration-safety` | §3 gates | Planned |
 | `pgtap-rls` | Any RLS assertion; negative < positive per table | **Running** — `db.yml` (pgTAP + `ci:assert-negative-ratio`) |
@@ -350,3 +350,4 @@ Production-scoped secrets live in a protected GitHub Environment requiring a nam
 | --- | --- | --- | --- |
 | 2026-08-08 | 1.0.0 | Platform Engineering | Initial CI/CD |
 | 2026-10-21 | 1.0.1 | Architecture | §2 gains a State column (running / partial / planned); `pnpm` → `npm run` to match the repo's package manager. Scripts named in §4–§5 that do not exist in `package.json` are planned |
+| 2026-10-21 | 1.0.2 | Engineering | §2 `unit` is Running: `app.yml` runs `npm test` (Jest + React Native Testing Library over `src/` and `app/`), replacing the auth-domain and map `node:test` scripts (SCRUM-64, SCR-0002) |

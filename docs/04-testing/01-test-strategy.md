@@ -1,6 +1,6 @@
 # Test Strategy
 
-**Status:** Approved · **Version:** 1.0.0 · **Owner:** Engineering
+**Status:** Approved · **Version:** 1.1.0 · **Owner:** Engineering
 
 ---
 
@@ -35,13 +35,17 @@ The RLS layer is deliberately fatter than the usual shape. In a [database-centri
 
 | Layer | Tool | Runs | Budget |
 | --- | --- | --- | --- |
-| Unit | Vitest | Every PR | < 30 s |
+| Unit + component | Jest (`jest-expo`) + React Native Testing Library | Every PR | < 30 s |
 | RLS / DB | pgTAP against real Postgres | Every PR | < 4 min |
-| Integration | Vitest + Supabase CLI | Every PR | < 6 min |
+| Integration | Jest + Supabase CLI | Every PR | < 6 min |
 | Concurrency | Custom harness | Every PR | < 2 min |
 | E2E | Maestro, iOS + Android | Every PR (smoke), nightly (full) | < 12 min smoke |
 | Performance | k6 + `EXPLAIN` baselines | Nightly + on migration | — |
 | Accessibility | Automated axe-equivalent + manual | Every PR + per release | — |
+
+**One JavaScript test runner: Jest.** Unit and component tests use Jest with the `jest-expo` preset and React Native Testing Library (SCRUM-64). `npm test` runs them, and `app.yml` runs `npm test` on every push and PR. `jest.config.js` has two projects: `domain` runs `src/domain` in the plain Node environment with no React Native preset, so a domain test that needs a mock is a design smell (§3); `app` runs everything else under `jest-expo`. Tests live in `__tests__/` beside the code and every test name carries its namespaced ID (`SPEC-001-T05`). RNTL's `render` and `fireEvent` are async — always `await` them; lint enforces it in `__tests__/`.
+
+Not Jest, deliberately: E2E is Maestro ([ADR-0015](../01-architecture/adr/ADR-0015-e2e-tooling.md)), the database is pgTAP ([ADR-0016](../01-architecture/adr/ADR-0016-pgtap.md)), Edge Functions use Deno's runner ([ADR-0008](../01-architecture/adr/ADR-0008-edge-functions.md)), and the repo's own Node tooling under `scripts/` (doc gates, dependency audit) uses `node:test` because it is not app code and runs before `npm ci`.
 
 ---
 
@@ -49,7 +53,7 @@ The RLS layer is deliberately fatter than the usual shape. In a [database-centri
 
 Scope: everything in `src/domain` — the state machine mirror, validation, formatting, unit conversion, taxonomy search ranking, distance and H3 helpers.
 
-`src/domain` has an eslint rule forbidding React Native imports, which is what makes it testable in plain Node with no simulator. That constraint exists for testability first and web-client reuse second.
+`src/domain` has an eslint rule forbidding React Native imports, which is what makes it testable in plain Node with no simulator — the Jest `domain` project runs it with no React Native preset, so an RN import there fails the test run as well as lint. That constraint exists for testability first and web-client reuse second.
 
 **Property-based tests** where the input space is large enough to be interesting:
 
@@ -163,7 +167,7 @@ The tests that enforce [the five rules](../README.md). These run on every PR **a
 | LP-05 | 1,000 reads of one garden return byte-identical points | pgTAP |
 | LP-06 | Mean of 1,000 reads is > 400 m from truth | pgTAP |
 | LP-07 | Bearing distribution is uniform (χ², 36 bins, p > 0.01) | pgTAP |
-| LP-08 | Scrubber strips coordinates from a synthetic Sentry event | Vitest |
+| LP-08 | Scrubber strips coordinates from a synthetic Sentry event | Jest |
 | LP-09 | EXIF absent from a stored real geotagged JPEG | Integration |
 | LP-10 | **Production canary: synthetic user A cannot read user B's garden** | Cron |
 | LP-11 | Notification payload and audit metadata reject coordinate keys | pgTAP |
@@ -259,3 +263,4 @@ Details in [CI/CD](../05-operations/02-cicd.md).
 | Date | Version | Author | Change |
 | --- | --- | --- | --- |
 | 2026-08-08 | 1.0.0 | Engineering | Initial test strategy |
+| 2026-10-21 | 1.1.0 | Engineering | Unit/integration runner is Jest (`jest-expo`) + React Native Testing Library, matching mobile architecture §1/§4.1, ADR-0015 and Location Privacy LP-08 (SCRUM-64). §2 names the one runner and what deliberately is not Jest; §7 LP-08 runner corrected |
