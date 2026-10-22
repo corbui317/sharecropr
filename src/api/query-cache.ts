@@ -35,11 +35,28 @@ async function getOrCreateEncryptionKey(): Promise<string> {
   return key;
 }
 
-export async function getQueryCache(): Promise<MMKV> {
-  if (cache) return cache;
+let opening: Promise<MMKV> | null = null;
+
+async function openQueryCache(): Promise<MMKV> {
   const encryptionKey = await getOrCreateEncryptionKey();
   cache = createMMKV({ id: CACHE_ID, encryptionKey, encryptionType: 'AES-256' });
   return cache;
+}
+
+/**
+ * Single-flight, same pattern as refreshSessionSingleFlight (src/api/supabase.ts): concurrent first
+ * callers share one open, so exactly one encryption key is generated and persisted (SPEC-001-T54).
+ * The lock clears on settle, so a failed open (e.g. keychain locked) can be retried.
+ */
+export async function getQueryCache(): Promise<MMKV> {
+  if (cache) return cache;
+  if (opening) return opening;
+  opening = openQueryCache();
+  try {
+    return await opening;
+  } finally {
+    opening = null;
+  }
 }
 
 export async function wipeQueryCache(): Promise<void> {

@@ -10,7 +10,8 @@ import { useIsOffline } from '@/features/auth/hooks/useIsOffline';
 import { useAuthSession } from '@/features/auth/hooks/useAuthSession';
 import { signInWithEmail } from '@/features/auth/lib/auth-service';
 import { authCopy } from '@/features/auth/lib/copy';
-import { routes } from '@/features/auth/lib/routes';
+import { routes, verifyEmailHref } from '@/features/auth/lib/routes';
+import { normalizeEmail } from '@/domain/validation/email';
 import { signInWithApple, signInWithGoogle } from '@/features/auth/lib/oauth';
 
 export function SignInScreen() {
@@ -33,8 +34,20 @@ export function SignInScreen() {
       setError(authCopy.wrongCredentials);
       return;
     }
+    if (result.error === 'email_not_confirmed') {
+      router.replace(verifyEmailHref(normalizeEmail(email)));
+      return;
+    }
     if (result.error === 'suspended') {
       setError(authCopy.accountSuspended);
+      return;
+    }
+    if (result.error === 'rate_limited') {
+      setError(authCopy.signInRateLimited);
+      return;
+    }
+    if (result.error === 'network') {
+      setError(authCopy.network);
       return;
     }
     if (result.error) {
@@ -49,8 +62,9 @@ export function SignInScreen() {
     setError(null);
     setLoadingProvider(provider);
     const fn = provider === 'apple' ? signInWithApple : signInWithGoogle;
-    const { error: providerError } = await fn();
+    const { error: providerError, cancelled } = await fn();
     setLoadingProvider(null);
+    if (cancelled) return;
 
     if (providerError) {
       setError(authCopy.providerFailed(provider === 'apple' ? 'Apple' : 'Google'));

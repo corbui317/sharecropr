@@ -4,11 +4,13 @@ import { router } from 'expo-router';
 import { AuthButton } from '@/features/auth/components/AuthButton';
 import { AuthScreenShell } from '@/features/auth/components/AuthScreenShell';
 import { AuthTextField } from '@/features/auth/components/AuthTextField';
+import { useIntentKey } from '@/features/auth/hooks/useIntentKey';
 import { requestAccountDeletion } from '@/features/auth/lib/auth-service';
 import { authCopy } from '@/features/auth/lib/copy';
 import { routes } from '@/features/auth/lib/routes';
 
 export function DeleteAccountScreen() {
+  const intent = useIntentKey();
   const [confirmText, setConfirmText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -18,7 +20,7 @@ export function DeleteAccountScreen() {
   const handleDelete = async () => {
     setError(null);
     setLoading(true);
-    const { error: rpcError } = await requestAccountDeletion();
+    const { error: rpcError } = await requestAccountDeletion({ idempotencyKey: intent.key });
     setLoading(false);
 
     if (rpcError) {

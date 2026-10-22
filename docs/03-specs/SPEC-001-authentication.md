@@ -3,14 +3,14 @@
 | Field | Value |
 | --- | --- |
 | **Status** | Review |
-| **Version** | 1.1.0 |
+| **Version** | 1.2.0 |
 | **Owner** | Engineering — Auth |
 | **Phase** | MVP |
 | **Security review** | required |
 | **Schema depends on** | — (root capability) |
 | **Behaviourally coupled with** | SPEC-002 (R32, R36, R44 cite R18), SPEC-013 |
 | **Related ADRs** | [ADR-0004](../01-architecture/adr/ADR-0004-supabase.md), [ADR-0006](../01-architecture/adr/ADR-0006-auth-providers.md), [ADR-0007](../01-architecture/adr/ADR-0007-token-storage.md), [ADR-0014](../01-architecture/adr/ADR-0014-totp-not-sms.md) |
-| **Last updated** | 2026-10-21 |
+| **Last updated** | 2026-10-22 |
 
 ---
 
@@ -187,6 +187,9 @@ CREATE TABLE private.account_deletions (
 
 CREATE INDEX account_deletions_due_idx ON private.account_deletions (scheduled_at)
   WHERE cancelled_at IS NULL AND executed_at IS NULL;
+-- Amended by 20261022145504_account_deletions_history.sql (SPEC-001-T50): user_id is no longer the key.
+-- Each request is a row (id identity PK); at most one open row per user
+-- (UNIQUE (user_id) WHERE cancelled_at IS NULL AND executed_at IS NULL); cancelled rows are history.
 
 -- Released handles cannot be recycled for 12 months (R11).
 CREATE TABLE private.retired_handles (
@@ -337,6 +340,8 @@ Exact strings. Anything not listed here is a spec gap and must be added before i
 | --- | --- |
 | Wrong email or password | `That email and password don't match. Check both and try again.` |
 | Sign-in rate limited | `Too many sign-in attempts. Try again in {mm:ss}.` |
+| Sign-in rate limited, no `Retry-After` available *(interim until the §8.2 countdown is built)* | `Too many sign-in attempts. Wait a few minutes and try again.` |
+| Network failure | `We couldn't reach Sharecropr. Check your connection and try again.` |
 | Password too short | `Passwords need at least 12 characters. Length beats complexity.` |
 | Password found in a breach | `This password has appeared in a known data breach. Pick a different one — it doesn't have to be complicated, just not this one.` |
 | Provider cancelled | *(no copy — silent return to the form)* |
@@ -355,6 +360,7 @@ Exact strings. Anything not listed here is a spec gap and must be added before i
 | Link expired | `That link has expired. Links are good for 24 hours — here's a fresh one.` |
 | Link already used | `This link was already used. Try signing in.` |
 | Wrong address | `Wrong address? Start over` |
+| Return without a session | `Back to sign in` |
 
 **Password reset**
 
@@ -364,6 +370,7 @@ Exact strings. Anything not listed here is a spec gap and must be added before i
 | OAuth-only account email body | `Your Sharecropr account signs in with {Apple\|Google}, so there's no password to reset. Open the app and use the {Apple\|Google} button.` |
 | Reset complete | `Password updated. You've been signed out everywhere else.` |
 | Still needs 2FA | `One more step — enter the code from your authenticator app.` |
+| Link invalid (expired, used, other device) | `That reset link didn't work` / `Reset links work once, expire after 60 minutes, and open only on the device that asked for them. Request a new one.` / action `Request a new link` |
 
 **Email change**
 
@@ -391,6 +398,8 @@ Exact strings. Anything not listed here is a spec gap and must be added before i
 | Restore screen body | `You asked us to delete this account on {request_date}. We haven't yet. Deletion is scheduled for {scheduled_date}.` |
 | Restore actions | `Keep my account` / `Continue with deletion` |
 | Grace elapsed | `This account was deleted and can't be recovered. You're welcome to start a new one.` |
+| Account status unavailable | `We couldn't check your account` / `Check your connection and try again.` / actions `Try again` / `Sign out` |
+| Restore failed | `We couldn't restore your account just now. Try again.` |
 
 **Empty states**
 
@@ -420,7 +429,7 @@ Exact strings. Anything not listed here is a spec gap and must be added before i
 | EC-05 | Two devices refresh the same session within milliseconds of each other. | `processLock` serialises them on one device; across devices, the 10-second reuse window absorbs it (R22). Outside that window the family is revoked and both devices re-authenticate. This is the intended, if annoying, behaviour. |
 | EC-06 | App is killed mid-`setItem` on the chunked SecureStore adapter. | Next `getItem` sees a missing chunk, deletes the whole entry, returns `null`, and the user lands on `/sign-in` (R21). Fail-closed. Instrumented as an `auth.unexplained_signout` event because [ADR-0007](../01-architecture/adr/ADR-0007-token-storage.md) makes the rate the revisit trigger. |
 | EC-07 | User requests deletion, then sends a message or accepts an exchange during the grace period. | Not possible: `profiles.deleted_at IS NOT NULL` fails `app.can_transact()` and the write policies filter on `deleted_at IS NULL`. The app shows the restore prompt instead of the action. |
-| EC-08 | User requests deletion in-app, then also submits the web form. | `private.account_deletions` is keyed on `user_id`; the second request returns `conflict` (409), which the web flow renders as "Deletion is already scheduled for {date}". No double-scheduling. |
+| EC-08 | User requests deletion in-app, then also submits the web form. | `private.account_deletions` holds at most one *open* request per `user_id` (partial unique index); the second request returns `conflict` (409), which the web flow renders as "Deletion is already scheduled for {date}". No double-scheduling. A request after a restore is a new row, and the cancelled one is kept (T50). |
 | EC-09 | Deletion grace period elapses while the user has an active session on another device. | `account-delete` revokes all sessions as part of the pipeline (R48). The other device's next request 401s, the silent refresh fails, and it signs out to a terminal state screen. |
 | EC-10 | User changes email to an address, then that address is deleted by its provider and reassigned to a stranger who requests a password reset. | Out of scope to prevent — mailbox control is the reset credential by design. Mitigated only by 2FA remaining required after reset (R33), which is precisely why R33 exists and is a MUST. |
 | EC-11 | HIBP is down during signup. | Check is skipped after 1500 ms and signup proceeds (R08). A breach oracle is not allowed to be a dependency of account creation. Logged as `auth.hibp_skipped` and alerted above 5% of signups. |
@@ -487,7 +496,7 @@ Exact strings. Anything not listed here is a spec gap and must be added before i
 | T16 | integration | R22 | Refresh token reused at t+11 s revokes the family; reused at t+5 s succeeds. |
 | T17 | integration | R23 | Session at 30 days idle is rejected; a session actively used for 91 days is rejected. |
 | T18 | unit | R24 | `AppState` transition to `background` calls `stopAutoRefresh`; two concurrent refresh calls result in one network request. |
-| T19 | integration | R25 | After sign-out, the MMKV cache file does not exist and the SecureStore session key returns `null`. |
+| T19 | integration | R25 | After sign-out, the MMKV cache file does not exist and the SecureStore session key returns `null`. Unit slice: when global sign-out fails, the stored session is purged before the local sign-out. |
 | T20 | unit (CI gate) | R26 | Serialized session with moderator claim and OAuth metadata is under 6 KB. |
 | T21 | integration | R28 | Suspended user: `GET /rest/v1/profiles` succeeds; `POST /rest/v1/inventory_items` returns `suspended` 403; `rpc.request_account_deletion` succeeds. |
 | T22 | integration | R29 | Reset for a nonexistent address returns byte-identical body and status, and within 50 ms of the timing for an existing address (timing-oracle guard). |
@@ -514,6 +523,15 @@ Exact strings. Anything not listed here is a spec gap and must be added before i
 | T43 | e2e | R56 | Unverified account can reach the map, open a safe-spot sheet, browse taxonomy, and add an inventory item. |
 | T44 | manual | R57 | Privacy-label submission reviewed against the actual data flow before each store submission. |
 | T45 | integration | R13 | Grep the built Hermes bundle and every EAS build profile for a service-role JWT structure; build fails on a hit. |
+| T46 | unit | R47, Invariant 10 | After the session arrives, `/` shows the splash until `get_account_deletion_status` answers for *that* user, then redirects to `/restore-account` when pending, never to `/map` first. A server error renders an actionable retry (Invariant 10). Unreachable, or no answer in 8 s, opens the app normally (§8.2 Offline; EC-07 holds server-side). The restore screen renders the same retry instead of a blank screen. |
+| T47 | unit | R30 | Reset uses `redirectTo: sharecropr://reset-password`, listed in `config.toml` `additional_redirect_urls` and resolving to `/(auth)/reset-password`. The screen exchanges the PKCE `code` exactly once before showing the form. An error param, a failed exchange, or no code and no session renders 'Request a new link'. |
+| T48 | unit | R18, R19 | After a sessionless `signUp` (`enable_confirmations = true`), `/verify-email` shows the address from the route params and resend calls GoTrue `resend` for it without a session. With neither a session nor an address it redirects to `/sign-in`. |
+| T49 | unit | R15, §8.2, §8.3 | `mapAuthError` derives `email_not_confirmed`, `network`, `rate_limited`, `suspended` and `bad_credentials` from GoTrue's `code`/`status`/`name`, with the message as fallback. Sign-in shows distinct copy for each and routes `email_not_confirmed` to `/verify-email`. |
+| T50 | rls | R45, R47, EC-08 | request → cancel → request schedules a new deletion. The cancelled row is kept. At most one open row per user (partial unique index, also outside the RPC). A second open request returns `conflict`. |
+| T51 | unit | R47 | 'Keep my account' navigates only when `cancel_account_deletion` succeeds. An error shows inline copy and keeps the screen. `invalid_transition` shows the grace-elapsed state. |
+| T52 | unit | R03, §8.2 | Apple cancel (`err.code === 'ERR_REQUEST_CANCELED'`) and Google sheet dismissal return silently: no error copy, no navigation. |
+| T53 | unit + rls | §7 `p_idempotency_key` | One user intent (delete, restore, email change) sends the same `p_idempotency_key` on every retry. A new intent, a remount or an edited email sends a new key. The server replays the stored result for a repeated key and rejects a reused key with different arguments. |
+| T54 | unit | R25 | Concurrent first `getQueryCache()` calls generate and persist one encryption key and open one MMKV instance. A failed open can be retried. |
 
 ### 13.2 Negative & security tests
 
@@ -582,3 +600,4 @@ Exact strings. Anything not listed here is a spec gap and must be added before i
 | 2026-08-08 | 1.0.0 | Engineering — Auth | Initial spec. Approved with Security sign-off per [Doc Conventions §6](../00-foundation/06-doc-conventions.md). |
 | 2026-10-21 | 1.1.0 | Architecture | R36 and R44 now require AAL2 only when a second factor is enrolled (2FA is optional, SPEC-002 R04; otherwise no one without 2FA could delete their account, R43); T25/T28/T34 updated. `request_email_change` treats expired pending rows as absent, is reaped hourly, and returns the neutral response without inserting for a taken address (R39, R40, N02). `profiles` other-user reads and column privileges per [ADR-0022](../01-architecture/adr/ADR-0022-profiles-other-user-reads.md); `rpc.get_my_profile` added |
 | 2026-10-21 | 1.0.1 | Architecture | §6 and §14 name the real migration files (`20260822_0002_identity_tables.sql`, `20260828_0009_auth.sql`); no behavioural change |
+| 2026-10-22 | 1.2.0 | Engineering — Auth | WP-AUTH-FIX: `private.account_deletions` keeps history with one open row per user (EC-08, T50); §8.3 copy for network, interim rate-limit, invalid reset link, account-status and restore failures; T46–T54 added for the boot deletion gate, reset deep link, sessionless verify, error mapping, provider cancel, per-intent idempotency keys and query-cache single-flight; T19 gains a unit slice |
