@@ -88,6 +88,7 @@ Numbered, versioned, individually testable. See [03-specs/README.md](03-specs/RE
 | [03 Release & Store Submission](05-operations/03-release-and-store-submission.md) | EAS profiles, OTA policy, Apple/Google review traps |
 | [04 Observability](05-operations/04-observability.md) | Logging, metrics, tracing, alerting, telemetry scrubbing |
 | [05 Runbooks](05-operations/05-runbooks.md) | Step-by-step incident procedures |
+| [06 Dependency Risk Register](05-operations/06-dependency-risk-register.md) | npm audit advisories we cannot patch in-SDK: reason, exposure, exit condition |
 
 ### 06 — Roadmap
 
