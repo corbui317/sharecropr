@@ -40,6 +40,7 @@ Write a new ADR when a change touches the schema shape, the API surface, a secur
 | [0019](ADR-0019-openstreetmap-maplibre.md) | **OpenStreetMap via MapLibre** | Accepted | 2026-08-09 | OSM vector tiles rendered by `@maplibre/maplibre-react-native`; identical on both platforms; supersedes [0013](ADR-0013-map-library.md) |
 | [0020](ADR-0020-pmtiles-self-hosting.md) | **PMTiles self-hosting** | Accepted | 2026-08-09 | OSM basemap as a Protomaps PMTiles archive on Cloudflare R2 + CDN; no tile vendor, no per-load billing, offline-capable |
 | [0021](ADR-0021-osm-safe-spot-sourcing.md) | **OSM safe-spot sourcing** | Accepted | 2026-08-09 | Overpass imports civic POIs as *candidates*; humans verify before any spot goes live. `opening_hours` is a hint, never truth |
+| [0022](ADR-0022-profiles-other-user-reads.md) | **Other-user profile reads** | Accepted | 2026-10-21 | `profiles` gets a visible-rows SELECT policy plus card-safe column grants; owner-only columns via `get_my_profile()`; `profile_cards` stays `security_invoker` |
 
 ---
 

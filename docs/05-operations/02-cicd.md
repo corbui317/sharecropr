@@ -1,6 +1,6 @@
 # CI/CD
 
-**Status:** Approved · **Version:** 1.0.0 · **Owner:** Platform Engineering
+**Status:** Approved · **Version:** 1.0.2 · **Owner:** Platform Engineering
 
 GitHub Actions for verification, EAS for building and shipping. The pipeline's job is to make the [five rules](../README.md) mechanically enforced rather than culturally enforced, because culture degrades under deadline pressure and a `grep` in CI does not.
 
@@ -36,30 +36,31 @@ flowchart TD
 
 ## 2. Required checks
 
-None of these are advisory. A PR cannot merge with any of them red.
+None of these are advisory once built. A PR cannot merge with any *running* check red. **Most are not built yet** — the State column is the truth; [N-07](../07-review/02-development-notes.md#n-07--the-ci-gates-are-described-not-built) tracks the gap. Update the column in the PR that wires a check up.
 
-| Check | Blocks on |
-| --- | --- |
-| `lint` | ESLint errors; `src/domain` importing React Native |
-| `typecheck` | Any TS error; `any` in `src/domain` |
-| `unit` | Any failure |
-| `migrate` | Migration fails against a production-shaped seed |
-| `migration-safety` | §3 gates |
-| `pgtap-rls` | Any RLS assertion; negative < positive per table |
-| `pgtap-geo` | Any geospatial assertion |
-| `location-invariants` | **LP-01 … LP-13** |
-| `integration` | Any failure |
-| `concurrency` | Any hazard H1–H8 |
-| `security-static` | §4 checks |
-| `spec-traceability` | A `MUST` with no linked test |
-| `secret-scan` | Any secret in source or the built bundle |
-| `e2e-smoke` | Any smoke flow on either platform |
-| `perf-baseline` | An unreviewed `EXPLAIN` plan change on a hot path |
-| `map-style` | An invalid style JSON, or one referencing a tile, sprite, or glyph host we do not control (§4.1) |
-| `map-attribution` | The OSM attribution missing, zero-area, or obscured in any map state — **NFR-99, a licence obligation** (§4.1) |
-| `map-egress` | Any map-screen request to a non-allowlisted host, or a tile request carrying a credential or a coordinate — NFR-102 (§4.1) |
+| Check | Blocks on | State (2026-10-21) |
+| --- | --- | --- |
+| `lint` | ESLint errors; `src/domain` or `src/api` importing React Native; any file but the seam importing `@supabase/*` or a map renderer — proved by `npm run lint:fixtures` | **Running** — `app.yml` |
+| `typecheck` | Any TS error; `any` in `src/domain` | **Running** — `app.yml` |
+| `unit` | Any failure | **Running** — `app.yml` `npm test` (Jest + RNTL over `src/` and `app/`; [Test Strategy §2](../04-testing/01-test-strategy.md#2-the-pyramid-weighted-for-this-system)) |
+| `migrate` | Migration fails against a production-shaped seed | **Partial** — `db.yml` `supabase db reset`; no production-shaped seed |
+| `migration-safety` | §3 gates | Planned |
+| `pgtap-rls` | Any RLS assertion; negative < positive per table | **Running** — `db.yml` (pgTAP + `ci:assert-negative-ratio`) |
+| `pgtap-geo` | Any geospatial assertion | **Partial** — `db.yml` runs every `supabase/tests/*.test.sql` |
+| `location-invariants` | **LP-01 … LP-13** | Planned — `npm run location-canary` exists, not wired |
+| `integration` | Any failure | Planned |
+| `concurrency` | Any hazard H1–H8 | Planned |
+| `security-static` | §4 checks | **Partial** — `db.yml` private-grant + definer-allowlist gates |
+| `spec-traceability` | A `MUST` with no linked test | Planned |
+| `doc-gates` | §5.1 gates | **Partial** — `app.yml` runs the schema-graph acyclic half + register sync (SCR-0003); symmetry (SCR-0004) and the other §5.1 gates planned |
+| `secret-scan` | Any secret in source or the built bundle | Planned |
+| `e2e-smoke` | Any smoke flow on either platform | Planned |
+| `perf-baseline` | An unreviewed `EXPLAIN` plan change on a hot path | Planned |
+| `map-style` | An invalid style JSON, or one referencing a tile, sprite, or glyph host we do not control (§4.1) | Running (app.yml) |
+| `map-attribution` | The OSM attribution missing, zero-area, or obscured in any map state — **NFR-99, a licence obligation** (§4.1) | Planned |
+| `map-egress` | Any map-screen request to a non-allowlisted host, or a tile request carrying a credential or a coordinate — NFR-102 (§4.1) | Planned |
 
-Two approvals required, and a **`DB` CODEOWNERS approval** if `supabase/migrations/**` changed.
+Two approvals required, and a **`DB` CODEOWNERS approval** if `supabase/migrations/**` changed. *(Partial: [`.github/CODEOWNERS`](../../.github/CODEOWNERS) names the DB owner for `supabase/migrations/`, and `app.yml`/`db.yml` now run on pushes to `develop` as well as `main`. **Branch protection is not configured**, so nothing yet blocks a merge, and with a single maintainer "Require review from Code Owners" cannot be satisfied — see SCR-0002.)*
 
 ---
 
@@ -71,7 +72,7 @@ Migrations are the most dangerous thing in the pipeline, because they are the on
 
 ```yaml
 - name: Every new table has RLS enabled and forced
-  run: pnpm ci:assert-rls-on-new-tables
+  run: npm run ci:assert-rls-on-new-tables
 
 - name: No GRANT on schema private
   run: |
@@ -80,16 +81,16 @@ Migrations are the most dangerous thing in the pipeline, because they are the on
     fi
 
 - name: Every SECURITY DEFINER function pins search_path
-  run: pnpm ci:assert-definer-search-path
+  run: npm run ci:assert-definer-search-path
 
 - name: Every new definer function is on the reviewed allowlist
-  run: pnpm ci:assert-definer-allowlist
+  run: npm run ci:assert-definer-allowlist
 
 - name: Every new view sets security_invoker = on
-  run: pnpm ci:assert-security-invoker
+  run: npm run ci:assert-security-invoker
 
 - name: No forbidden column in any client-reachable return type
-  run: pnpm ci:assert-no-forbidden-columns    # h3_r9, exact_point, fuzz_seed, trust_score
+  run: npm run ci:assert-no-forbidden-columns    # h3_r9, exact_point, fuzz_seed, trust_score
 ```
 
 ### 3.2 The destructive-migration gate
@@ -140,19 +141,19 @@ Three gates protect things that break silently: a licence obligation rendered in
 
 ```yaml
 - name: Style JSON validates and references only our own hosts
-  run: pnpm ci:validate-map-style
+  run: npm run ci:validate-map-style
   # - validates src/features/map/style/sharecropr-basemap.json against the MapLibre schema
   # - asserts every source, sprite, and glyph URL is on the Sharecropr tile origin
   # - asserts the tile source names ONE explicit dated archive, never a "latest" alias
 
 - name: Attribution is present and unobscured in every map state
-  run: pnpm ci:assert-attribution
+  run: npm run ci:assert-attribution
   # Renders the map fixture in each §8.2 state and at each sheet detent, then asserts
   # the attribution node is mounted, has non-zero measured area, meets 4.5:1, and its
   # rect intersects no other rendered node. TC-GEO-37/38/39/40.
 
 - name: No map request leaves Sharecropr infrastructure
-  run: pnpm ci:assert-map-egress
+  run: npm run ci:assert-map-egress
   # Captures every request the map screen makes against a host allowlist, then regexes
   # each tile request for credentials and for coordinate-shaped values beyond z/x/y and
   # PMTiles byte ranges. TC-GEO-41/42/43, NFR-102.
@@ -170,7 +171,7 @@ Three notes on why these are shaped the way they are:
 
 ```yaml
 - name: Every MUST has a test
-  run: pnpm ci:spec-traceability
+  run: npm run ci:spec-traceability
 ```
 
 Parses `docs/03-specs/*.md`, extracts every requirement marked `MUST`, and confirms each appears in that spec's §13 coverage matrix **and** that a test file references the ID. A `MUST` with no test fails the build.
@@ -183,7 +184,7 @@ The `MUST`→test gate only sees requirements that were written as requirements.
 
 ```yaml
 - name: Doc governance gates
-  run: pnpm ci:doc-gates
+  run: npm run ci:doc-gates
 ```
 
 | Gate | Rule | Rationale |
@@ -204,7 +205,7 @@ The `MUST`→test gate only sees requirements that were written as requirements.
 
 The pattern is the one already proven by the transition table: put the fact in the database, generate the copy, and let CI fail on drift. Every finding in the review's process section was a fact that lived in two places with nothing comparing them.
 
-> **None of the gates in this section exist yet.** Until `pnpm ci:doc-gates` is real, the 2026-08-09 fixes are a snapshot and the doc set will drift back to where it was. Build them in the first sprint, while the reasons are fresh and there are no green builds to break — see [Development Notes N-07](../07-review/02-development-notes.md#n-07--the-ci-gates-are-described-not-built).
+> **Only the schema-graph gate's acyclic half exists** (`npm run ci:doc-gates`, SCR-0003, which also checks the register's `Schema depends on` column against front matter); the rest of this section is planned. Until the rest is real, the 2026-08-09 fixes are a snapshot and the doc set will drift back to where it was. Build them in the first sprint, while the reasons are fresh and there are no green builds to break — see [Development Notes N-07](../07-review/02-development-notes.md#n-07--the-ci-gates-are-described-not-built).
 
 ---
 
@@ -288,7 +289,7 @@ There are no `DOWN` migrations. Reversing a migration on a live database with co
 | Full Maestro suite | Nightly | Beyond smoke |
 | Performance suite | Nightly | k6 + `EXPLAIN` diffs |
 | **Location invariant canary (LP-10)** | **Every 15 min against production** | Verifies what we deployed, not what we intended |
-| Dependency audit | Weekly | CVEs |
+| Dependency audit | Weekly | CVEs — **Running (weekly, not a PR gate)**: [dependency-audit.yml](../../.github/workflows/dependency-audit.yml) opens one issue per advisory; Dependabot for npm + actions |
 | Data-quality checks | Nightly | Stale safe-spot hours, orphaned media |
 | Preview cleanup | Daily | Destroy orphaned branch projects |
 | Flake report | Weekly | Auto-quarantine above 2% |
@@ -348,3 +349,5 @@ Production-scoped secrets live in a protected GitHub Environment requiring a nam
 | Date | Version | Author | Change |
 | --- | --- | --- | --- |
 | 2026-08-08 | 1.0.0 | Platform Engineering | Initial CI/CD |
+| 2026-10-21 | 1.0.1 | Architecture | §2 gains a State column (running / partial / planned); `pnpm` → `npm run` to match the repo's package manager. Scripts named in §4–§5 that do not exist in `package.json` are planned |
+| 2026-10-21 | 1.0.2 | Engineering | §2 `unit` is Running: `app.yml` runs `npm test` (Jest + React Native Testing Library over `src/` and `app/`), replacing the auth-domain and map `node:test` scripts (SCRUM-64, SCR-0002) |

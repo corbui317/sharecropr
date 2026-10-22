@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useImperativeHandle, useMemo, useRef } from 'react';
+import { forwardRef, useCallback, useImperativeHandle, useLayoutEffect, useMemo, useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
 import {
   Camera,
@@ -17,6 +17,12 @@ import { deviceLocationToGeoPoint } from '@/domain/geo/types';
 import { OsmAttribution } from '@/features/map/components/OsmAttribution';
 import { resolveBasemapStyle } from '@/features/map/config/basemap';
 import {
+  EMPTY_RENDER_MILESTONES,
+  markFrameRendered,
+  markMilestone,
+  type RenderMilestones,
+} from '@/features/map/lib/renderMilestones';
+import {
   markerCollectionSignature,
   markersToFeatureCollection,
   userLocationFeature,
@@ -34,7 +40,10 @@ export type MapCanvasProps = {
   onMarkerPress: (id: string) => void;
   onClusterPress: (clusterId: number, lat: number, lng: number) => void;
   onMapPress: () => void;
-  onFirstTilePainted?: () => void;
+  /** Render milestones in ms since this component mounted (SPEC-008 R73). Called when one changes. */
+  onRenderMilestones?: (milestones: RenderMilestones) => void;
+  /** Called on every MapLibre frame-render completion (profiler only; omit in production). */
+  onMapFrameRendered?: () => void;
 };
 
 export type MapCanvasHandle = {
@@ -61,13 +70,20 @@ export const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(function Ma
     onMarkerPress,
     onClusterPress,
     onMapPress,
-    onFirstTilePainted,
+    onRenderMilestones,
+    onMapFrameRendered,
   },
   ref,
 ) {
   const mapRef = useRef<MapRef>(null);
   const cameraRef = useRef<CameraRef>(null);
-  const firstTileReported = useRef(false);
+  const mountedAt = useRef<number | null>(null);
+  const milestones = useRef<RenderMilestones>(EMPTY_RENDER_MILESTONES);
+
+  // R73 measures from map-canvas mount, so the clock starts at this component's commit.
+  useLayoutEffect(() => {
+    mountedAt.current = performance.now();
+  }, []);
 
   const mapStyle = useMemo(
     () => resolveBasemapStyle() as unknown as StyleSpecification,
@@ -77,7 +93,8 @@ export const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(function Ma
   const markerSignature = useMemo(() => markerCollectionSignature(markers), [markers]);
   const markerCollection = useMemo(
     () => markersToFeatureCollection(markers),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- signature is the memo gate per R26
+    // Deliberately keyed on markerSignature, not markers: the signature is the memo gate per R26.
+    // (eslint-plugin-react-hooks is not installed; if it is adopted, disable exhaustive-deps here.)
     [markerSignature],
   );
 
@@ -138,12 +155,35 @@ export const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(function Ma
     [onClusterPress, onMarkerPress],
   );
 
+  const msSinceMount = () =>
+    mountedAt.current === null ? Number.NaN : performance.now() - mountedAt.current;
+
+  const commitMilestones = useCallback(
+    (next: RenderMilestones) => {
+      if (next === milestones.current) return;
+      milestones.current = next;
+      onRenderMilestones?.(next);
+    },
+    [onRenderMilestones],
+  );
+
+  const handleDidFinishLoadingStyle = useCallback(() => {
+    commitMilestones(markMilestone(milestones.current, 'styleLoaded', msSinceMount()));
+  }, [commitMilestones]);
+
+  const handleDidFinishRenderingFrame = useCallback(() => {
+    commitMilestones(markFrameRendered(milestones.current, false, msSinceMount()));
+    onMapFrameRendered?.();
+  }, [commitMilestones, onMapFrameRendered]);
+
+  const handleDidFinishRenderingFrameFully = useCallback(() => {
+    commitMilestones(markFrameRendered(milestones.current, true, msSinceMount()));
+    onMapFrameRendered?.();
+  }, [commitMilestones, onMapFrameRendered]);
+
   const handleDidFinishRenderingMapFully = useCallback(() => {
-    if (!firstTileReported.current) {
-      firstTileReported.current = true;
-      onFirstTilePainted?.();
-    }
-  }, [onFirstTilePainted]);
+    commitMilestones(markMilestone(milestones.current, 'mapFullyRendered', msSinceMount()));
+  }, [commitMilestones]);
 
   return (
     <View style={styles.container} testID="map.canvas">
@@ -156,6 +196,9 @@ export const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(function Ma
         onPress={onMapPress}
         onRegionDidChange={handleRegionDidChange}
         onDidFinishRenderingMapFully={handleDidFinishRenderingMapFully}
+        onDidFinishLoadingStyle={handleDidFinishLoadingStyle}
+        onDidFinishRenderingFrame={handleDidFinishRenderingFrame}
+        onDidFinishRenderingFrameFully={handleDidFinishRenderingFrameFully}
       >
         <Camera
           ref={cameraRef}

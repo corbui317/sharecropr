@@ -43,6 +43,8 @@ export default ({ config }: ConfigContext): ExpoConfig =>
   },
   plugins: [
     'expo-router',
+    'expo-secure-store',
+    'expo-apple-authentication',
     [
       'expo-location',
       {
@@ -58,5 +60,7 @@ export default ({ config }: ConfigContext): ExpoConfig =>
   extra: {
     tileOrigin: TILE_ORIGIN,
     basemapArchive: BASEMAP_ARCHIVE,
+    supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL,
+    supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
   },
 }) as ExpoConfig;

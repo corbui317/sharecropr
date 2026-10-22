@@ -1,6 +1,7 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  Platform,
   Pressable,
   Share,
   StyleSheet,
@@ -12,12 +13,16 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { generateSpikeMarkers } from '@/domain/geo/spikeData';
 import { DEFAULT_ZOOM, type Camera, type DeviceLocation } from '@/domain/geo/types';
 import { MapCanvas, type MapCanvasHandle } from '@/features/map/components/MapCanvas';
-import { useFpsProfiler } from '@/features/map/hooks/useFpsProfiler';
+import { MAP_PROFILER_ENABLED } from '@/features/map/config/profiler';
+import { useFpsProfiler, type LiveProfilerReading } from '@/features/map/hooks/useFpsProfiler';
 import { useFollowMode } from '@/features/map/hooks/useFollowMode';
 import { buildClusterIndex, useMapMarkers } from '@/features/map/hooks/useMapMarkers';
+import { EMPTY_RENDER_MILESTONES, type RenderMilestones } from '@/features/map/lib/renderMilestones';
 
 /** Portland, OR — launch metro one placeholder for spike data. */
 const SPIKE_CENTER = { lat: 45.5152, lng: -122.6784 };
+
+const fmtMs = (v: number | null) => (v === null ? '—' : String(v));
 
 function initialCamera(center = SPIKE_CENTER): Camera {
   return { center, zoom: DEFAULT_ZOOM };
@@ -26,8 +31,7 @@ function initialCamera(center = SPIKE_CENTER): Camera {
 export function MapSpikeScreen() {
   const insets = useSafeAreaInsets();
   const mapRef = useRef<MapCanvasHandle>(null);
-  const mountTime = useRef(Date.now());
-  const [timeToFirstTileMs, setTimeToFirstTileMs] = useState<number | null>(null);
+  const [milestones, setMilestones] = useState<RenderMilestones>(EMPTY_RENDER_MILESTONES);
 
   const spots = useMemo(() => generateSpikeMarkers(SPIKE_CENTER, 200), []);
 
@@ -37,7 +41,7 @@ export function MapSpikeScreen() {
   const clusterIndex = useMemo(() => buildClusterIndex(spots), [spots]);
   const markers = useMapMarkers(spots, camera, selectedId);
 
-  const profiler = useFpsProfiler();
+  const profiler = useFpsProfiler({ enabled: MAP_PROFILER_ENABLED });
 
   const handleAnimateToUser = useCallback((location: DeviceLocation) => {
     mapRef.current?.animateToCoordinate(location, 200);
@@ -69,22 +73,21 @@ export function MapSpikeScreen() {
     [clusterIndex],
   );
 
-  const handleFirstTilePainted = useCallback(() => {
-    setTimeToFirstTileMs(Date.now() - mountTime.current);
-  }, []);
-
   const handleExportTrace = useCallback(async () => {
-    const summary = profiler.getSummary();
+    const profile = profiler.getReport();
     const payload = {
       epic: 'EPIC-01',
-      renderer: '@maplibre/maplibre-react-native',
       story: 'SCR-0103',
+      renderer: '@maplibre/maplibre-react-native',
       timestamp: new Date().toISOString(),
+      platform: Platform.OS,
+      osVersion: Platform.Version,
+      devBuild: __DEV__,
       markerCount: spots.length,
       visibleFeatures: markers.length,
-      timeToFirstTileMs,
-      summary,
-      note: 'Profile on reference Android hardware. Attach device model and OS version.',
+      renderMilestonesMsSinceCanvasMount: milestones,
+      profile,
+      note: 'Attach device model. Profile a release build (EXPO_PUBLIC_MAP_PROFILER=1). Primary evidence is the Perfetto/Instruments trace.',
     };
 
     try {
@@ -93,9 +96,9 @@ export function MapSpikeScreen() {
         title: 'Map spike FPS trace',
       });
     } catch {
-      Alert.alert('Trace ready', JSON.stringify(summary, null, 2));
+      Alert.alert('Trace ready', JSON.stringify(profile.channels.ui.summary, null, 2));
     }
-  }, [markers.length, profiler, spots.length, timeToFirstTileMs]);
+  }, [markers.length, milestones, profiler, spots.length]);
 
   return (
     <View style={styles.container}>
@@ -108,7 +111,8 @@ export function MapSpikeScreen() {
         onMarkerPress={setSelectedId}
         onClusterPress={handleClusterPress}
         onMapPress={() => setSelectedId(null)}
-        onFirstTilePainted={handleFirstTilePainted}
+        onRenderMilestones={setMilestones}
+        onMapFrameRendered={MAP_PROFILER_ENABLED ? profiler.recordMapFrame : undefined}
       />
 
       <View style={[styles.hud, { top: insets.top + 8 }]}>
@@ -116,13 +120,14 @@ export function MapSpikeScreen() {
         <Text style={styles.hudText}>
           Markers: {spots.length} · Visible: {markers.length}
         </Text>
-        <Text style={styles.hudText}>
-          FPS: {profiler.displayFps} · Frame: {profiler.displayFrameMs}ms
-        </Text>
+        {profiler.enabled ? <ProfilerReadout readLive={profiler.readLive} /> : null}
         <Text style={styles.hudText}>
           Follow: {follow.following ? 'on' : 'off'}
-          {timeToFirstTileMs !== null ? ` · First tile: ${timeToFirstTileMs}ms` : ''}
           {selectedId ? ` · Selected: ${selectedId}` : ''}
+        </Text>
+        <Text style={styles.hudText}>
+          Render ms from canvas mount: style {fmtMs(milestones.styleLoaded)} · first frame{' '}
+          {fmtMs(milestones.firstFrame)} · all tiles {fmtMs(milestones.firstFullFrame)}
         </Text>
       </View>
 
@@ -133,21 +138,39 @@ export function MapSpikeScreen() {
           </Pressable>
         ) : null}
 
-        <Pressable
-          style={[styles.button, profiler.isRecording && styles.buttonActive]}
-          onPress={profiler.isRecording ? profiler.stopRecording : profiler.startRecording}
-          testID="map.profiler.toggle"
-        >
-          <Text style={styles.buttonText}>
-            {profiler.isRecording ? `Stop (${profiler.sampleCount})` : 'Record FPS'}
-          </Text>
-        </Pressable>
+        {profiler.enabled ? (
+          <>
+            <Pressable
+              style={[styles.button, profiler.isRecording && styles.buttonActive]}
+              onPress={profiler.isRecording ? profiler.stopRecording : profiler.startRecording}
+              testID="map.profiler.toggle"
+            >
+              <Text style={styles.buttonText}>
+                {profiler.isRecording ? 'Stop recording' : 'Record frames'}
+              </Text>
+            </Pressable>
 
-        <Pressable style={styles.button} onPress={handleExportTrace} testID="map.profiler.export">
-          <Text style={styles.buttonText}>Export trace</Text>
-        </Pressable>
+            <Pressable style={styles.button} onPress={handleExportTrace} testID="map.profiler.export">
+              <Text style={styles.buttonText}>Export trace</Text>
+            </Pressable>
+          </>
+        ) : null}
       </View>
     </View>
+  );
+}
+
+function ProfilerReadout({ readLive }: { readLive: () => LiveProfilerReading }) {
+  const [live, setLive] = useState<LiveProfilerReading>(() => readLive());
+  useEffect(() => {
+    const id = setInterval(() => setLive(readLive()), 250);
+    return () => clearInterval(id);
+  }, [readLive]);
+  return (
+    <Text style={styles.hudText}>
+      UI thread ~{live.uiFps} fps ({live.uiFrameMs} ms) · samples ui {live.samples.ui} / js{' '}
+      {live.samples.js} / map {live.samples.map}
+    </Text>
   );
 }
 

@@ -28,11 +28,11 @@ Organised by **when each one bites**, not by topic. A note filed under "the firs
 | [N-12](#n-12--contesting-a-no-show-weakens-the-signal-it-corrects) | Contest weakens the signal it corrects | 30 days | Medium |
 | [N-13](#n-13--the-trusted-tier-will-be-empty-and-will-read-as-a-warning) | `trusted` will be empty at launch | Launch day | Medium |
 | [N-14](#n-14--adding-a-session_state-is-breaking-with-a-long-tail) | Adding a `session_state` is breaking | First schema change | High |
-| [N-15](#n-15--composted-exists-twice-and-the-fix-gets-more-expensive-monthly) | `composted` exists twice | Before launch | Low now, Medium later |
+| [N-15](#n-15--composted-exists-twice-and-the-fix-gets-more-expensive-monthly) | `composted` exists twice | **Resolved 2026-10-21** | — |
 | [N-16](#n-16--the-highest-value-row-in-the-database-has-a-90-day-fuse) | Time-and-place has a 90-day fuse | Ongoing | High |
 | [N-17](#n-17--phase-3-proximity-would-replace-the-handoff-model-not-extend-it) | Phase 3 proximity replaces the model | Phase 3 | Medium |
 | [N-18](#n-18--every-rate-limit-is-a-guess-and-two-of-them-are-load-bearing) | Rate limits are guesses | 30 days | Medium |
-| [N-19](#n-19--expo-modules-jsi-5705-needs-a-temporary-patch-on-xcode-26) | `expo-modules-jsi@57.0.5` needs a patch on Xcode 26 | Day one (iOS dev client) | High — blocks iOS build |
+| [N-19](#n-19--expo-modules-jsi5705-needs-a-temporary-patch-on-xcode-26) | `expo-modules-jsi@57.0.5` needs a patch on Xcode 26 | Day one (iOS dev client) | High — blocks iOS build |
 
 ---
 
@@ -110,9 +110,13 @@ The failure mode of shipped-but-disabled code is that it stops working silently.
 
 [CI/CD §5.1](../05-operations/02-cicd.md) specifies five doc-governance gates and three generated-artefact gates. They are the mechanism by which most of [the review's](01-workflow-architect-review.md) process findings stay fixed rather than recurring — the normative-prose sweep in particular exists because five rate limits hid in a prose cell where the existing `MUST`→test gate could not see them.
 
-**None of them exist yet.** Until `pnpm ci:doc-gates` is real, the fixes are a snapshot and the doc set will drift back. The schema-graph gate is the cheapest and catches the most (it is ~30 lines of Python; the version in [the review's](01-workflow-architect-review.md) verification run already works). The approval gate is the one that matters most, because without it `Approved` goes back to meaning "we finished writing it".
+**None of them exist yet.** Until `npm run ci:doc-gates` is real, the fixes are a snapshot and the doc set will drift back. The schema-graph gate is the cheapest and catches the most (it is ~30 lines of Python; the version in [the review's](01-workflow-architect-review.md) verification run already works). The approval gate is the one that matters most, because without it `Approved` goes back to meaning "we finished writing it".
 
 Build them in the first sprint, while the reasons are fresh and there are no green builds to break.
+
+> **2026-10-21 — the predicted drift happened.** By EPIC-03 the spec register again showed all 18 specs `Approved` (front matter and registry said `Review`), its dependency column disagreed with four specs' `Schema depends on`, and AGENTS.md described traceability and the RN-import ban as CI-enforced when no workflow ran them. Fixed by hand; `.github/workflows/app.yml` now runs lint, typecheck, auth unit tests, and the agent-memory bridge check. **The doc gates themselves still do not exist** — [CI/CD §2](../05-operations/02-cicd.md#2-required-checks) now carries a State column so the gap is visible.
+
+> **2026-10-21 — first gate built.** `npm run ci:doc-gates` checks `Schema depends on` is acyclic and the register column matches front matter, with deliberately-broken fixtures under `scripts/fixtures/doc-gates/` (SCR-0003). Symmetry, normative-prose, approval, cross-reference, and staleness gates remain planned.
 
 ---
 
@@ -228,6 +232,8 @@ The Cleanup Inventory section now in the [spec template](../00-foundation/07-spe
 
 ### N-15 — `composted` exists twice, and the fix gets more expensive monthly
 
+> **Resolved 2026-10-21.** `composted` stays in `inventory_status` (the baseline migration already ships it) and is removed from the `archive_reason` vocabulary. See [SPEC-006 Q3](../03-specs/SPEC-006-crop-inventory.md#15-open-questions). The note is kept as the record of why.
+
 `composted` is both a value of `inventory_status` and a value of `archive_reason` ([SPEC-006](../03-specs/SPEC-006-crop-inventory.md) Q3). Two ways to say the same thing is how enums rot: some rows will use one, some the other, and every query that cares has to handle both forever.
 
 Removing it is an `ALTER TYPE`, which is destructive and gated by [Data Model §15.3](../01-architecture/03-data-model.md). **Right now that costs nothing — there is no data.** After launch it costs a migration, a backfill, and a two-release expand/contract cycle.
@@ -255,6 +261,33 @@ It is not additive. Real co-presence proof changes what completion *means*: the 
 It also requires the background-location entitlement that is **deliberately absent from `app.json` so it cannot be added by accident**. Adding it is an ADR and a privacy review, not a build-config change.
 
 **When Phase 3 is planned, re-open SPEC-010 §5.10 and R52 in the same breath.** Shipping proximity while the copy still says "coordination device, not an anti-fraud control" would leave the product making one claim and the docs another.
+
+---
+
+## Session notes
+
+### 2026-08-22 — EPIC-02 (Data Model, RLS & Test Harness)
+
+**Status:** Baseline landed in-repo; ready for EPIC-03 auth to depend on SCR-0202.
+
+| Story | Status | Notes |
+| --- | --- | --- |
+| SCR-0201 | Done | `supabase/config.toml`, schemas, extensions, enums, `20260822_0001_baseline.sql` |
+| SCR-0202 | Done | profiles, verifications, blocks, vendor refs, signup trigger, RLS + column REVOKE |
+| SCR-0203 | Done | gardens, `private.garden_locations`, fuzz trigger, H3/geohash helpers, `get_my_garden_location` |
+| SCR-0204 | Done | `app.is_moderator`, `is_blocked_either_way`, `can_transact`, session/thread participants; stub `exchange_sessions` / `message_threads` |
+| SCR-0205 | Done | pgTAP harness, `scripts/run-pgtap.sh`, `.github/workflows/db.yml`, npm `db:*` scripts |
+| SCR-0206 | Done | `ci:assert-negative-ratio` |
+| SCR-0207 | Done | `private.idempotency_keys`, probe/record, autovacuum tuning, sweep cron |
+| SCR-0208 | Done | Vault `handoff_code_key` local provision; custody in [Environments §6](../05-operations/01-environments.md) |
+| SCR-0209 | **Deferred** | Blocked on SCR-1210 (handoff RPC) — vault rotation rehearsal not run |
+| SCR-0210 | Scaffold | `packages/location-canary/` + pg_cron LP-01/LP-11 jobs; LP-08/09/10/12 partial |
+| SCR-0211 | Done | `audit.events` append-only + metadata coordinate CHECK |
+| SCR-0212 | Done | `tests.assert_query_under_ms` + `query_timing.test.sql` |
+
+**Not yet verified on device/CI:** `supabase db reset && npm run db:test` needs Docker + Supabase CLI in CI (workflow committed). Physical go/no-go unchanged.
+
+**Open items carried forward:** N-03 key custody now documented; SCR-0209 rotation rehearsal still outstanding; full LP-02 static allowlist and production-shaped perf seed deferred to EPIC-18.
 
 ---
 

@@ -1,0 +1,53 @@
+name: Dependency audit (weekly)
+
+# NFR-54 / SCR-0010: scan weekly; open or update ONE issue per high/critical
+# advisory (deduped by GHSA id). Not a PR gate — it never fails on findings,
+# only on a broken audit or a GitHub API error. Logic: scripts/dependency-audit.mjs
+
+on:
+  schedule:
+    - cron: '17 13 * * 1' # Mondays 13:17 UTC (off the hour on purpose)
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Print the issue plan without creating, updating, or closing issues
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  group: dependency-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      # Lockfile only: no npm ci, so no dependency lifecycle scripts run with an
+      # issues:write token in the environment.
+      - name: npm audit
+        run: |
+          set +e
+          npm audit --package-lock-only --audit-level=high --json > "$RUNNER_TEMP/npm-audit.json"
+          echo "npm audit exit code: $? (1 = findings at or above high; the next step validates the report)"
+          exit 0
+
+      - name: Open or update issues
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
+        run: node scripts/dependency-audit.mjs --input "$RUNNER_TEMP/npm-audit.json" ${DRY_RUN:+--dry-run}

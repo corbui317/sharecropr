@@ -1,6 +1,6 @@
 # Documentation Conventions
 
-**Status:** Active · **Version:** 1.0.0 · **Owner:** Architecture
+**Status:** Active · **Version:** 1.1.0 · **Owner:** Architecture
 
 This document defines how Sharecropr documentation is written, numbered, changed, and retired. It applies to every file under `docs/`.
 
@@ -27,7 +27,7 @@ The rule: **if it isn't specified, it isn't built.** If implementation reveals t
 | Architecture | — | `01-architecture/` | How the system is shaped |
 | Decision record | `ADR-####` | `01-architecture/adr/` | Why we chose X over Y, and what it costs |
 | Feature spec | `SPEC-###` | `03-specs/` | Exactly what one capability does |
-| Test plan | `TP-###` | Inside its spec, §Test Plan | How we prove the spec is met |
+| Test plan | `SPEC-###-T##` | Inside its spec, §13 Test Plan | How we prove the spec is met |
 | Operational | — | `05-operations/` | How we run it |
 
 ---
@@ -59,11 +59,11 @@ Every normative statement inside a spec carries an ID so tests, code comments, a
 Rules:
 
 - IDs are assigned in order and never renumbered. Deleting a requirement leaves a tombstone: `SPEC-010-R09 — *Removed in v1.2. See ADR-0011.*`
-- Every `MUST` requirement maps to at least one test case ID in the spec's Test Plan. CI fails if a `MUST` has no linked test (see [CI/CD](../05-operations/02-cicd.md)).
+- Every `MUST` requirement maps to at least one test case ID in the spec's Test Plan. A planned CI gate will fail a `MUST` with no linked test ([CI/CD §5](../05-operations/02-cicd.md)); until it exists, reviewers check this by hand.
 
 ### 3.3 Test cases — `SPEC-###-T##`
 
-Test IDs live in the spec's Test Plan table and are echoed in the test source:
+Test IDs live in the spec's Test Plan table and are echoed in the test source **with the spec namespace** — a bare `T14` in a test file cannot be traced to a spec once two specs both have a `T14`:
 
 ```ts
 // SPEC-010-T14
@@ -96,7 +96,7 @@ Keywords are always **bold and uppercase**. Prose that isn't marked with a keywo
 
 Every `SPEC-###` file uses [the template](07-spec-template.md) and contains these sections in this order. Sections are never omitted; if one doesn't apply, write "Not applicable" and one sentence explaining why.
 
-1. **Front matter** — status, version, owner, phase, dependencies, related ADRs
+1. **Front matter** — status, version, owner, phase, security review, `Schema depends on`, `Behaviourally coupled with` ([Spec Register § Build order](../03-specs/README.md#build-order)), related ADRs
 2. **Summary** — three sentences maximum
 3. **Goals / Non-Goals** — non-goals are as important as goals
 4. **User Stories** — `As a … I want … so that …`
@@ -106,18 +106,20 @@ Every `SPEC-###` file uses [the template](07-spec-template.md) and contains thes
 8. **UI / UX** — screens, states, empty states, error states, loading states
 9. **Security & Privacy** — what could go wrong, what enforces it, which RLS policies apply
 10. **Edge Cases & Failure Modes** — an explicit table
+    - **10a. Cleanup Inventory** — every resource the feature creates and what releases it, plus a terminal-state sweep. Required for new specs; existing specs add it at their next minor version bump, and any spec whose entities have terminal states should add it before `Approved`
 11. **Observability** — events emitted, metrics, alerts
 12. **Accessibility** — specific commitments, not "follows WCAG"
 13. **Test Plan** — `T##` cases mapped to `R##` requirements
-14. **Open Questions** — with an owner and a needed-by date
-15. **Change Log**
+14. **Rollout** — feature flag, migration, backfill, rollback plan, client version floor
+15. **Open Questions** — with an owner and a needed-by date
+16. **Change Log**
 
 ---
 
 ## 6. Status lifecycle
 
 ```
-Draft ──▶ In Review ──▶ Approved ──▶ Implemented ──▶ Superseded
+Draft ──▶ Review ──▶ Approved ──▶ Implemented ──▶ Superseded
              │                            │
              └──────▶ Rejected            └──▶ Deprecated
 ```
@@ -125,7 +127,7 @@ Draft ──▶ In Review ──▶ Approved ──▶ Implemented ──▶ Sup
 | Status | Meaning |
 | --- | --- |
 | **Draft** | Being written. No one should build from it. |
-| **In Review** | Open for comment. Requires sign-off from Engineering + one of Product/Security. |
+| **Review** | Open for comment. Requires sign-off from Engineering + one of Product/Security. |
 | **Approved** | Buildable. Changes now require a version bump and a change-log entry. **See the entry gate below — this status has to be earned.** |
 | **Implemented** | Shipped, **and verified against production behaviour**, with a `Last verified` date in the [workflow registry](../workflows/REGISTRY.md). |
 | **Deprecated** | Feature is being removed; the spec documents what existed. |
@@ -136,16 +138,16 @@ Security-relevant specs (anything touching auth, location, KYC, messaging, or mo
 
 ### 6.1 The entry gate for Approved
 
-A spec MUST NOT be marked `Approved` unless **all** of these hold. CI enforces the first three ([CI/CD §5.1](../05-operations/02-cicd.md)):
+A spec MUST NOT be marked `Approved` unless **all** of these hold. The first three are meant to be CI-enforced ([CI/CD §5.1](../05-operations/02-cicd.md)), but **that gate is not built yet** ([N-07](../07-review/02-development-notes.md#n-07--the-ci-gates-are-described-not-built)) — until it is, the reviewer checks them by hand:
 
 1. **No open question carries `Needed by: Before launch`.** An unanswered launch-blocking question is by definition not a settled design.
 2. **Every `MUST` maps to a test ID**, and no numeric limit, threshold, or cadence appears in prose outside a `MUST` row.
 3. **No contradiction with a normative architecture document.** Where a spec and an architecture document disagree, the architecture document wins and the spec is wrong — so a spec that disagrees with one is not approvable, it is unfinished.
-4. **A reviewer has read it against the actual implementation** and recorded the date in the [workflow registry](../workflows/REGISTRY.md). Where no implementation exists yet, this cannot be satisfied and the correct status is `In Review`.
+4. **A reviewer has read it against the actual implementation** and recorded the date in the [workflow registry](../workflows/REGISTRY.md). Where no implementation exists yet, this cannot be satisfied and the correct status is `Review`.
 
 **Why this is written down.** On 2026-08-09 all 18 specs carried `Approved` with zero lines of code written, 21 open questions marked `Before launch`, and four defects severe enough to block development — including a security control that could not work as specified and a safety path that was unreachable. None of that was carelessness; it was the absence of a definition. `Approved` meant "we finished writing it", and what it has to mean is "we checked".
 
-An honest `In Review` is worth more than an `Approved` nobody tested. The status is a claim about verification, not about effort.
+An honest `Review` is worth more than an `Approved` nobody tested. The status is a claim about verification, not about effort.
 
 **Scope.** The gate binds documents that make **normative claims about behaviour** — every `SPEC-###` and every document under `01-architecture/`. It does not bind vision, PRD, personas, glossary, roadmap, or the risk register: those record decisions and positions, and a decision is approved when it is taken, not when it is verified. Testing and operations documents sit in between and follow the artefact they describe.
 
@@ -218,12 +220,12 @@ A feature is Done when **all** of the following hold. This list is the PR checkl
 
 ## 12. Adding a new feature — the workflow
 
-1. **Open a discussion issue.** Problem, not solution. Get agreement that it's worth solving.
+1. **Open a discussion issue** on GitHub ([issue tracker](../agents/issue-tracker.md)). Problem, not solution. Get agreement that it's worth solving.
 2. **Claim a SPEC number** by adding a row to [the spec register](../03-specs/README.md) in a small PR. This prevents collisions.
 3. **Copy [the template](07-spec-template.md)** to `03-specs/SPEC-###-slug.md`. Status `Draft`.
 4. **Write Goals, Non-Goals, and Open Questions first.** If you can't write the non-goals, you don't understand the feature yet.
 5. **If it changes the schema, the API shape, or a locked decision, write an ADR** before finishing the spec.
-6. **Move to In Review.** Request Engineering + Product; add Security if the spec touches auth, location, KYC, messaging, or moderation.
+6. **Move to Review.** Request Engineering + Product; add Security if the spec touches auth, location, KYC, messaging, or moderation.
 7. **Approved → build.** Tests are written from the Test Plan, not from the implementation.
 8. **Mark Implemented** in the PR that ships it, and reconcile any drift between spec and code in that same PR.
 
@@ -240,3 +242,4 @@ Never delete. Set status to `Deprecated` or `Superseded`, add a header banner po
 | Date | Version | Author | Change |
 | --- | --- | --- | --- |
 | 2026-08-08 | 1.0.0 | Architecture | Initial conventions |
+| 2026-10-21 | 1.1.0 | Architecture | Section list matches the template (§10a Cleanup Inventory, §14 Rollout); status `In Review` renamed `Review` to match specs and registry; test IDs echoed with spec namespace; CI-enforcement claims marked planned (N-07) |

@@ -1,0 +1,59 @@
+name: App (lint, typecheck, unit, agent memory)
+
+# The cheap required checks from docs/05-operations/02-cicd.md §2 that have a
+# real npm script today. Everything else in that table is planned — see N-07.
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+# One run per workflow+ref. PR runs supersede each other (only the head matters);
+# pushes to main/develop are never cancelled, because each push on develop is a
+# separately integrated package and every one of them must be verified.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  app:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Agent memory bridge
+        run: ./scripts/agent-memory-bridge.sh check
+
+      - name: Doc gates — self-test (broken fixtures must fail)
+        run: npm run test:doc-gates
+
+      - name: Doc gates — schema graph acyclic + register sync (CI/CD §5.1)
+        run: npm run ci:doc-gates
+
+      - name: Install
+        run: npm ci
+
+      - name: Map style — schema-valid, own hosts, dated archive (CI/CD §4.1, TC-GEO-48)
+        run: npm run ci:validate-map-style
+
+      - name: Lint (incl. import seams — src/domain purity, src/api RN ban, SDK + map-renderer isolation)
+        run: npm run lint
+
+      - name: Lint fixtures (prove each import seam rejects a violation)
+        run: npm run lint:fixtures
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit + component — Jest (src/domain, src/features, app)
+        run: npm test -- --ci
+
+      - name: Unit — dependency audit script
+        run: npm run test:dependency-audit

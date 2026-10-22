@@ -50,7 +50,7 @@ This directory is the **single source of truth** for what Sharecropr is, how it 
 | [06 API Contract](01-architecture/06-api-contract.md) | PostgREST surface, RPCs, Edge Functions, error taxonomy |
 | [07 Exchange State Machine](01-architecture/07-exchange-state-machine.md) | States, transitions, concurrency controls |
 | [08 Realtime & Notifications](01-architecture/08-realtime-and-notifications.md) | Channels, push fanout, delivery guarantees |
-| [ADRs](01-architecture/adr/README.md) | 18 recorded decisions with their tradeoffs |
+| [ADRs](01-architecture/adr/README.md) | 21 recorded decisions with their tradeoffs |
 
 ### 02 — Security & Trust
 
@@ -95,6 +95,16 @@ Numbered, versioned, individually testable. See [03-specs/README.md](03-specs/RE
 | --- | --- |
 | [01 Roadmap](06-roadmap/01-roadmap.md) | MVP / Phase 2 / Phase 3 with rationale |
 | [02 Open Risks](06-roadmap/02-open-risks.md) | Ranked risk register with owners and triggers |
+| [03 Delivery Backlog](06-roadmap/03-delivery-backlog.md) | Epics and `SCR-EENN` stories with estimates, dependencies, and acceptance criteria |
+
+### 07 — Review, and the workflow registry
+
+| Doc | Purpose |
+| --- | --- |
+| [01 Workflow Architect Review](07-review/01-workflow-architect-review.md) | The 2026-08-09 pre-development review — what was wrong and why |
+| [02 Development Notes](07-review/02-development-notes.md) | Build-time hazards (`N-##`) and per-epic session notes |
+| [03 Map Spike Go/No-Go](07-review/03-map-spike-go-no-go.md) | EPIC-01 outcome record (pending device profiling) |
+| [Workflow Registry](workflows/REGISTRY.md) | Every workflow by spec, component, journey, and state, with `Last verified` dates |
 
 ---
 
@@ -112,7 +122,8 @@ Numbered, versioned, individually testable. See [03-specs/README.md](03-specs/RE
 
 | Item | Value |
 | --- | --- |
-| Document set version | 1.0.0 |
-| Last reviewed | 2026-08-08 |
-| Phase | Pre-MVP — architecture locked, implementation not started |
-| Repository state | Greenfield |
+| Document set version | 1.0.1 |
+| Last reviewed | 2026-10-21 |
+| Phase | Pre-MVP — implementation under way. Specs are `Review`, not `Approved` ([Doc Conventions §6.1](00-foundation/06-doc-conventions.md#61-the-entry-gate-for-approved)) |
+| Repository state | EPIC-01 map spike (go/no-go open), EPIC-02 data model + RLS harness, EPIC-03 auth code. Live status: [AGENTS.md §5](../AGENTS.md) |
+| CI | `app.yml` (lint, typecheck, unit, agent memory) and `db.yml` (pgTAP + RLS gates). Most checks in [CI/CD §2](05-operations/02-cicd.md) are planned — [N-07](07-review/02-development-notes.md#n-07--the-ci-gates-are-described-not-built) |

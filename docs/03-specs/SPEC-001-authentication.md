@@ -3,14 +3,14 @@
 | Field | Value |
 | --- | --- |
 | **Status** | Review |
-| **Version** | 1.0.0 |
+| **Version** | 1.1.0 |
 | **Owner** | Engineering — Auth |
 | **Phase** | MVP |
 | **Security review** | required |
 | **Schema depends on** | — (root capability) |
 | **Behaviourally coupled with** | SPEC-002 (R32, R36, R44 cite R18), SPEC-013 |
 | **Related ADRs** | [ADR-0004](../01-architecture/adr/ADR-0004-supabase.md), [ADR-0006](../01-architecture/adr/ADR-0006-auth-providers.md), [ADR-0007](../01-architecture/adr/ADR-0007-token-storage.md), [ADR-0014](../01-architecture/adr/ADR-0014-totp-not-sms.md) |
-| **Last updated** | 2026-08-08 |
+| **Last updated** | 2026-10-21 |
 
 ---
 
@@ -116,7 +116,7 @@ Sharecropr accounts are created with email + password, Sign in with Apple, or Go
 
 | ID | Req | Statement |
 | --- | --- | --- |
-| R36 | **MUST** | Changing the account email requires a fresh AAL2 elevation (≤ 15 minutes old) before the request is accepted. |
+| R36 | **MUST** | Changing the account email requires a fresh AAL2 elevation (≤ 15 minutes old) when a second factor is enrolled, before the request is accepted. 2FA is optional ([SPEC-002-R04](SPEC-002-two-factor-auth.md)); an account with no verified factor is not blocked from changing its email. |
 | R37 | **MUST** | Email change is double-confirmed: a confirmation link to the **new** address, and a notice-with-revoke link to the **old** address. The change commits only when the new address is confirmed. |
 | R38 | **MUST** | Until the new address confirms, the old address remains the account's login identifier and the account continues to function. |
 | R39 | **MUST** | A pending email change expires after 24 hours and leaves no residue. |
@@ -129,7 +129,7 @@ Sharecropr accounts are created with email + password, Sign in with Apple, or Go
 | ID | Req | Statement |
 | --- | --- | --- |
 | R43 | **MUST** | Deletion is initiated in-app at `/profile/delete-account`, reachable from the profile tab in no more than three taps (App Store Guideline 5.1.1(v)). |
-| R44 | **MUST** | `request_account_deletion` requires a fresh AAL2 elevation. A stolen unlocked phone must not be able to erase an account. |
+| R44 | **MUST** | `request_account_deletion` requires a fresh AAL2 elevation when a second factor is enrolled. A stolen unlocked phone must not be able to erase an account that has 2FA; an account without 2FA must still be deletable in-app (R43, App Store 5.1.1(v)). |
 | R45 | **MUST** | Requesting deletion sets `profiles.deleted_at = now()` and schedules hard deletion at `now() + 30 days`. It does not delete anything immediately. |
 | R46 | **MUST** | During the grace period the account is invisible to every other user: excluded from `public.profile_cards`, its listings are withdrawn, its pending requests are cancelled, and its in-flight sessions are cancelled with reason `account_deleted`, with both parties notified. |
 | R47 | **MUST** | Signing in during the grace period presents a "Restore your account?" screen. Confirming clears `deleted_at` and the schedule; declining signs the user out and leaves the schedule intact. |
@@ -164,7 +164,7 @@ Sharecropr accounts are created with email + password, Sign in with Apple, or Go
 **New schema objects introduced by this spec:**
 
 ```sql
--- supabase/migrations/0002_auth.sql
+-- supabase/migrations/20260828_0009_auth.sql
 CREATE TABLE private.pending_email_changes (
   user_id        uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   new_email      citext NOT NULL,
@@ -208,6 +208,11 @@ CREATE POLICY profiles_select_own ON public.profiles
   FOR SELECT TO authenticated
   USING (id = (SELECT auth.uid()));
 
+-- Added by ADR-0022: other users' live, unblocked rows (card-safe columns only).
+CREATE POLICY profiles_select_visible ON public.profiles
+  FOR SELECT TO authenticated
+  USING (deleted_at IS NULL AND is_suspended = false AND NOT app.is_blocked_with(id));
+
 CREATE POLICY profiles_update_own ON public.profiles
   FOR UPDATE TO authenticated
   USING (id = (SELECT auth.uid()) AND deleted_at IS NULL)
@@ -217,9 +222,9 @@ CREATE POLICY profiles_update_own ON public.profiles
 -- No DELETE policy anywhere: deletion is the pipeline, not a statement.
 ```
 
-Other users are read through `public.profile_cards` (`security_invoker = on`), never through `profiles` ([RLS Design §4](../01-architecture/05-rls-design.md)).
+Other users are read through `public.profile_cards` (`security_invoker = on`) or, for the same card-safe columns, `profiles` itself ([ADR-0022](../01-architecture/adr/ADR-0022-profiles-other-user-reads.md)). Owner-only columns (`locale`, `timezone`, `onboarding_completed_at`, `deleted_at`, `is_suspended`, `suspended_until`) are not table-selectable; the client reads them with `rpc.get_my_profile()`. Client `UPDATE` on `profiles` is column-granted to `display_name, avatar_path, bio, locale, timezone, onboarding_completed_at` only; `handle` (R11) and `deleted_at` (R45) change through RPCs.
 
-**PII touched:** `auth.users.email` (P1), `auth.users.encrypted_password` (P1, never read by us), `profiles.display_name` (P2), `profiles.handle` (P2), `profiles.timezone` (P2), `profiles.is_suspended` (P1, column-REVOKEd), `devices.expo_push_token` (P1). Classification per [Privacy & Data Retention](../02-security/04-privacy-and-data-retention.md).
+**PII touched:** `auth.users.email` (P1), `auth.users.encrypted_password` (P1, never read by us), `profiles.display_name` (P2), `profiles.handle` (P2), `profiles.timezone` (P2), `profiles.is_suspended` (P1, not column-granted), `devices.expo_push_token` (P1). Classification per [Privacy & Data Retention](../02-security/04-privacy-and-data-retention.md).
 
 ## 7. API
 
@@ -227,7 +232,7 @@ Authentication itself is GoTrue, not our surface. Only the three things GoTrue c
 
 ### `rpc.request_account_deletion`
 
-**Auth:** `authenticated` + **AAL2** (≤ 15 min)
+**Auth:** `authenticated` + **AAL2** (≤ 15 min) *when a verified second factor is enrolled* (`app.require_aal2_if_enrolled()`)
 **Rate limit:** 3 / day / user (Postgres token bucket)
 
 ```jsonc
@@ -239,7 +244,7 @@ Authentication itself is GoTrue, not our surface. Only the three things GoTrue c
 
 | Error code | HTTP | When |
 | --- | --- | --- |
-| `aal2_required` | 403 | No TOTP enrolled, or `aal` claim is `aal1` |
+| `aal2_required` | 403 | A verified factor is enrolled and the `aal` claim is `aal1` (never returned to an account with no factor) |
 | `aal2_stale` | 403 | TOTP `amr` timestamp older than 15 minutes |
 | `conflict` | 409 | A non-cancelled deletion is already scheduled |
 | `validation_failed` | 400 | `p_reason` longer than 500 characters |
@@ -264,7 +269,7 @@ Authentication itself is GoTrue, not our surface. Only the three things GoTrue c
 
 ### `rpc.request_email_change`
 
-**Auth:** `authenticated` + **AAL2**
+**Auth:** `authenticated` + **AAL2** *when a verified second factor is enrolled*
 **Rate limit:** 3 / day / user
 
 ```jsonc
@@ -278,10 +283,10 @@ Authentication itself is GoTrue, not our surface. Only the three things GoTrue c
 | --- | --- | --- |
 | `aal2_required` / `aal2_stale` | 403 | Step-up missing or stale |
 | `validation_failed` | 400 | Not a syntactically valid address, or > 254 characters |
-| `conflict` | 409 | A pending change already exists for this user |
+| `conflict` | 409 | An **unexpired** pending change already exists for this user (expired rows are reaped first, R39) |
 | `rate_limited` | 429 | |
 
-> **The response is `confirmation_sent` even when the target address already belongs to another account.** Returning a distinct error would turn this endpoint into an account-existence oracle for arbitrary addresses. The rejection (R40) happens at confirmation time and is reported only to the requesting user's *current* address by email.
+> **The response is `confirmation_sent` even when the target address already belongs to another account.** Returning a distinct error would turn this endpoint into an account-existence oracle for arbitrary addresses. Nothing is inserted in that case, and the rejection (R40) is also enforced at confirmation time and is reported only to the requesting user's *current* address by email.
 
 ### Edge Function `account-delete`
 
@@ -398,7 +403,7 @@ Exact strings. Anything not listed here is a spec gap and must be added before i
 | Question | Answer |
 | --- | --- |
 | **What is the worst thing an attacker could do with this feature?** | Take over an account by chaining a weak password reset with a missing 2FA re-challenge, then call `rpc.get_my_garden_location()` and read the victim's home coordinates, their message threads with named counterparties, and the time and place of their next in-person meeting. Second-worst: enumerate which email addresses have Sharecropr accounts through a reset or email-change oracle, which for a stalker is a "is my target on this app" query. Third: schedule a malicious deletion from a briefly unattended unlocked phone. R29/R33/R44 and the uniform `confirmation_sent` response exist for exactly these three. |
-| **Which RLS policies enforce access?** | `profiles_select_own` and `profiles_update_own` (Pattern A, introduced by this spec — note that [RLS Design §5](../01-architecture/05-rls-design.md) enumerates Pattern A tables without naming the `profiles` policies; these names are established here). Other-user reads go exclusively through the `public.profile_cards` view with `security_invoker = on`. `trust_score`, `cancellation_count_90d`, `home_h3_r7`, and `is_suspended` are column-`REVOKE`d from `authenticated` on the base table. `private.pending_email_changes`, `private.account_deletions`, and `private.retired_handles` have no grants to any client role at all — the strongest available control, and the reason they are not in `public`. There is **no `DELETE` policy on `profiles`**; its absence is the enforcement of "deletion is a pipeline, not a statement". |
+| **Which RLS policies enforce access?** | `profiles_select_own`, `profiles_select_visible` (ADR-0022) and `profiles_update_own` (Pattern A, introduced by this spec — note that [RLS Design §5](../01-architecture/05-rls-design.md) enumerates Pattern A tables without naming the `profiles` policies; these names are established here). Other-user reads go exclusively through the `public.profile_cards` view with `security_invoker = on`. `trust_score`, `cancellation_count_90d`, `home_h3_r7`, and `is_suspended` are column-`REVOKE`d from `authenticated` on the base table. `private.pending_email_changes`, `private.account_deletions`, and `private.retired_handles` have no grants to any client role at all — the strongest available control, and the reason they are not in `public`. There is **no `DELETE` policy on `profiles`**; its absence is the enforcement of "deletion is a pipeline, not a statement". |
 | **Can any response path expose an exact coordinate or PII?** | No coordinate: nothing in this spec reads `private.garden_locations`, and none of its RPC return types has a column that could hold a point ([API Contract §9](../01-architecture/06-api-contract.md)). PII: yes, deliberately and narrowly — the user's own email on their own security screen. `request_email_change` never echoes the target address back; the notice email to the old address masks it (`p***a@e***.org`). `profile_cards` carries no email at all. |
 | **What is logged, and is it scrubbed?** | `audit.events` records `auth.signup`, `auth.email_changed` (with a hash of the new address, never the address), `auth.password_changed`, `account.deletion_requested`, `account.deletion_restored`, `account.deleted` — actor id, timestamp, request id, no credentials, no addresses. GoTrue's own logs carry email addresses; retention is 30 days and access is restricted. Sentry's `beforeSend` redacts anything matching an email pattern or a JWT before transmission. Passwords, reset tokens, and confirmation tokens are never written anywhere — `private.pending_email_changes` stores SHA-256 hashes, not tokens. |
 | **Does this need step-up authentication?** | Yes, for four operations: change email (R36), change password (R32), request account deletion (R44), and viewing the security screen at all. All route through `app.require_aal2(interval '15 minutes')` ([API Contract §2.4](../01-architecture/06-api-contract.md)). Deliberately **not** step-up: sign-in itself, `cancel_account_deletion` (R47 — restoring must be easy; the failure mode of friction here is an unwanted permanent deletion), and sign-out. |
@@ -488,16 +493,16 @@ Exact strings. Anything not listed here is a spec gap and must be added before i
 | T22 | integration | R29 | Reset for a nonexistent address returns byte-identical body and status, and within 50 ms of the timing for an existing address (timing-oracle guard). |
 | T23 | integration | R30 | Reset link at 61 minutes rejected; second use of a consumed link rejected; 4th request in an hour returns 429. |
 | T24 | integration | R31 | After reset, a previously issued access token on another device 401s and its refresh token is revoked. |
-| T25 | integration | R32 | Password change without a fresh AAL2 claim returns `aal2_required`; with a 16-minute-old TOTP `amr` returns `aal2_stale`. |
+| T25 | integration | R32 | For an enrolled account, password change without a fresh AAL2 claim returns `aal2_required`; with a 16-minute-old TOTP `amr` returns `aal2_stale`. |
 | T26 | e2e | R33 | Full reset flow on a 2FA-enrolled account still presents the TOTP challenge before reaching the tabs. |
 | T27 | integration | R34 | Reset requested for an Apple-only account returns the standard success body; the delivered email is the provider-explanation template. |
-| T28 | integration | R36 | `request_email_change` with `aal1` returns `aal2_required`. |
+| T28 | integration | R36 | For an enrolled account, `request_email_change` with `aal1` returns `aal2_required` and a stale TOTP `amr` returns `aal2_stale`; an account with no verified factor succeeds at `aal1`. |
 | T29 | e2e | R37, R38 | Change requested → old address still logs in → new address confirms → new address logs in and old does not. |
 | T30 | integration | R39 | Pending change at 24 h + 1 min is expired and the row is reaped; the old address is untouched. |
 | T31 | integration | R40 | Confirming a change to an address held by another account (including one in deletion grace) fails and leaves the original address in place. |
 | T32 | integration | R41 | `verifications.status` is unchanged across a completed email change. |
 | T33 | e2e | R43 | From `/map`, the delete-account screen is reachable in ≤ 3 taps. Asserted by a Maestro tap counter. |
-| T34 | integration | R44 | `request_account_deletion` without AAL2 returns 403 and writes no `private.account_deletions` row. |
+| T34 | integration | R44 | For an enrolled account, `request_account_deletion` without a fresh AAL2 returns 403 and writes no `private.account_deletions` row; an account with no verified factor can request deletion at `aal1`. |
 | T35 | integration | R45 | After request: `profiles.deleted_at` set, `private.account_deletions.scheduled_at = requested_at + 30 days`, and no user data is yet removed. |
 | T36 | rls | R46 | A second user's `GET /rest/v1/profile_cards?id=eq.<deleting_user>` returns `[]`; the deleting user's listings are `withdrawn`; their pending requests are `cancelled`. |
 | T37 | e2e | R47 | Sign-in during grace shows the restore screen; "Keep my account" clears `deleted_at`; "Continue with deletion" signs out with the schedule intact. |
@@ -521,7 +526,7 @@ Exact strings. Anything not listed here is a spec gap and must be added before i
 | N05 | Replay a consumed email-verification token. | 400, "already used" state. The token hash row is deleted on first use. |
 | N06 | Forge a `profiles` INSERT to claim a chosen `id` or a moderator `app_metadata`. | INSERT denied (no policy). `app_metadata` is writable only by `service_role`; a client PATCH on `user_metadata` claiming `role: moderator` does not affect `app.is_moderator()`, which reads `app_metadata` only. |
 | N07 | Client attempts `PATCH /rest/v1/profiles?id=eq.<other_user>` with a valid own JWT. | 0 rows updated — `profiles_update_own` `USING` clause. Verified as a negative pgTAP assertion. |
-| N08 | Client attempts to select `trust_score`, `cancellation_count_90d`, `home_h3_r7`, or `is_suspended` from `profiles` or `profile_cards`. | 42501 on the base table (column REVOKE); column absent from the view. |
+| N08 | Client attempts to select `trust_score`, `cancellation_count_90d`, `home_h3_r7`, or `is_suspended` from `profiles` or `profile_cards`. | 42501 on the base table (no table-level grant; these columns are simply not in the column `GRANT`); column absent from the view. |
 | N09 | `anon` role attempts any read of `profiles`, `private.pending_email_changes`, or `private.account_deletions`. | Denied on all three. `private` has no grant to `anon` at all. |
 | N10 | Call `rpc.request_account_deletion` with a JWT whose `aal` claim has been hand-edited to `aal2`. | Rejected: the JWT is RS256-signed and an edited claim fails verification at Kong before reaching PostgREST. |
 | N11 | Call `rpc.request_account_deletion` with a genuine `aal2` claim whose TOTP `amr` timestamp is 3 hours old. | `aal2_stale` 403. Enrollment is not elevation. |
@@ -556,7 +561,7 @@ Exact strings. Anything not listed here is a spec gap and must be added before i
 | Field | Value |
 | --- | --- |
 | Feature flag | None. Authentication is not flaggable — there is no meaningful "off". Provider-level kill switches (`auth.provider.apple.enabled`, `auth.provider.google.enabled`) exist as remote config so a broken provider can be hidden without a release. |
-| Migration required | Yes — `0002_auth.sql`: the signup trigger, `profiles` policies, `private.pending_email_changes`, `private.account_deletions`, `private.retired_handles`, and the deletion cron job. |
+| Migration required | Yes — `20260828_0009_auth.sql` (the profile/verification tables and signup trigger landed earlier in `20260822_0002_identity_tables.sql`): the signup trigger, `profiles` policies, `private.pending_email_changes`, `private.account_deletions`, `private.retired_handles`, and the deletion cron job. |
 | Backfill required | No. Greenfield. |
 | Rollback plan | Forward-only ([Data Model §15](../01-architecture/03-data-model.md)). A broken provider is disabled by remote config within minutes. A broken deletion pipeline is stopped by disabling the `pg_cron` job, which is safe: pending deletions accumulate and execute late rather than incorrectly. **Late deletion is recoverable; wrong deletion is not**, and the runbook reflects that asymmetry. |
 | Client version floor | 1.0.0. First release. |
@@ -575,3 +580,5 @@ Exact strings. Anything not listed here is a spec gap and must be added before i
 | Date | Version | Author | Change |
 | --- | --- | --- | --- |
 | 2026-08-08 | 1.0.0 | Engineering — Auth | Initial spec. Approved with Security sign-off per [Doc Conventions §6](../00-foundation/06-doc-conventions.md). |
+| 2026-10-21 | 1.1.0 | Architecture | R36 and R44 now require AAL2 only when a second factor is enrolled (2FA is optional, SPEC-002 R04; otherwise no one without 2FA could delete their account, R43); T25/T28/T34 updated. `request_email_change` treats expired pending rows as absent, is reaped hourly, and returns the neutral response without inserting for a taken address (R39, R40, N02). `profiles` other-user reads and column privileges per [ADR-0022](../01-architecture/adr/ADR-0022-profiles-other-user-reads.md); `rpc.get_my_profile` added |
+| 2026-10-21 | 1.0.1 | Architecture | §6 and §14 name the real migration files (`20260822_0002_identity_tables.sql`, `20260828_0009_auth.sql`); no behavioural change |

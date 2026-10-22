@@ -1,0 +1,42 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    target-branch: develop
+    schedule:
+      interval: weekly
+      day: monday
+      time: '08:00'
+      timezone: America/Chicago
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore(deps)
+      prefix-development: chore(deps-dev)
+    groups:
+      # Expo SDK packages move in lockstep; one PR, not twenty.
+      expo-sdk:
+        patterns: ['expo', 'expo-*', '@expo/*', 'babel-preset-expo', 'react', 'react-dom', 'react-native', 'react-native-*', '@react-native/*']
+        update-types: [minor, patch]
+      dev-tooling:
+        dependency-type: development
+        update-types: [minor, patch]
+    ignore:
+      # SDK / RN / map-library upgrades are deliberate projects (ADR-0019 spike), not bot PRs.
+      - dependency-name: 'expo'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'react-native'
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
+      - dependency-name: '@maplibre/maplibre-react-native'
+        update-types: ['version-update:semver-major']
+
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: develop
+    schedule:
+      interval: weekly
+      day: monday
+      time: '08:00'
+      timezone: America/Chicago
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: ci(deps)

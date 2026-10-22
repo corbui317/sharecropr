@@ -2,6 +2,8 @@
 
 Every capability in Sharecropr has a numbered spec. Numbers are permanent and never reused. Before writing a new spec, **claim a number here in a small PR** — this is what prevents two people picking `SPEC-024` in the same week.
 
+**Status here mirrors each spec's front matter and the [workflow registry](../workflows/REGISTRY.md) — promote all three together** ([Doc Conventions §6.1](../00-foundation/06-doc-conventions.md#61-the-entry-gate-for-approved)).
+
 Rules for writing specs: [Doc Conventions](../00-foundation/06-doc-conventions.md). Structure to copy: [Spec Template](../00-foundation/07-spec-template.md).
 
 ---
@@ -20,38 +22,38 @@ Rules for writing specs: [Doc Conventions](../00-foundation/06-doc-conventions.m
 
 ## MVP — SPEC-001 … SPEC-013
 
-| ID | Spec | Capability | Status | Sec. review | Depends on |
+| ID | Spec | Capability | Status | Sec. review | Schema depends on |
 | --- | --- | --- | --- | --- | --- |
-| 001 | [Authentication](SPEC-001-authentication.md) | C1 | Approved | required | — |
-| 002 | [Two-Factor Authentication](SPEC-002-two-factor-auth.md) | C2 | Approved | required | 001 |
-| 003 | [Identity Verification](SPEC-003-identity-verification.md) | C3 | Approved | required | 001 |
-| 004 | [Garden Verification](SPEC-004-garden-verification.md) | C4 | Approved | required | 001, 003 |
-| 005 | [Crop Taxonomy](SPEC-005-crop-taxonomy.md) | C5 | Approved | not required | — |
-| 006 | [Crop Inventory](SPEC-006-crop-inventory.md) | C6 | Approved | not required | 004, 005 |
-| 007 | [Safe Spots](SPEC-007-safe-spots.md) | C7 | Approved | not required | — |
-| 008 | [Interactive Map](SPEC-008-interactive-map.md) | C8 | Approved | not required | 007, 009 |
-| 009 | [Listings & Offers](SPEC-009-listings-and-offers.md) | C9 | Approved | not required | 006, 007 |
-| 010 | [Exchange Lifecycle](SPEC-010-exchange-lifecycle.md) | C10 | Approved | required | 003, 006, 007, 009 |
-| 011 | [Messaging](SPEC-011-messaging.md) | C11 | Approved | required | 010, 012 |
-| 012 | [Trust & Safety](SPEC-012-trust-and-safety.md) | C12 | Approved | required | 010 |
-| 013 | [Notifications](SPEC-013-notifications.md) | C13 | Approved | not required | 010, 011, 012 |
+| 001 | [Authentication](SPEC-001-authentication.md) | C1 | Review | required | — |
+| 002 | [Two-Factor Authentication](SPEC-002-two-factor-auth.md) | C2 | Review | required | 001 |
+| 003 | [Identity Verification](SPEC-003-identity-verification.md) | C3 | Review | required | 001 |
+| 004 | [Garden Verification](SPEC-004-garden-verification.md) | C4 | Review | required | 001, 003 |
+| 005 | [Crop Taxonomy](SPEC-005-crop-taxonomy.md) | C5 | Review | not required | — |
+| 006 | [Crop Inventory](SPEC-006-crop-inventory.md) | C6 | Review | not required | 004, 005 |
+| 007 | [Safe Spots](SPEC-007-safe-spots.md) | C7 | Review | not required | 001 |
+| 008 | [Interactive Map](SPEC-008-interactive-map.md) | C8 | Review | not required | 005, 007, 009 |
+| 009 | [Listings & Offers](SPEC-009-listings-and-offers.md) | C9 | Review | not required | 006, 007 |
+| 010 | [Exchange Lifecycle](SPEC-010-exchange-lifecycle.md) | C10 | Review | required | 003, 006, 007, 009 |
+| 011 | [Messaging](SPEC-011-messaging.md) | C11 | Review | required | 010 |
+| 012 | [Trust & Safety](SPEC-012-trust-and-safety.md) | C12 | Review | required | 003, 010, 011 |
+| 013 | [Notifications](SPEC-013-notifications.md) | C13 | Review | not required | 001 |
 
 ## Future
 
-| ID | Spec | Capability | Phase | Status | Depends on |
+| ID | Spec | Capability | Phase | Status | Schema depends on |
 | --- | --- | --- | --- | --- | --- |
-| 020 | [Harvest Planning & Surplus Alerts](SPEC-020-harvest-planning.md) | C20 | Phase 2 | Approved | 005, 006, 013 |
-| 021 | [Community Groups & Garden Clubs](SPEC-021-community-groups.md) | C21 | Phase 2 | Approved | 007, 010, 012 |
-| 022 | [Gamification](SPEC-022-gamification.md) | C22 | Phase 3 | Approved | 010, 012, 021 |
-| 023 | [Crop ID & Food Safety](SPEC-023-crop-id-and-food-safety.md) | C23 | Phase 3 | Approved | 005, 006 |
+| 020 | [Harvest Planning & Surplus Alerts](SPEC-020-harvest-planning.md) | C20 | Phase 2 | Review | 005, 006 |
+| 021 | [Community Groups & Garden Clubs](SPEC-021-community-groups.md) | C21 | Phase 2 | Review | 007, 010, 012 |
+| 022 | [Gamification](SPEC-022-gamification.md) | C22 | Phase 3 | Review | 010, 012 |
+| 023 | [Crop ID & Food Safety](SPEC-023-crop-id-and-food-safety.md) | C23 | Phase 3 | Review | 005, 006 |
 
 > **Open register question.** SPEC-022 currently carries `security review: not required`, and its author disputes that: gamification reads `trust_score`, publishes user data to other users via leaderboards, and is almost entirely an adversarial-control surface. Resolve before Phase 3 planning. See SPEC-022 §15 Q1.
 
 ## Internal tooling
 
-| ID | Spec | Capability | Status | Sec. review | Depends on |
+| ID | Spec | Capability | Status | Sec. review | Schema depends on |
 | --- | --- | --- | --- | --- | --- |
-| 900 | [Moderation Console](SPEC-900-moderation-console.md) | C90 | Approved | required | 004, 011, 012 |
+| 900 | [Moderation Console](SPEC-900-moderation-console.md) | C90 | Review | required | 004, 011, 012 |
 
 ---
 
@@ -70,7 +72,7 @@ Every spec's front matter carries two rows, and conflating them is how a plan be
 
 The exchange calls the notification outbox and the notification catalog describes exchange events; messaging closes threads the exchange opened and the exchange writes system messages into them. Those are real couplings and they are mutually recursive, which is fine — they are satisfied by the shared baseline in [Data Model](../01-architecture/03-data-model.md) and [RLS Design](../01-architecture/05-rls-design.md), both of which land before any feature migration. Written as one undifferentiated "Depends on", they looked like a five-way cycle across SPEC-001/002/003 and SPEC-010/011/012/013, and the first person to topologically sort them would have concluded the plan could not be built.
 
-**CI enforces both properties**: the schema graph must be acyclic, and every `Behaviourally coupled with` edge must be symmetric — if A names B, B names A ([CI/CD §4](../05-operations/02-cicd.md)).
+**Both properties are required**: the schema graph must be acyclic, and every `Behaviourally coupled with` edge must be symmetric — if A names B, B names A. The acyclic check and the register-vs-front-matter comparison now run in `ci:doc-gates` (`app.yml`; [CI/CD §5.1](../05-operations/02-cicd.md)); the symmetry check is still **planned, not built** (SCR-0004, [N-07](../07-review/02-development-notes.md#n-07--the-ci-gates-are-described-not-built)). The register's `Schema depends on` column MUST be copied from each spec's front matter, never typed independently — CI now enforces it.
 
 ### The critical path
 
@@ -114,7 +116,7 @@ Generated from `Schema depends on` only. A valid order: **001 → 002 → 003 �
 
 ## Traceability
 
-Every `MUST` requirement in every spec maps to at least one test ID in that spec's §13. CI enforces this ([CI/CD §4](../05-operations/02-cicd.md)) — a spec with an untested `MUST` fails the build.
+Every `MUST` requirement in every spec maps to at least one test ID in that spec's §13, and the test source echoes the namespaced ID (`SPEC-001-T34`). The CI gate for this ([CI/CD §5](../05-operations/02-cicd.md)) is **planned, not built** — reviewers check it by hand until it exists.
 
 | Want to know… | Look at |
 | --- | --- |

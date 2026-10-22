@@ -121,7 +121,7 @@ Step-by-step procedures for when something is wrong. Written to be followed by s
 4. **Cut over.** Update connection strings, redeploy Edge Functions.
 5. **⚠️ RE-RUN THE ACCOUNT DELETION PIPELINE.**
    ```bash
-   pnpm ops:rerun-deletion-pipeline --since <restore-timestamp>
+   npm run ops:rerun-deletion-pipeline -- --since <restore-timestamp>
    ```
    **A restore resurrects rows that were legitimately deleted, including garden coordinates for accounts that exercised their right to erasure.** Skipping this step re-creates data we told users was gone. It is the single most important step in this runbook and the one most likely to be forgotten under pressure.
 6. **Re-verify the location invariants** against the restored database.
@@ -139,7 +139,7 @@ Step-by-step procedures for when something is wrong. Written to be followed by s
 2. **Obtain two approvals** — the Security owner plus one of Legal or the CTO. The requester cannot be one of them.
 3. **Run the provisioning script.** It requires both approval tokens.
    ```bash
-   pnpm ops:break-glass --ticket SEC-1234 --duration 60m \
+   npm run ops:break-glass -- --ticket SEC-1234 --duration 60m \
      --approver-1 <token> --approver-2 <token>
    ```
 4. The script notifies the whole security channel on activation. **It is not possible to do this quietly, by design.**
@@ -313,7 +313,7 @@ The old key is still present until step 5, so the rollback is to stop using the 
 2. **Confirm the client degraded correctly** — neutral background, markers present and tappable, attribution still rendered. If markers vanished too, that is a *client* bug and a different, more serious problem.
 3. **If it is a bad build — roll back by repointing the style at the previous dated archive.** This is the whole reason archives are immutable and date-stamped. No app release, no cache invalidation, effective in minutes.
    ```bash
-   pnpm ops:set-basemap --archive sharecropr-basemap-2026-07.pmtiles --env production
+   npm run ops:set-basemap -- --archive sharecropr-basemap-2026-07.pmtiles --env production
    ```
 4. **If it is a serving outage**, check the R2 bucket and Cloudflare status. There is no origin server to restart — if the object is intact and the CDN is healthy, the problem is the style URL or DNS.
 5. **If it is latency in one region only**, it is likely a cold edge. Confirm it warms; if it persists, that is an [ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md) revisit trigger, not an incident.
@@ -331,7 +331,7 @@ The old key is still present until step 5, so the rollback is to stop using the 
 
 1. **Halt the scheduled import** before anything else, so the queue stops growing while you work.
    ```bash
-   pnpm ops:osm-import --disable
+   npm run ops:osm-import -- --disable
    ```
 2. **Determine whether anything was promoted.** This is the question that sets the severity.
    ```sql

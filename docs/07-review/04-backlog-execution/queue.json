@@ -1,0 +1,1465 @@
+{
+ "packages": [
+  {
+   "id": "WP-00",
+   "jira_keys": [],
+   "backlog_keys": [],
+   "title": "Local stand-in Postgres harness + migration/pgTAP baseline (scratchpad only, not committed)",
+   "class": "do",
+   "position_reason": "Rule 5. Every DB package needs a real failure baseline; its findings may reorder WP-08..WP-21.",
+   "scope": "In the scratchpad: init a PG16 cluster; a stub SQL file creates roles anon/authenticated/service_role/postgres-equivalent, schema auth with auth.users and auth.uid()/auth.jwt()/auth.role() reading request.jwt.claims GUCs, schema extensions, a vault stand-in (vault.secrets, vault.create_secret, vault.decrypted_secrets view), a storage schema stub and a supabase_vault no-op extension shim (or a sed preprocessor). Apply supabase/migrations/* in filename order with psql ON_ERROR_STOP, then seed.sql/seed_harness.sql, then pg_prove supabase/tests/*.sql. Also emulate the CLI version parse (leading digits before the first '_') and report duplicates. Record per-file pass/fail in the scratchpad (baseline.md).",
+   "files": [
+    "(scratchpad only) harness/stubs.sql",
+    "harness/run.sh",
+    "harness/baseline.md"
+   ],
+   "verify": [
+    "bash harness/run.sh 2>&1 | tee baseline.log",
+    "pg_prove -d sharecropr_test supabase/tests/*.sql"
+   ],
+   "skills": [
+    "debugging-and-error-recovery",
+    "diagnosing-bugs"
+   ],
+   "risks": "Production is Supabase PG15 and this is PG16 with stubs, so it is approximate (vault, the GoTrue auth schema and the pg_cron schema differ). Never commit the harness. Expect failures in 0006 (vault.get_secret), 0003 seed (h3 geometry), LP-06 (MIN(geography)) and the version collision (CLI only).",
+   "remaining_after": "None. WP-12 adds the real Supabase CLI run on GitHub Actions."
+  },
+  {
+   "id": "WP-01",
+   "jira_keys": [
+    "SCRUM-10"
+   ],
+   "backlog_keys": [
+    "SCR-0001"
+   ],
+   "title": "Node pin, seed:local doc fix, app baseline",
+   "class": "do-partial",
+   "position_reason": "No blockers; root of the EPIC-00 chain (SCR-0002 and SCR-0007 depend on it). Also runs npm ci for the first time (node_modules absent) to baseline lint/typecheck/test.",
+   "scope": "Add .nvmrc (22) and engines.node '>=22.6'; fix the README Node prerequisite; either add an npm seed:local script that wraps supabase db reset with seed.sql or correct Environments \u00a72 (prefer correcting the doc unless the seed already covers listings/safe spots, which it doesn't). Record baseline lint/typecheck/test results in the commit body.",
+   "files": [
+    "package.json",
+    ".nvmrc",
+    "README.md",
+    "docs/05-operations/01-environments.md"
+   ],
+   "verify": [
+    "npm ci",
+    "npm run lint",
+    "npm run typecheck",
+    "npm run test:auth-domain"
+   ],
+   "skills": [
+    "incremental-implementation",
+    "documentation-and-adrs"
+   ],
+   "risks": "If the baseline lint fails, fix only trivial issues here; the RN-ban issues are WP-03.",
+   "remaining_after": "Time a fresh clone to a green local run in under 30 min against local Supabase (needs Docker, so Corey)."
+  },
+  {
+   "id": "WP-02",
+   "jira_keys": [
+    "SCRUM-11"
+   ],
+   "backlog_keys": [
+    "SCR-0002"
+   ],
+   "title": "CI runs on develop + CODEOWNERS",
+   "class": "do-partial",
+   "position_reason": "Commits go to develop, but app.yml and db.yml only trigger on pushes to main, so nothing pushed is verified. This makes GitHub Actions (with the real Supabase CLI and Docker) the verification oracle for every later package.",
+   "scope": "Add develop to the push branches in app.yml and db.yml; add .github/CODEOWNERS with a DB owner for supabase/migrations/**; add a concurrency group. Runner adoption is WP-02b.",
+   "files": [
+    ".github/workflows/app.yml",
+    ".github/workflows/db.yml",
+    ".github/CODEOWNERS"
+   ],
+   "verify": [
+    "git push && gh run list --branch develop --limit 2",
+    "gh run watch <app run id> --exit-status"
+   ],
+   "skills": [
+    "ci-cd-and-automation",
+    "git-workflow-and-versioning"
+   ],
+   "risks": "db.yml will go red until WP-12; that's expected and documents the truth. Don't mark db.yml green anywhere.",
+   "remaining_after": "Branch protection requiring the app/db checks (Corey, in GitHub settings); a unit runner covering src/domain and src/features (WP-02b, after the SCRUM-64 decision)."
+  },
+  {
+   "id": "WP-02b",
+   "jira_keys": [
+    "SCRUM-64"
+   ],
+   "backlog_keys": [
+    "SCR-0002"
+   ],
+   "title": "Adopt Jest (jest-expo) + RNTL per SCRUM-64 decision",
+   "class": "do-partial",
+   "position_reason": "Execute as soon as Corey answers SCRUM-64. Until then, every package writes pure-logic tests in the existing node:test harness (scripts/*.mjs) so nothing is lost. Closes the SCRUM-11 runner AC and the SCRUM-64 implementation.",
+   "scope": "If Jest: jest-expo preset, @testing-library/react-native, npm test script, migrate auth-domain-tests.mjs, a MapCanvas stub test, SPEC-NNN-TNN test names; update test-strategy \u00a72 so every doc names one runner; app.yml runs npm test.",
+   "files": [
+    "package.json",
+    "jest.config.js",
+    "docs/04-testing/01-test-strategy.md",
+    "scripts/auth-domain-tests.mjs",
+    "src/**/__tests__/*"
+   ],
+   "verify": [
+    "npm test",
+    "npm run lint",
+    "npm run typecheck"
+   ],
+   "skills": [
+    "test-driven-development",
+    "tdd",
+    "ci-cd-and-automation"
+   ],
+   "risks": "Expo 57 / RN 0.86 jest-expo compatibility; keep src/domain tests free of RN mocks (mobile-arch \u00a71).",
+   "remaining_after": "None beyond SCRUM-11 branch protection."
+  },
+  {
+   "id": "WP-03",
+   "jira_keys": [
+    "SCRUM-15",
+    "SCRUM-69"
+   ],
+   "backlog_keys": [
+    "SCR-0011"
+   ],
+   "title": "Fix the RN-import ban (flat-config override, src/api, tsx, per-block ignores) + single @supabase/supabase-js import",
+   "class": "do-partial",
+   "position_reason": "Highest. Invariant 11 is claimed as CI-enforced but isn't; every later app package relies on this gate. auth-types.ts is in the same global-ignore block, so one change fixes both.",
+   "scope": "Rewrite eslint.config.js with one no-restricted-imports config per glob (domain bans plus seam bans merged; src/api ban; *.{ts,tsx}; ban list per mobile-arch \u00a71.1). Replace the global ignores with per-block rule disables (MapCanvas: only the @maplibre ban off). Move the Session/User type re-export into src/api/supabase.ts and delete auth-types.ts or its exemption. Add fixtures under eslint-fixtures/ that must fail, plus a lint:fixtures script asserting failure. Leave supabase.ts's AppState import under a narrow per-file exemption with a TODO naming SCRUM-62 until that decision lands; record the sanctioned src/api adapters (mmkv, secure-store, expo-crypto) per \u00a72.3/\u00a75.",
+   "files": [
+    "eslint.config.js",
+    "src/api/supabase.ts",
+    "src/api/auth-types.ts",
+    "src/features/**/*(importers of auth-types)",
+    "scripts/lint-fixtures.sh",
+    "package.json",
+    ".github/workflows/app.yml"
+   ],
+   "verify": [
+    "npm run lint",
+    "npm run lint:fixtures",
+    "npx eslint --print-config src/domain/geo/types.ts | grep -A30 no-restricted-imports",
+    "grep -rn \"@supabase/supabase-js\" src | grep -v src/api/supabase.ts; test $? -eq 1",
+    "npm run typecheck"
+   ],
+   "skills": [
+    "ci-cd-and-automation",
+    "security-and-hardening",
+    "codebase-design"
+   ],
+   "risks": "Linting MapCanvas.tsx and supabase.ts for the first time may surface no-explicit-any etc. Fix them, don't re-ignore. Don't silently pick the SCRUM-62 option.",
+   "remaining_after": "Remove the supabase.ts react-native exemption once SCRUM-62 is decided; amend mobile-arch \u00a71 exceptions accordingly."
+  },
+  {
+   "id": "WP-04",
+   "jira_keys": [
+    "SCRUM-26",
+    "SCRUM-30"
+   ],
+   "backlog_keys": [
+    "SCR-0103"
+   ],
+   "title": "Fix the FPS profiler sample capture and relabel/re-time time-to-first-tile",
+   "class": "do-partial",
+   "position_reason": "EPIC-01 is the formal blocker and Corey's hardware session is the critical path. Without this, the device profiling run (SCRUM-27) produces zeros. Both touch MapSpikeScreen/MapCanvas metrics.",
+   "scope": "useFpsProfiler: use Reanimated shared values plus runOnJS/batched flush (or a JS-thread rAF sampler, labelled as such); a ring buffer covering \u226560 s; a pure summary function (p50/p95/min, dropped frames) in a testable module. Add a JS-heap/memory sample hook if exposed. TTFT: time from MapCanvas mount to onDidFinishLoadingStyle/first onDidFinishRenderingFrame (not 'fully'), and rename the HUD/export labels to match. Document in go/no-go that UI-thread frames are not GL frames and platform profilers (Perfetto/Instruments) are required for the AC.",
+   "files": [
+    "src/features/map/hooks/useFpsProfiler.ts",
+    "src/features/map/components/MapCanvas.tsx",
+    "src/features/map/screens/MapSpikeScreen.tsx",
+    "src/features/map/lib/fpsSummary.ts",
+    "docs/07-review/03-map-spike-go-no-go.md"
+   ],
+   "verify": [
+    "npm run typecheck",
+    "npm run lint",
+    "node --experimental-strip-types scripts/map-tests.mjs (summary/ring-buffer unit tests)"
+   ],
+   "skills": [
+    "observability-and-instrumentation",
+    "debugging-and-error-recovery",
+    "diagnosing-bugs"
+   ],
+   "risks": "Can't run on device here, so the worklet fix is verified by reasoning plus typecheck only. Keep the profiler dev-only (not in production bundles).",
+   "remaining_after": "On-device trace capture via Perfetto/Xcode Instruments, sustained-window traces and memory under 250 MB (Corey, hardware)."
+  },
+  {
+   "id": "WP-05",
+   "jira_keys": [
+    "SCRUM-25"
+   ],
+   "backlog_keys": [
+    "SCR-0102"
+   ],
+   "title": "Follow mode cleared at gesture start; no camera animation during a gesture; avatar interpolation",
+   "class": "do-partial",
+   "position_reason": "EPIC-01 critical path (R04 bug); must be fixed before the device run.",
+   "scope": "Extract a pure follow-mode reducer (events: gestureStart, gestureEnd, locationFix, recenter) to src/features/map/lib. Wire onRegionWillChange/isChanging with isUserInteraction \u2192 following=false; suppress easeTo while a gesture is active; interpolate the avatar between fixes (timed lerp). Unit-test the reducer (SPEC-008 test IDs).",
+   "files": [
+    "src/features/map/hooks/useFollowMode.ts",
+    "src/features/map/lib/followMode.ts",
+    "src/features/map/components/MapCanvas.tsx",
+    "src/features/map/screens/MapSpikeScreen.tsx"
+   ],
+   "verify": [
+    "node --experimental-strip-types scripts/map-tests.mjs",
+    "npm run typecheck",
+    "npm run lint"
+   ],
+   "skills": [
+    "test-driven-development",
+    "tdd",
+    "frontend-ui-engineering"
+   ],
+   "risks": "Invariant 4 (no background location): don't touch watcher permissions. MapLibre RN v11 event payload names must be checked in node_modules types.",
+   "remaining_after": "Physical-device verification and the go/no-go SCRUM-102 table (Corey)."
+  },
+  {
+   "id": "WP-06",
+   "jira_keys": [
+    "SCRUM-24"
+   ],
+   "backlog_keys": [
+    "SCR-0101"
+   ],
+   "title": "Spike style gains label/POI symbol layers using sprites and multiple glyph stacks",
+   "class": "do-partial",
+   "position_reason": "The spike must exercise style complexity, otherwise the hardware run only re-measures marker count. Cheap; do before the device session.",
+   "scope": "Add place/road label and POI symbol layers (Protomaps basemap schema source-layers) with icon-image from the sprite and \u22652 font stacks; validate with @maplibre/maplibre-gl-style-spec (gl-style-validate) as a devDependency/CI step.",
+   "files": [
+    "src/features/map/style/sharecropr-basemap.json",
+    "package.json",
+    ".github/workflows/app.yml"
+   ],
+   "verify": [
+    "npx gl-style-validate src/features/map/style/sharecropr-basemap.json",
+    "npm run lint"
+   ],
+   "skills": [
+    "frontend-ui-engineering",
+    "incremental-implementation"
+   ],
+   "risks": "Sprite/glyph assets aren't published (SCRUM-22), so layers can't render on device until R2 exists. The style must name a dated archive, never 'latest' (CI/CD \u00a79).",
+   "remaining_after": "Observe label collision at 200 markers on device, record in go/no-go; depends on SCRUM-22 assets."
+  },
+  {
+   "id": "WP-07",
+   "jira_keys": [
+    "SCRUM-28"
+   ],
+   "backlog_keys": [
+    "SCR-0107"
+   ],
+   "title": "Attribution guaranteed by layout + static map-egress host check",
+   "class": "do-partial",
+   "position_reason": "NFR-99 is a licence obligation and a CI-blocking gate; the static half needs no device.",
+   "scope": "Make OsmAttribution part of the layout flow (a reserved inset above sheet detents) rather than zIndex. Add a script that walks the style JSON and config (sources, glyphs, sprite URLs) and fails on any host other than the tile origin/Supabase or on any credential/coord-template in URLs (part of T78/T79). Wire into app.yml.",
+   "files": [
+    "src/features/map/components/OsmAttribution.tsx",
+    "src/features/map/screens/MapSpikeScreen.tsx",
+    "scripts/ci-map-egress.mjs",
+    ".github/workflows/app.yml",
+    "package.json"
+   ],
+   "verify": [
+    "node scripts/ci-map-egress.mjs",
+    "node scripts/ci-map-egress.mjs fixtures/bad-style.json; test $? -ne 0",
+    "npm run typecheck"
+   ],
+   "skills": [
+    "security-and-hardening",
+    "ci-cd-and-automation",
+    "frontend-ui-engineering"
+   ],
+   "risks": "Geometric assertion over every \u00a78.2 state needs RNTL (WP-02b) or device; don't fake it.",
+   "remaining_after": "T70/T77 geometric tests (after the runner), wire-level capture on device (T78-T80)."
+  },
+  {
+   "id": "WP-08",
+   "jira_keys": [
+    "SCRUM-35"
+   ],
+   "backlog_keys": [
+    "SCR-0201"
+   ],
+   "title": "Unique 14-digit migration versions, migration convention doc, break_glass role",
+   "class": "do",
+   "position_reason": "Root of the schema chain (SCR-0205/0203 blocked by it); `supabase db reset` can't succeed with the version collision.",
+   "scope": "git mv each 20260822_000N_*.sql and the later ones to YYYYMMDDHHMMSS_name.sql, preserving order; update any references (docs, scripts, tests). Document the convention (naming, one concern per file, test file in the same PR; reference CI/CD \u00a78 for forward-only without deciding SCRUM-18). Create role break_glass NOLOGIN with no grants (or record deferral with a backlog key).",
+   "files": [
+    "supabase/migrations/*",
+    "docs/01-architecture/03-data-model.md",
+    "docs/05-operations/01-environments.md",
+    "supabase/migrations/<new>_break_glass_role.sql"
+   ],
+   "verify": [
+    "ls supabase/migrations | sed 's/_.*//' | sort | uniq -d | wc -l  # 0",
+    "bash harness/run.sh",
+    "WP-12 GitHub run"
+   ],
+   "skills": [
+    "deprecation-and-migration",
+    "git-workflow-and-versioning",
+    "documentation-and-adrs"
+   ],
+   "risks": "Renaming is safe only because no hosted project has applied them; confirm no remote schema_migrations exists. break_glass must have zero default grants; check that ci-assert-no-private-grants still passes.",
+   "remaining_after": "None."
+  },
+  {
+   "id": "WP-09",
+   "jira_keys": [
+    "SCRUM-36"
+   ],
+   "backlog_keys": [
+    "SCR-0208"
+   ],
+   "title": "Vault: private.get_handoff_key() accessor, placeholder key moved to seed, fail closed",
+   "class": "do",
+   "position_reason": "Highest ci-blocker; SCR-0205 is blocked by it; the migration fails today.",
+   "scope": "Replace COMMENT ON vault.get_secret with a SECURITY DEFINER private.get_handoff_key() reading vault.decrypted_secrets (pinned search_path, revoke from PUBLIC/anon/authenticated) that raises when the key is absent. Move placeholder secret creation to seed.sql. Add pgTAP (anon/authenticated denied; owner round trip). Update SPEC-010, Exchange State Machine \u00a73.3, Runbook 14 and the AGENTS.md \u00a76 N-03 row (link Environments \u00a76).",
+   "files": [
+    "supabase/migrations/<ts>_vault_handoff_key.sql",
+    "supabase/seed.sql",
+    "supabase/tests/vault_handoff_key.test.sql",
+    "docs/03-specs/SPEC-010-exchange-lifecycle.md",
+    "docs/01-architecture/07-exchange-state-machine.md",
+    "docs/05-operations/runbooks/14-*.md",
+    "AGENTS.md"
+   ],
+   "verify": [
+    "bash harness/run.sh",
+    "pg_prove supabase/tests/vault_handoff_key.test.sql",
+    "WP-12 GitHub run (real supabase_vault)"
+   ],
+   "skills": [
+    "security-and-hardening",
+    "api-and-interface-design"
+   ],
+   "risks": "The stub vault differs from real supabase_vault/pgsodium on PG15, so trust only the GitHub run. Is editing the existing migration in place OK? Yes, nothing has been applied remotely; note it in the commit. The AGENTS \u00a76 edit only reflects the custody Environments \u00a76 already documents; it isn't a new decision.",
+   "remaining_after": "None (rotation rehearsal is SCRUM-39)."
+  },
+  {
+   "id": "WP-10",
+   "jira_keys": [
+    "SCRUM-41"
+   ],
+   "backlog_keys": [
+    "SCR-0203"
+   ],
+   "title": "h3_postgis in a pinned schema; trigger resolves; nightly h3_r9 consistency job",
+   "class": "do",
+   "position_reason": "Blocked only by SCR-0201; the seed fails without it, which breaks every RLS test fixture.",
+   "scope": "CREATE EXTENSION h3/h3_postgis WITH SCHEMA extensions; fix search_path in sync_garden_derived_location and k_for_radius; add a pg_cron nightly job writing a failure row/raising for mismatched h3_r9; pgTAP for seeded gardens' h3 columns and k_for_radius.",
+   "files": [
+    "supabase/migrations/<ts>_gardens_geospatial.sql",
+    "supabase/migrations/<ts>_baseline.sql",
+    "supabase/tests/geospatial_h3.test.sql"
+   ],
+   "verify": [
+    "bash harness/run.sh",
+    "pg_prove supabase/tests/geospatial_h3.test.sql",
+    "WP-12 GitHub run"
+   ],
+   "skills": [
+    "debugging-and-error-recovery",
+    "test-driven-development"
+   ],
+   "risks": "If the real Supabase image lacks h3/h3_postgis (unverified per ADR-0016), STOP and surface it to Corey as an ADR-0005 decision. Invariant 1: the consistency check must not log exact_point.",
+   "remaining_after": "Alert routing for the nightly job (observability accounts)."
+  },
+  {
+   "id": "WP-11",
+   "jira_keys": [
+    "SCRUM-44"
+   ],
+   "backlog_keys": [
+    "SCR-0210"
+   ],
+   "title": "LP-06 averaging test fixed; LP-08/09/10/12 use skip() with backlog keys",
+   "class": "do",
+   "position_reason": "location_privacy.test.sql errors and fails its plan, so the pgTAP baseline can't be green; this must land before WP-12.",
+   "scope": "Rewrite LP-06 to sample display_point through an authenticated PostgREST-equivalent query N times, using the mean vs exact_point (compute in geometry, compare via ST_Distance geography). Replace pass() placeholders with skip('SCR-xxxx').",
+   "files": [
+    "supabase/tests/location_privacy.test.sql"
+   ],
+   "verify": [
+    "pg_prove supabase/tests/location_privacy.test.sql"
+   ],
+   "skills": [
+    "test-driven-development",
+    "security-and-hardening"
+   ],
+   "risks": "Invariant 1: test output must not print exact coordinates. If display_point is stable per garden (by design), LP-06 must assert the mean equals the stored fuzz, not converges to truth.",
+   "remaining_after": "Spec-size property versions are in WP-19."
+  },
+  {
+   "id": "WP-12",
+   "jira_keys": [
+    "SCRUM-37"
+   ],
+   "backlog_keys": [
+    "SCR-0205"
+   ],
+   "title": "db.yml: supabase start + pinned CLI + broken-policy fixture + first green run",
+   "class": "do-partial",
+   "position_reason": "Blocked by SCR-0201/0208 (WP-08/09). It is the real verification oracle for all DB work and unblocks SCR-0206/0210/0212 and the FORCE sweep.",
+   "scope": "Pin setup-cli to an exact version; run supabase start then db reset; run db:test. Add a workflow_dispatch input or separate job that applies a fixture dropping a policy and asserts failure. Link the green run in the dev notes; update CI/CD \u00a72 to the verified state.",
+   "files": [
+    ".github/workflows/db.yml",
+    "scripts/run-pgtap.sh",
+    "supabase/tests/fixtures/broken_policy.sql",
+    "docs/05-operations/02-cicd.md",
+    "docs/07-review/02-development-notes.md"
+   ],
+   "verify": [
+    "git push; gh run watch $(gh run list -w db.yml -b develop -L1 --json databaseId -q '.[0].databaseId') --exit-status",
+    "gh workflow run db.yml -f broken_fixture=true; expect failure"
+   ],
+   "skills": [
+    "ci-cd-and-automation",
+    "debugging-and-error-recovery"
+   ],
+   "risks": "Iterating via pushes to develop creates noisy commits. Debug locally with the harness first and squash fixes into one commit where possible.",
+   "remaining_after": "Make it a required status check on main/develop (Corey, branch protection)."
+  },
+  {
+   "id": "WP-13",
+   "jira_keys": [
+    "SCRUM-40"
+   ],
+   "backlog_keys": [
+    "SCR-0205"
+   ],
+   "title": "Generic FORCE-RLS sweep; ci-assert-rls and definer-allowlist stubs made real or removed",
+   "class": "do",
+   "position_reason": "Invariant 5 regression gate; needs the working db.yml (WP-12).",
+   "scope": "structural_sweeps: count(*)=0 of public relkind r/p with NOT relrowsecurity OR NOT relforcerowsecurity; a fixture migration (ENABLE w/o FORCE) proving failure. Make ci-assert-rls run the sweep (or delete it). Make ci-assert-definer-allowlist parse migrations for SECURITY DEFINER functions touching private against an allowlist file (shared with LP-02 in WP-19) or remove it from db.yml and label it planned. Track the predicate-index and migration-without-test gates (implement the predicate-index sweep via pg_index if cheap).",
+   "files": [
+    "supabase/tests/structural_sweeps.test.sql",
+    "scripts/ci-assert-rls.sh",
+    "scripts/ci-assert-definer-allowlist.sh",
+    "supabase/definer-allowlist.txt",
+    ".github/workflows/db.yml"
+   ],
+   "verify": [
+    "pg_prove supabase/tests/structural_sweeps.test.sql",
+    "bash scripts/ci-assert-definer-allowlist.sh",
+    "apply fixture \u2192 pg_prove fails",
+    "GitHub db.yml run"
+   ],
+   "skills": [
+    "security-and-hardening",
+    "ci-cd-and-automation"
+   ],
+   "risks": "Shell parsing of SQL is brittle; prefer querying pg_proc after migrations (prosecdef, proconfig) over grep.",
+   "remaining_after": "'Migration without test file in same PR' gate if not done (tracked)."
+  },
+  {
+   "id": "WP-14",
+   "jira_keys": [
+    "SCRUM-42"
+   ],
+   "backlog_keys": [
+    "SCR-0206"
+   ],
+   "title": "Per-table negative-ratio gate with generator for the twelve questions",
+   "class": "do",
+   "position_reason": "Needs green pgTAP (WP-12) and the skip() cleanup (WP-11).",
+   "scope": "Tag assertions with 'table:<name>'; rewrite ci-assert-negative-ratio (node script) to count per table, excluding skip/pass, failing when negatives \u2264 positives or a twelve-question item is missing; a generator emits the per-table question skeleton; relabel the non-negative N9/N14; add 'suspended user cannot write' for gardens; unbalanced fixture.",
+   "files": [
+    "scripts/ci-assert-negative-ratio.mjs",
+    "scripts/gen-rls-questions.mjs",
+    "supabase/tests/rls_*.test.sql",
+    "supabase/tests/fixtures/unbalanced.test.sql",
+    "package.json"
+   ],
+   "verify": [
+    "npm run ci:assert-negative-ratio",
+    "node scripts/ci-assert-negative-ratio.mjs supabase/tests/fixtures; test $? -ne 0",
+    "pg_prove supabase/tests/rls_*.test.sql"
+   ],
+   "skills": [
+    "test-driven-development",
+    "ci-cd-and-automation"
+   ],
+   "risks": "Invariant 5/NFR-47: don't reduce real negatives to make the ratio pass.",
+   "remaining_after": "None."
+  },
+  {
+   "id": "WP-15",
+   "jira_keys": [
+    "SCRUM-45"
+   ],
+   "backlog_keys": [
+    "SCR-0211"
+   ],
+   "title": "Audit trail: TRUNCATE guard, append-only pgTAP, service_role insert path",
+   "class": "do-partial",
+   "position_reason": "NFR-53 security gap; independent once pgTAP runs.",
+   "scope": "BEFORE TRUNCATE statement trigger on audit.events; pgTAP that UPDATE/DELETE/TRUNCATE raise 42501 for postgres, service_role and authenticated; GRANT EXECUTE on app.jsonb_has_coord_key to service_role (or drop the INSERT grant in favour of app.write_audit_event).",
+   "files": [
+    "supabase/migrations/<ts>_audit_truncate_guard.sql",
+    "supabase/tests/audit_events.test.sql"
+   ],
+   "verify": [
+    "pg_prove supabase/tests/audit_events.test.sql",
+    "GitHub db.yml run"
+   ],
+   "skills": [
+    "security-and-hardening",
+    "test-driven-development"
+   ],
+   "risks": "The superuser (postgres) can disable triggers; document that limit. Invariant 1: the CHECK on coord keys must stay.",
+   "remaining_after": "Moderator P1 read auditing: an audited definer RPC vs a recorded decision with an owner. Surface to Corey; don't pick silently."
+  },
+  {
+   "id": "WP-16",
+   "jira_keys": [
+    "SCRUM-48"
+   ],
+   "backlog_keys": [
+    "SCR-0204"
+   ],
+   "title": "app.current_user_id() STABLE wrapper over auth.uid()",
+   "class": "do",
+   "position_reason": "Low and tiny; batch with DB work while the harness is warm.",
+   "scope": "Add the function (pinned search_path, EXECUTE to authenticated) and cover it in rls_column_privileges N15; ADR-0016 examples already use it.",
+   "files": [
+    "supabase/migrations/<ts>_current_user_id.sql",
+    "supabase/tests/rls_column_privileges.test.sql"
+   ],
+   "verify": [
+    "pg_prove supabase/tests/rls_column_privileges.test.sql"
+   ],
+   "skills": [
+    "incremental-implementation"
+   ],
+   "risks": "Exposed via PostgREST since app is in the exposed schemas; harmless but note it.",
+   "remaining_after": "None."
+  },
+  {
+   "id": "WP-17",
+   "jira_keys": [
+    "SCRUM-66"
+   ],
+   "backlog_keys": [
+    "SCR-0301"
+   ],
+   "title": "set_handle RPC (edit once), retired_handles 12-month block, signup collision retry",
+   "class": "do",
+   "position_reason": "Pure SQL plus pgTAP, verifiable here; groups with the DB batch. Medium priority.",
+   "scope": "app.set_handle(text) definer RPC with regex validation, single edit, retired-handle check; insert the old handle into private.retired_handles; handle_new_user retry loop on unique violation; pgTAP SPEC-001-T10 plus negatives.",
+   "files": [
+    "supabase/migrations/<ts>_handle_rpc.sql",
+    "supabase/tests/auth_handle.test.sql"
+   ],
+   "verify": [
+    "pg_prove supabase/tests/auth_handle.test.sql",
+    "npm run ci:assert-negative-ratio"
+   ],
+   "skills": [
+    "test-driven-development",
+    "api-and-interface-design",
+    "domain-modeling"
+   ],
+   "risks": "Add the definer to the allowlist (WP-13). Idempotency for the RPC per the API contract.",
+   "remaining_after": "Client UI for the handle edit (no spec'd screen yet)."
+  },
+  {
+   "id": "WP-18",
+   "jira_keys": [
+    "SCRUM-43"
+   ],
+   "backlog_keys": [
+    "SCR-0207"
+   ],
+   "title": "idempotency_keys size/bloat metric function + scheduled snapshot + reloptions pgTAP",
+   "class": "do-partial",
+   "position_reason": "Small DB slice; no account needed for the SQL half.",
+   "scope": "private.idempotency_keys_health() returning table/index size, n_dead_tup, last_autovacuum and sweep stats; a pg_cron snapshot into private.metric_snapshots; pgTAP asserting reloptions; Observability doc threshold.",
+   "files": [
+    "supabase/migrations/<ts>_idempotency_metrics.sql",
+    "supabase/tests/idempotency_keys.test.sql",
+    "docs/05-operations/04-observability.md"
+   ],
+   "verify": [
+    "pg_prove supabase/tests/idempotency_keys.test.sql"
+   ],
+   "skills": [
+    "observability-and-instrumentation"
+   ],
+   "risks": "pg_stat values are empty on a fresh DB, so assert shape, not values.",
+   "remaining_after": "Export to the dashboard plus alert (needs an observability account)."
+  },
+  {
+   "id": "WP-19",
+   "jira_keys": [
+    "SCRUM-38"
+   ],
+   "backlog_keys": [
+    "SCR-0210"
+   ],
+   "title": "Location canary: no hard-coded passes, LP-02 allowlist gate, LP-13 sweep, LP-04/05/06/07 property tests at spec size",
+   "class": "do-partial",
+   "position_reason": "Blocked by SCR-0205 (WP-12). Invariant 1 is the product's core promise.",
+   "scope": "Remove passed:true; explicit checks per the eight surfaces (surfaces that don't exist yet fail with 'not-implemented' or are tracked, never pass). LP-02 shares the allowlist with WP-13. LP-13 sweeps every RPC/REST return for coordinate-shaped values including lat/lng doubles. LP-04/05/07: generate 10k gardens with a fixed seed, 1,000 reads, \u03c7\u00b2 over 36 bins in pgTAP or the canary package. Runnable in CI against local.",
+   "files": [
+    "packages/location-canary/src/*",
+    "supabase/tests/location_privacy.test.sql",
+    "scripts/ci-assert-definer-allowlist.sh",
+    ".github/workflows/db.yml"
+   ],
+   "verify": [
+    "npm run location-canary (against the harness via env DB URL)",
+    "pg_prove supabase/tests/location_privacy.test.sql"
+   ],
+   "skills": [
+    "security-and-hardening",
+    "test-driven-development",
+    "observability-and-instrumentation"
+   ],
+   "risks": "Canary logs must not print exact coords (Invariant 1). A 10k-garden seed may slow CI, so use a nightly job for the full size and a smaller PR size.",
+   "remaining_after": "Scheduled run against staging/prod with paging; realtime/push/Sentry/PostHog/CSV/moderator surfaces once they exist (Corey: hosted envs)."
+  },
+  {
+   "id": "WP-20",
+   "jira_keys": [
+    "SCRUM-19",
+    "SCRUM-46"
+   ],
+   "backlog_keys": [
+    "SCR-0008",
+    "SCR-0212"
+   ],
+   "title": "10x perf seed, p95 timing helper, EXPLAIN (ANALYZE, BUFFERS) baselines + plan diff",
+   "class": "do-partial",
+   "position_reason": "Both need supabase/perf/baselines and the same seed; one change. Needs green CI (WP-12). SCR-0008's 'blocked by SCR-0007' is satisfied in substance by WP-12's forward run.",
+   "scope": "A deterministic perf seed (generate_series) at RLS Test Plan \u00a76 scale for existing tables; tests.assert_query_p95_under_ms(n); timing assertions for every public table including verifications and blocks; baselines for whichever of the six hot queries exist now (others listed as pending with backlog keys); a script that normalises the plan shape (node types, not costs) and diffs; nightly workflow.",
+   "files": [
+    "supabase/perf/seed.sql",
+    "supabase/perf/baselines/*.json",
+    "supabase/tests/query_timing.test.sql",
+    "scripts/perf-plan-diff.mjs",
+    ".github/workflows/db-perf.yml"
+   ],
+   "verify": [
+    "psql -f supabase/perf/seed.sql && pg_prove supabase/tests/query_timing.test.sql",
+    "node scripts/perf-plan-diff.mjs"
+   ],
+   "skills": [
+    "observability-and-instrumentation",
+    "ci-cd-and-automation"
+   ],
+   "risks": "Local PG16 timings aren't representative; commit plan shape, not absolute ms. Several hot queries (listings/messages) depend on unbuilt epics.",
+   "remaining_after": "Baselines for hot queries from later epics; the policy for diff failing on unreviewed change needs CODEOWNERS approval (branch protection)."
+  },
+  {
+   "id": "WP-21",
+   "jira_keys": [
+    "SCRUM-47"
+   ],
+   "backlog_keys": [],
+   "title": "Correct EPIC-02 status overclaims",
+   "class": "do",
+   "position_reason": "Only after WP-08..WP-20 so the statuses reflect verified reality with linked runs.",
+   "scope": "Dev-notes session table: Done only with a green run link; CI/CD \u00a72 pgtap-rls status; confirm the AGENTS.md \u00a76 N-03 row (done in WP-09) and \u00a75 current state.",
+   "files": [
+    "docs/07-review/02-development-notes.md",
+    "docs/05-operations/02-cicd.md",
+    "AGENTS.md"
+   ],
+   "verify": [
+    "gh run list -w db.yml -b develop -L1",
+    "grep -n 'Done' docs/07-review/02-development-notes.md"
+   ],
+   "skills": [
+    "documentation-and-adrs"
+   ],
+   "risks": "Don't over-correct in the other direction; cite evidence.",
+   "remaining_after": "None."
+  },
+  {
+   "id": "WP-22",
+   "jira_keys": [
+    "SCRUM-12"
+   ],
+   "backlog_keys": [
+    "SCR-0003"
+   ],
+   "title": "ci:doc-gates \u2014 Schema depends on cycle detection with broken fixture",
+   "class": "do",
+   "position_reason": "EPIC-00 Highest; blocked by SCR-0002 (WP-02 done). Pure node, fully verifiable.",
+   "scope": "scripts/doc-gates.mjs parses each SPEC front-matter 'Schema depends on' row, builds the graph, fails on a cycle naming spec, line and rule; also checks the register column matches the front matter. Fixtures dir with a cycle. npm script plus app.yml step.",
+   "files": [
+    "scripts/doc-gates.mjs",
+    "scripts/fixtures/doc-gates/cycle/*.md",
+    "package.json",
+    ".github/workflows/app.yml"
+   ],
+   "verify": [
+    "npm run ci:doc-gates",
+    "node scripts/doc-gates.mjs --root scripts/fixtures/doc-gates/cycle; test $? -ne 0"
+   ],
+   "skills": [
+    "ci-cd-and-automation",
+    "test-driven-development"
+   ],
+   "risks": "The register says a valid order exists; if the gate finds a real cycle, surface it, don't edit specs silently.",
+   "remaining_after": "None."
+  },
+  {
+   "id": "WP-23",
+   "jira_keys": [
+    "SCRUM-16"
+   ],
+   "backlog_keys": [
+    "SCR-0004"
+   ],
+   "title": "doc-gates: asymmetric Behaviourally coupled with edge",
+   "class": "do",
+   "position_reason": "Blocked by SCR-0003 (WP-22); extends the same script.",
+   "scope": "Add a symmetry check plus an asymmetric fixture.",
+   "files": [
+    "scripts/doc-gates.mjs",
+    "scripts/fixtures/doc-gates/asymmetric/*.md"
+   ],
+   "verify": [
+    "npm run ci:doc-gates",
+    "node scripts/doc-gates.mjs --root scripts/fixtures/doc-gates/asymmetric; test $? -ne 0"
+   ],
+   "skills": [
+    "ci-cd-and-automation"
+   ],
+   "risks": "Real asymmetries found in the docs are doc fixes. Flag them in the commit rather than resolving coupling semantics.",
+   "remaining_after": "None."
+  },
+  {
+   "id": "WP-24",
+   "jira_keys": [
+    "SCRUM-13"
+   ],
+   "backlog_keys": [
+    "SCR-0005"
+   ],
+   "title": "ci:spec-traceability gate",
+   "class": "do-partial",
+   "position_reason": "Blocked by SCR-0002. Placed before the EPIC-03 packages so they're built against the gate.",
+   "scope": "Extract every MUST per spec, require a \u00a713 row and a test file echoing SPEC-NNN-TNN; fixture; failure names spec, line and rule. Proposed mode: blocking for specs whose epic has landed code (SPEC-001, SPEC-008), report-only for the rest via an explicit allowlist keyed by backlog key.",
+   "files": [
+    "scripts/spec-traceability.mjs",
+    "scripts/fixtures/traceability/*",
+    "package.json",
+    ".github/workflows/app.yml"
+   ],
+   "verify": [
+    "npm run ci:spec-traceability",
+    "node scripts/spec-traceability.mjs --root scripts/fixtures/traceability; test $? -ne 0"
+   ],
+   "skills": [
+    "ci-cd-and-automation",
+    "test-driven-development"
+   ],
+   "risks": "Choosing blocking vs report scope is a mild policy call. State it in the commit and ask Corey to confirm. SPEC-001 will fail until WP-41, so start SPEC-001 report-only and flip it in WP-41.",
+   "remaining_after": "Flip to fully blocking once SPEC-001 \u00a713 coverage closes (WP-41)."
+  },
+  {
+   "id": "WP-25",
+   "jira_keys": [
+    "SCRUM-20"
+   ],
+   "backlog_keys": [
+    "SCR-0010"
+   ],
+   "title": "Weekly dependency scan opens issues for high/critical",
+   "class": "do",
+   "position_reason": "Independent EPIC-00 item; cheap.",
+   "scope": ".github/dependabot.yml (npm, github-actions, weekly); a scheduled workflow running npm audit --audit-level=high --json that opens/updates an issue via gh with dedupe by advisory id; workflow_dispatch.",
+   "files": [
+    ".github/dependabot.yml",
+    ".github/workflows/dependency-audit.yml"
+   ],
+   "verify": [
+    "gh workflow run dependency-audit.yml && gh run watch --exit-status",
+    "gh issue list --label security"
+   ],
+   "skills": [
+    "ci-cd-and-automation",
+    "security-and-hardening"
+   ],
+   "risks": "Needs permissions: issues: write in the workflow; avoid issue spam.",
+   "remaining_after": "None."
+  },
+  {
+   "id": "WP-26",
+   "jira_keys": [
+    "SCRUM-17"
+   ],
+   "backlog_keys": [
+    "SCR-0006"
+   ],
+   "title": "JS bundle export with a 6 MB gate",
+   "class": "do-partial",
+   "position_reason": "Better before WP-38 adds the Sentry/PostHog SDKs, so their size impact is measured.",
+   "scope": "npx expo export --platform ios/android --output-dir dist; a script summing the Hermes/JS bundle sizes, failing above 6 MB and writing a job summary.",
+   "files": [
+    "scripts/ci-bundle-size.mjs",
+    ".github/workflows/app.yml",
+    "package.json"
+   ],
+   "verify": [
+    "npx expo export --platform android --output-dir dist && node scripts/ci-bundle-size.mjs dist"
+   ],
+   "skills": [
+    "ci-cd-and-automation",
+    "observability-and-instrumentation"
+   ],
+   "risks": "expo export needs app.config env; use dummy public env vars and never real secrets.",
+   "remaining_after": "Install size for iOS and Android needs EAS builds (SCRUM-14)."
+  },
+  {
+   "id": "WP-27",
+   "jira_keys": [
+    "SCRUM-63"
+   ],
+   "backlog_keys": [],
+   "title": "Idempotency keys held per user intent",
+   "class": "do",
+   "position_reason": "Prerequisite for WP-32/34/35 RPC callers; small.",
+   "scope": "auth-service functions take an idempotencyKey param; screens hold the key in state (created at intent start, cleared on success); a test that two submits of one intent send the same key; a pgTAP replay showing one server effect.",
+   "files": [
+    "src/features/auth/lib/auth-service.ts",
+    "src/features/auth/screens/DeleteAccountScreen.tsx",
+    "src/features/auth/screens/RestoreAccountScreen.tsx",
+    "src/features/auth/screens/SecuritySettingsScreen.tsx",
+    "src/features/auth/hooks/useIntentKey.ts"
+   ],
+   "verify": [
+    "npm run typecheck",
+    "npm run lint",
+    "unit test (node:test or the runner)",
+    "pg_prove supabase/tests/auth_account_deletion.test.sql"
+   ],
+   "skills": [
+    "api-and-interface-design",
+    "tdd"
+   ],
+   "risks": "Follow the API contract \u00a73.1 key format.",
+   "remaining_after": "None."
+  },
+  {
+   "id": "WP-28",
+   "jira_keys": [
+    "SCRUM-71"
+   ],
+   "backlog_keys": [
+    "SCR-0309"
+   ],
+   "title": "Shared useDeletionStatus (error \u2192 retry state) and signOutAndRedirect helper",
+   "class": "do",
+   "position_reason": "Invariant 10 fix (failing open); WP-34's (tabs)/_layout redirect reuses the hook.",
+   "scope": "One hook used by app/index.tsx and RestoreAccountScreen with an actionable retry on error; one helper with catch used at the four sites.",
+   "files": [
+    "app/index.tsx",
+    "src/features/auth/hooks/useDeletionStatus.ts",
+    "src/features/auth/lib/sign-out.ts",
+    "src/features/auth/screens/RestoreAccountScreen.tsx",
+    "src/features/auth/screens/VerifyEmailScreen.tsx",
+    "app/(tabs)/profile/index.tsx"
+   ],
+   "verify": [
+    "npm run typecheck",
+    "npm run lint",
+    "grep -rn 'signOut().then' src app | wc -l  # 0"
+   ],
+   "skills": [
+    "code-simplification",
+    "frontend-ui-engineering"
+   ],
+   "risks": "Invariant 10: the error state must not spin forever.",
+   "remaining_after": "None."
+  },
+  {
+   "id": "WP-29",
+   "jira_keys": [
+    "SCRUM-52"
+   ],
+   "backlog_keys": [
+    "SCR-0306"
+   ],
+   "title": "Session hardening: processLock, torn-write detection, 401 refresh, leak test, 6 KB gate, allowBackup=false",
+   "class": "do-partial",
+   "position_reason": "Highest; Invariant 6; no blockers.",
+   "scope": "createClient({auth:{lock:processLock}}); remove or use refreshSessionSingleFlight; secure-storage chunks carry a generation id plus checksum and purge on mismatch (T15); a fetch wrapper for 401 \u2192 single refresh \u2192 /sign-in?returnTo (T18 concurrency test); a test that AsyncStorage isn't a dependency and that tokens never reach console/Sentry; a session size gate script (T20); android.allowBackup=false in app.config.ts; T19 sign-out cleanup test with an injected store.",
+   "files": [
+    "src/api/supabase.ts",
+    "src/api/secure-storage.ts",
+    "src/api/query-cache.ts",
+    "src/api/http.ts",
+    "app.config.ts",
+    "scripts/ci-session-size.mjs",
+    "tests for secure-storage"
+   ],
+   "verify": [
+    "npm run typecheck",
+    "npm run lint",
+    "unit tests for chunking/torn write/single-flight",
+    "node scripts/ci-session-size.mjs"
+   ],
+   "skills": [
+    "security-and-hardening",
+    "test-driven-development",
+    "tdd"
+   ],
+   "risks": "Invariant 6 and 11: keep RN imports out of src/api beyond the sanctioned adapters. processLock export availability in the installed supabase-js version needs checking.",
+   "remaining_after": "Refresh p95 measurement (NFR-16) on device and hosted."
+  },
+  {
+   "id": "WP-30",
+   "jira_keys": [
+    "SCRUM-51",
+    "SCRUM-56"
+   ],
+   "backlog_keys": [
+    "SCR-0307",
+    "SCR-0305"
+   ],
+   "title": "Auth deep-link callback route: recovery and verification code exchange, link-expired/used states, resend cooldown from Retry-After",
+   "class": "do-partial",
+   "position_reason": "Highest; both bugs need the same app/auth/* route plus Linking/exchangeCodeForSession handler. SCR-0305 unblocks SCR-0308 (WP-32).",
+   "scope": "app/auth/callback.tsx and reset route; parse code/error params (pure parser tested); exchangeCodeForSession; emailRedirectTo on signUp; re-read the user and update email_confirmed_at; config.toml additional_redirect_urls for sharecropr://auth/*; expired/used copy per \u00a78.3; resend countdown from server Retry-After.",
+   "files": [
+    "app/auth/callback.tsx",
+    "app/(auth)/reset-password.tsx",
+    "src/features/auth/lib/deep-link.ts",
+    "src/features/auth/lib/auth-service.ts",
+    "src/features/auth/screens/VerifyEmailScreen.tsx",
+    "src/features/auth/screens/ResetPasswordScreen.tsx",
+    "supabase/config.toml"
+   ],
+   "verify": [
+    "npm run typecheck",
+    "npm run lint",
+    "unit tests for the deep-link parser and cooldown",
+    "SPEC-001-T11/T13/T14/T23 where unit-testable"
+   ],
+   "skills": [
+    "frontend-ui-engineering",
+    "security-and-hardening",
+    "tdd"
+   ],
+   "risks": "PKCE flowType must be pkce; never log the code or tokens (Invariant 6).",
+   "remaining_after": "Hosted redirect allow-list; per-address 3/hour enforcement (auth send_email hook/token bucket on hosted); end-to-end email link test on device."
+  },
+  {
+   "id": "WP-31",
+   "jira_keys": [
+    "SCRUM-68"
+   ],
+   "backlog_keys": [
+    "SCR-0301"
+   ],
+   "title": "\u00a78.3 error copy: rate_limited countdown, network recoverable error, offline banner on ForgotPassword",
+   "class": "do",
+   "position_reason": "Small; reuses the Retry-After countdown from WP-30.",
+   "scope": "A pure mapping function AuthErrorCode \u2192 copy, unit-tested; SignInScreen disables submit for Retry-After with a countdown.",
+   "files": [
+    "src/features/auth/lib/error-copy.ts",
+    "src/features/auth/screens/SignInScreen.tsx",
+    "src/features/auth/screens/ForgotPasswordScreen.tsx",
+    "src/features/auth/copy.ts"
+   ],
+   "verify": [
+    "unit test the mapping",
+    "npm run typecheck",
+    "npm run lint"
+   ],
+   "skills": [
+    "frontend-ui-engineering",
+    "tdd"
+   ],
+   "risks": "Never reveal account existence in copy.",
+   "remaining_after": "None."
+  },
+  {
+   "id": "WP-32",
+   "jira_keys": [
+    "SCRUM-49"
+   ],
+   "backlog_keys": [
+    "SCR-0308"
+   ],
+   "title": "Email change: server-generated raw tokens, confirm/revoke RPCs, hashed storage, audit, UI error mapping",
+   "class": "do-partial",
+   "position_reason": "Highest; blocked by SCR-0305 (WP-30).",
+   "scope": "The request RPC generates raw tokens, stores sha256, and returns them only to a service_role-only mailer path (an Edge Function stub under supabase/functions/email-change with Deno code). app.confirm_email_change(token) re-checks R40, updates auth.users.email and writes auth.email_changed audit with the hashed address; app.revoke_email_change(token); masked old address helper; SecuritySettingsScreen maps conflict/validation_failed/aal2_*; pgTAP SPEC-001-T29/T32.",
+   "files": [
+    "supabase/migrations/<ts>_email_change_confirm.sql",
+    "supabase/functions/email-change/index.ts",
+    "supabase/tests/auth_email_change.test.sql",
+    "src/features/auth/screens/SecuritySettingsScreen.tsx"
+   ],
+   "verify": [
+    "pg_prove supabase/tests/auth_email_change.test.sql",
+    "npm run typecheck",
+    "npx deno check supabase/functions/email-change/index.ts (if deno via npm available)"
+   ],
+   "skills": [
+    "security-and-hardening",
+    "api-and-interface-design",
+    "test-driven-development"
+   ],
+   "risks": "Raw tokens must never be persisted or logged. Updating auth.users directly bypasses GoTrue internals (identities.email); verify in the GitHub real-Supabase run.",
+   "remaining_after": "Email provider/send hook configured on hosted; end-to-end delivery test."
+  },
+  {
+   "id": "WP-33",
+   "jira_keys": [
+    "SCRUM-50"
+   ],
+   "backlog_keys": [
+    "SCR-0307"
+   ],
+   "title": "Password change requires the current password; reset revokes other sessions",
+   "class": "do-partial",
+   "position_reason": "Highest; formally blocked by SCR-0403 (TOTP, EPIC-04) for the AAL2 parts, so do the slice that doesn't need it.",
+   "scope": "config.toml secure_password_change=true plus a reauthenticate nonce flow, or verify the current password via signInWithPassword before updateUser; reset completion calls signOut({scope:'others'}) and shows \u00a78.3 copy; AAL2-if-enrolled check reusing the existing pattern; unit tests T24/T25 with an injected client.",
+   "files": [
+    "src/features/auth/lib/auth-service.ts",
+    "src/features/auth/screens/SecuritySettingsScreen.tsx",
+    "src/features/auth/screens/ResetPasswordScreen.tsx",
+    "supabase/config.toml"
+   ],
+   "verify": [
+    "npm run typecheck",
+    "npm run lint",
+    "unit tests"
+   ],
+   "skills": [
+    "security-and-hardening",
+    "tdd"
+   ],
+   "risks": "Revoking refresh-token families is GoTrue behaviour; can't verify without GoTrue.",
+   "remaining_after": "Fresh AAL2 elevation and post-reset TOTP challenge (T26) after SCR-0403; hosted verification."
+  },
+  {
+   "id": "WP-34",
+   "jira_keys": [
+    "SCRUM-55"
+   ],
+   "backlog_keys": [
+    "SCR-0309"
+   ],
+   "title": "Deletion: Postgres token-bucket rate limits, scheduled-confirmation UX, restore redirect on all authed routes",
+   "class": "do-partial",
+   "position_reason": "Highest; blocks SCR-0310 (WP-35); uses WP-27/WP-28. SCR-0403 blocks only the AAL2 screen gating.",
+   "scope": "private.rate_limit_buckets plus app.consume_token(); apply 3/day, 10/day, 3/day to the three RPCs returning rate_limited with retry_after; pgTAP. DeleteAccountScreen success shows 'Your account will be deleted on {date}'; in-flight warning (count = 0 until exchange tables exist); (tabs)/_layout redirect via useDeletionStatus (T37).",
+   "files": [
+    "supabase/migrations/<ts>_rate_limits.sql",
+    "supabase/tests/auth_account_deletion.test.sql",
+    "src/features/auth/screens/DeleteAccountScreen.tsx",
+    "app/(tabs)/_layout.tsx"
+   ],
+   "verify": [
+    "pg_prove supabase/tests/auth_account_deletion.test.sql",
+    "npm run typecheck",
+    "npm run lint"
+   ],
+   "skills": [
+    "security-and-hardening",
+    "test-driven-development",
+    "frontend-ui-engineering"
+   ],
+   "risks": "Rate-limit table under RLS FORCE plus negatives (Invariant 5) or in private.",
+   "remaining_after": "R46 cascade (listings/requests/sessions: tables not built, T36); AAL2 gating of the Security/Delete screens after SCR-0403."
+  },
+  {
+   "id": "WP-35",
+   "jira_keys": [
+    "SCRUM-53"
+   ],
+   "backlog_keys": [
+    "SCR-0310"
+   ],
+   "title": "Account-delete pipeline: resumable SQL executor, idempotent audit, daily pg_cron, Edge Function wrapper",
+   "class": "do-partial",
+   "position_reason": "Highest; blocked by SCR-0309 (WP-34).",
+   "scope": "private.execute_account_deletion covers every existing table in Privacy & Data Retention (garden_locations hard delete, profiles pseudonymize, verification refs, devices if present, retired_handles tombstone, auth.users delete/sessions); guarded audit INSERT (T40); one user per transaction; daily pg_cron; supabase/functions/account-delete (service_role); overdue view; pgTAP T38/T40.",
+   "files": [
+    "supabase/migrations/<ts>_account_delete_pipeline.sql",
+    "supabase/functions/account-delete/index.ts",
+    "supabase/tests/auth_account_deletion.test.sql"
+   ],
+   "verify": [
+    "pg_prove supabase/tests/auth_account_deletion.test.sql",
+    "GitHub db.yml run (real auth.users)"
+   ],
+   "skills": [
+    "security-and-hardening",
+    "test-driven-development",
+    "domain-modeling"
+   ],
+   "risks": "Invariant 1: deletion logs must not include coords. Deleting auth.users in the harness stub vs real GoTrue cascade differs; trust the GitHub run.",
+   "remaining_after": "T41 exchange cancellation (tables absent); account_delete.overdue alerting (observability account); media/messages once those tables exist."
+  },
+  {
+   "id": "WP-36",
+   "jira_keys": [
+    "SCRUM-57",
+    "SCRUM-58"
+   ],
+   "backlog_keys": [
+    "SCR-0303",
+    "SCR-0304"
+   ],
+   "title": "Apple/Google provider config, R05 name persisted before navigation, native Apple button always rendered, T01/T02/T04 tests",
+   "class": "do-partial",
+   "position_reason": "Both edit config.toml [auth.external.*] and oauth.ts and share test scaffolding.",
+   "scope": "config.toml provider blocks using env() secrets; oauth.ts awaits the display_name write (via RPC, errors surfaced, EC-01 prompt path) before routing; ProviderButtons always renders AppleAuthenticationButton (disabled overlay); unit tests: PKCE S256 code_challenge and openAuthSessionAsync (no WebView) for T02, name-before-navigation for T04.",
+   "files": [
+    "supabase/config.toml",
+    "src/features/auth/lib/oauth.ts",
+    "src/features/auth/components/ProviderButtons.tsx",
+    "docs/05-operations/01-environments.md"
+   ],
+   "verify": [
+    "npm run typecheck",
+    "npm run lint",
+    "unit tests"
+   ],
+   "skills": [
+    "security-and-hardening",
+    "frontend-ui-engineering",
+    "tdd"
+   ],
+   "risks": "Never commit provider secrets. T08 (unverified email not linked) is GoTrue behaviour and needs hosted.",
+   "remaining_after": "Apple Services ID/key and Google OAuth client creation plus hosted config (Corey consoles); T08 integration test."
+  },
+  {
+   "id": "WP-37",
+   "jira_keys": [
+    "SCRUM-60"
+   ],
+   "backlog_keys": [
+    "SCR-0312"
+   ],
+   "title": "Reviewer bypass provisioning function, expiry check job, T42 pgTAP, release doc",
+   "class": "do-partial",
+   "position_reason": "Store-compliance; SQL verifiable here.",
+   "scope": "private.provision_reviewer_bypass(email, expires_at \u2264 now()+45d) plus a runbook; pg_cron daily flagging expiry within 7 days into a metric/alert table; pgTAP T42 (true before expiry, false after); a CI grep that no *BYPASS* string is in the bundle (dist from WP-26); fix the false claim in query_timing.test.sql:26.",
+   "files": [
+    "supabase/migrations/<ts>_reviewer_bypass.sql",
+    "supabase/tests/auth_reviewer_bypass.test.sql",
+    "docs/05-operations/03-release-and-store-submission.md",
+    "supabase/tests/query_timing.test.sql"
+   ],
+   "verify": [
+    "pg_prove supabase/tests/auth_reviewer_bypass.test.sql"
+   ],
+   "skills": [
+    "security-and-hardening",
+    "documentation-and-adrs"
+   ],
+   "risks": "Demo credentials must not be committed; the doc describes where they live.",
+   "remaining_after": "Production provisioning run and alert routing (hosted plus observability)."
+  },
+  {
+   "id": "WP-38",
+   "jira_keys": [
+    "SCRUM-61"
+   ],
+   "backlog_keys": [],
+   "title": "Auth \u00a711 events + Sentry beforeSend redaction (DSN/keys env-gated, no-op without them)",
+   "class": "do-partial",
+   "position_reason": "DoD #4 for every EPIC-03 story; after the bundle gate (WP-26) to measure SDK size; redaction protects Invariants 1/6.",
+   "scope": "An analytics/telemetry port in src/features/observability (not src/api, Invariant 11) wrapping PostHog/Sentry RN; emit every \u00a711 event with listed properties; beforeSend redacts emails, JWTs and coordinates (unit-tested, LP-08 overlap); env-gated init.",
+   "files": [
+    "package.json",
+    "src/features/observability/*",
+    "src/features/auth/**/*",
+    "app/_layout.tsx"
+   ],
+   "verify": [
+    "unit tests for redaction and event payload shape",
+    "npm run typecheck",
+    "npm run lint",
+    "node scripts/ci-bundle-size.mjs dist"
+   ],
+   "skills": [
+    "observability-and-instrumentation",
+    "security-and-hardening"
+   ],
+   "risks": "Bundle size; PII in event properties; never send exact coords or tokens.",
+   "remaining_after": "PostHog/Sentry projects, dashboards and alert thresholds (Corey accounts)."
+  },
+  {
+   "id": "WP-39",
+   "jira_keys": [
+    "SCRUM-70"
+   ],
+   "backlog_keys": [],
+   "title": "Typed src/api auth repositories, one result type, generated DB types",
+   "class": "do-partial",
+   "position_reason": "Refactor after behaviour fixes settle (WP-27..WP-38) to avoid churn.",
+   "scope": "src/api/auth-repo.ts with typed inputs and outputs; auth-service returns one Result type with explicit return annotations; remove `as` casts. Generate src/api/types.generated.ts via a workflow_dispatch job in db.yml (supabase gen types after supabase start) uploaded as an artifact and committed, plus a CI drift check.",
+   "files": [
+    "src/api/auth-repo.ts",
+    "src/api/types.generated.ts",
+    "src/features/auth/lib/auth-service.ts",
+    "src/features/auth/lib/oauth.ts",
+    "app/index.tsx",
+    ".github/workflows/db.yml"
+   ],
+   "verify": [
+    "gh workflow run db.yml -f gen_types=true; gh run download",
+    "npm run typecheck",
+    "npm run lint",
+    "grep -rn ' as DeletionStatus\\| as { pending' app src | wc -l  # 0"
+   ],
+   "skills": [
+    "codebase-design",
+    "api-and-interface-design",
+    "code-simplification"
+   ],
+   "risks": "supabase gen types needs Docker, so generate only in GitHub Actions. Keep src/api RN-free.",
+   "remaining_after": "None."
+  },
+  {
+   "id": "WP-40",
+   "jira_keys": [
+    "SCRUM-67"
+   ],
+   "backlog_keys": [],
+   "title": "Auth \u00a712 accessibility implementation",
+   "class": "do-partial",
+   "position_reason": "DoD #5; UI-only, after the screen behaviour changes.",
+   "scope": "announceForAccessibility on errors, accessibilityInvalid/LabelledBy, a 44dp labelled Show/Hide toggle, countdown announce cadence 60/30/0 s (pure scheduler tested), autoComplete on Security password fields.",
+   "files": [
+    "src/features/auth/components/AuthTextField.tsx",
+    "src/features/auth/screens/*.tsx",
+    "src/features/auth/lib/countdown-announcer.ts"
+   ],
+   "verify": [
+    "npm run typecheck",
+    "npm run lint",
+    "unit tests for the cadence",
+    "RNTL a11y queries after WP-02b"
+   ],
+   "skills": [
+    "frontend-ui-engineering"
+   ],
+   "risks": "Don't re-implement the native Apple button (\u00a712).",
+   "remaining_after": "VoiceOver/TalkBack manual QA at 200% dynamic type (Corey, device)."
+  },
+  {
+   "id": "WP-41",
+   "jira_keys": [
+    "SCRUM-65"
+   ],
+   "backlog_keys": [],
+   "title": "SPEC-001 \u00a713 coverage table + remaining unit-testable tests; flip traceability to blocking for SPEC-001",
+   "class": "do-partial",
+   "position_reason": "Last EPIC-03 package; aggregates the tests written in WP-27..WP-40 and uses the WP-24 gate.",
+   "scope": "A MUST \u2192 test ID \u2192 file table; write the missing feasible tests; mark the rest deferred with backlog keys (SCR-0403, hosted, device); fix the T05 200-char vs 128-cap spec inconsistency by surfacing it (doc conflict, don't pick silently).",
+   "files": [
+    "docs/03-specs/SPEC-001-authentication.md",
+    "tests across src/ and supabase/tests",
+    "scripts/spec-traceability.mjs config"
+   ],
+   "verify": [
+    "npm run ci:spec-traceability",
+    "all test suites"
+   ],
+   "skills": [
+    "test-driven-development",
+    "documentation-and-adrs"
+   ],
+   "risks": "The T05 vs R06 cap conflict is a doc conflict, so ask Corey.",
+   "remaining_after": "Tests deferred to hardware/hosted/EPIC-04."
+  },
+  {
+   "id": "WP-42",
+   "jira_keys": [
+    "SCRUM-33",
+    "SCRUM-34"
+   ],
+   "backlog_keys": [],
+   "title": "Remove map-seam dead code; consolidate geo domain shapes; move spike fixtures out of src/domain",
+   "class": "do",
+   "position_reason": "Low priority. The two tickets conflict on getBasemapConfig (33: delete; 34: reuse), so do them together: fold into one helper used by resolveBasemapStyle. After the map fixes so the spike isn't destabilised before the device run.",
+   "scope": "Delete styleUrl prop, requestPermission and hibpRequestPrefix; one point type; spot shapes from one base with consistent casing; move spikeData.ts to src/features/map/dev or __fixtures__.",
+   "files": [
+    "src/features/map/config/basemap.ts",
+    "src/features/map/components/MapCanvas.tsx",
+    "src/features/map/hooks/useFollowMode.ts",
+    "src/domain/geo/types.ts",
+    "src/domain/geo/spikeData.ts",
+    "src/domain/auth/hibp.ts"
+   ],
+   "verify": [
+    "npm run typecheck",
+    "npm run lint",
+    "all unit tests"
+   ],
+   "skills": [
+    "code-simplification",
+    "codebase-design"
+   ],
+   "risks": "Marker property names interact with the SCRUM-31 R69 decision; don't rename feature properties until it's decided.",
+   "remaining_after": "None."
+  },
+  {
+   "id": "WP-01b",
+   "jira_keys": [
+    "SCRUM-32"
+   ],
+   "backlog_keys": [],
+   "title": "Record EPIC-01 gate decision in backlog + AGENTS.md \u00a75; __DEV__-only spike route bypassing auth",
+   "class": "do",
+   "position_reason": "Corey decided 2026-10-21",
+   "scope": "Accept the breach retroactively; keep hardening EPIC-00/02/03; freeze EPIC-04+ until SCR-0104 go/no-go; add a __DEV__-only spike route that bypasses auth; record in backlog + AGENTS.md \u00a75.",
+   "files": [],
+   "verify": [
+    "npm run lint",
+    "npm run typecheck"
+   ],
+   "skills": [
+    "documentation-and-adrs",
+    "incremental-implementation"
+   ],
+   "risks": "Implement exactly the decision; record it in docs.",
+   "remaining_after": "None"
+  },
+  {
+   "id": "WP-03b",
+   "jira_keys": [
+    "SCRUM-62"
+   ],
+   "backlog_keys": [],
+   "title": "Move AppState out of src/api; drop the supabase.ts lint exemption; amend mobile-arch \u00a71/\u00a75",
+   "class": "do",
+   "position_reason": "Corey decided 2026-10-21",
+   "scope": "Move AppState listener out of src/api into an app boot hook calling exported startAutoRefresh/stopAutoRefresh; amend mobile-arch \u00a75 snippet; list sanctioned src/api adapters in \u00a71.",
+   "files": [],
+   "verify": [
+    "npm run lint",
+    "npm run typecheck"
+   ],
+   "skills": [
+    "documentation-and-adrs",
+    "incremental-implementation"
+   ],
+   "risks": "Implement exactly the decision; record it in docs.",
+   "remaining_after": "None"
+  },
+  {
+   "id": "WP-05b",
+   "jira_keys": [
+    "SCRUM-31"
+   ],
+   "backlog_keys": [],
+   "title": "Amend SPEC-008 R69 per decision; category_glyph in-style; T68 per-kind property test",
+   "class": "do",
+   "position_reason": "Corey decided 2026-10-21",
+   "scope": "Amend SPEC-008 R69: point features carry exactly (id, listing_count, category, label, selected); cluster features carry (id, cluster_id, point_count); category_glyph derived in-style via a match expression. T68 asserts per feature kind.",
+   "files": [],
+   "verify": [
+    "npm run lint",
+    "npm run typecheck"
+   ],
+   "skills": [
+    "documentation-and-adrs",
+    "incremental-implementation"
+   ],
+   "risks": "Implement exactly the decision; record it in docs.",
+   "remaining_after": "None"
+  },
+  {
+   "id": "WP-12b",
+   "jira_keys": [
+    "SCRUM-18"
+   ],
+   "backlog_keys": [],
+   "title": "Amend SCR-0007 to forward-only + roll-forward rehearsal job",
+   "class": "do",
+   "position_reason": "Corey decided 2026-10-21",
+   "scope": "Forward-only migrations. Amend SCR-0007 to: forward apply on disposable DB + rehearsed roll-forward corrective migration.",
+   "files": [],
+   "verify": [
+    "npm run lint",
+    "npm run typecheck"
+   ],
+   "skills": [
+    "documentation-and-adrs",
+    "incremental-implementation"
+   ],
+   "risks": "Implement exactly the decision; record it in docs.",
+   "remaining_after": "None"
+  }
+ ],
+ "decisions": [],
+ "external": [
+  {
+   "jira_keys": [
+    "SCRUM-14"
+   ],
+   "what_corey_must_do": "Create the Expo/EAS project and token (EXPO_TOKEN secret), Apple/Google credentials. Then an agent can add eas.json with four profiles and the main-branch build workflow."
+  },
+  {
+   "jira_keys": [
+    "SCRUM-21"
+   ],
+   "what_corey_must_do": "After EAS Update channels exist (SCRUM-14), run and time a JS-only rollback rehearsal under 15 min and record it."
+  },
+  {
+   "jira_keys": [
+    "SCRUM-22"
+   ],
+   "what_corey_must_do": "Provision the Cloudflare R2 bucket plus custom tile origin and credentials (GitHub secrets). An agent can then write tile-build.yml with pinned Protomaps/pmtiles, TC-GEO-46/48/50 checks and no-overwrite upload; the build itself needs Geofabrik/Protomaps downloads outside the allowlist."
+  },
+  {
+   "jira_keys": [
+    "SCRUM-23"
+   ],
+   "what_corey_must_do": "Run MapSpikeScreen on physical iOS and Android (New Arch) dev-client builds after WP-04..WP-07; fill the SCR-0101/0101b tables and record visual parity."
+  },
+  {
+   "jira_keys": [
+    "SCRUM-27"
+   ],
+   "what_corey_must_do": "Profile pan/zoom/cluster/label collision on the reference three-year-old mid-range Android with Perfetto (GL thread) after WP-04; attach traces, TTFT and memory to the go/no-go."
+  },
+  {
+   "jira_keys": [
+    "SCRUM-29"
+   ],
+   "what_corey_must_do": "Fill the go/no-go outcome and sign-off in docs/07-review/03-map-spike-go-no-go.md; if no-go, raise ADR-0019 supersession."
+  },
+  {
+   "jira_keys": [
+    "SCRUM-39"
+   ],
+   "what_corey_must_do": "Needs a seeded hosted staging project and SCR-1210 (live scheduled sessions). Have an unfamiliar operator rehearse Runbook 14 (fixed in WP-09) and file the record."
+  },
+  {
+   "jira_keys": [
+    "SCRUM-54"
+   ],
+   "what_corey_must_do": "Needs hosting at sharecropr.app/delete-account, an email provider and EPIC-04 TOTP (SCR-0403). Once hosting exists, an agent can build the static page plus the web-delete-request Edge Function with rate limits."
+  },
+  {
+   "jira_keys": [
+    "SCRUM-59"
+   ],
+   "what_corey_must_do": "Enable leaked-password protection on the hosted Supabase project (paid-tier toggle) and record it in Environments; then run the direct-GoTrue integration test. auth.hibp_skipped emission comes with WP-38."
+  }
+ ],
+ "decided": {
+  "SCRUM-64": "Jest (jest-expo) + React Native Testing Library; Maestro stays for E2E. Amend test-strategy \u00a72 and LP-08. Execute as WP-02b.",
+  "SCRUM-62": "Move AppState listener out of src/api into an app boot hook calling exported startAutoRefresh/stopAutoRefresh; amend mobile-arch \u00a75 snippet; list sanctioned src/api adapters in \u00a71.",
+  "SCRUM-32": "Accept the breach retroactively; keep hardening EPIC-00/02/03; freeze EPIC-04+ until SCR-0104 go/no-go; add a __DEV__-only spike route that bypasses auth; record in backlog + AGENTS.md \u00a75.",
+  "SCRUM-18": "Forward-only migrations. Amend SCR-0007 to: forward apply on disposable DB + rehearsed roll-forward corrective migration.",
+  "SCRUM-31": "Amend SPEC-008 R69: point features carry exactly (id, listing_count, category, label, selected); cluster features carry (id, cluster_id, point_count); category_glyph derived in-style via a match expression. T68 asserts per feature kind."
+ }
+}

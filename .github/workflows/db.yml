@@ -1,0 +1,52 @@
+name: Database (pgTAP + RLS)
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'supabase/**'
+      - 'scripts/run-pgtap.sh'
+      - 'scripts/ci-assert-*.sh'
+      - '.github/workflows/db.yml'
+  pull_request:
+    paths:
+      - 'supabase/**'
+      - 'scripts/run-pgtap.sh'
+      - 'scripts/ci-assert-*.sh'
+      - '.github/workflows/db.yml'
+
+# One run per workflow+ref. PR runs supersede each other (only the head matters);
+# pushes to main/develop are never cancelled, because each push on develop is a
+# separately integrated package and every one of them must be verified.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  db:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start Supabase and apply migrations
+        run: supabase db reset
+
+      - name: Static CI gates
+        run: |
+          npm run ci:assert-no-private-grants
+          npm run ci:assert-negative-ratio
+          npm run ci:assert-definer-allowlist
+
+      - name: pgTAP tests
+        run: npm run db:test
+
+      - name: Stop Supabase
+        if: always()
+        run: supabase stop --no-backup || true

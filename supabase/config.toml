@@ -1,0 +1,79 @@
+# Sharecropr local Supabase configuration (SCR-0201)
+# Extension versions pinned so local matches CI and production.
+
+project_id = "sharecropr"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "app"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[db.seed]
+# Local/CI resets only. seed_harness.sql creates the `tests` schema (pgTAP helpers and
+# fixture registries) and MUST run before seed.sql, which populates it. Neither file is
+# part of any migration, so production never contains the test harness.
+sql_paths = ["./seed_harness.sql", "./seed.sql"]
+
+[db.pooler]
+enabled = false
+
+[studio]
+enabled = true
+port = 54323
+
+[inbucket]
+enabled = true
+port = 54324
+
+[storage]
+enabled = true
+
+[auth]
+enabled = true
+site_url = "http://127.0.0.1:3000"
+additional_redirect_urls = ["sharecropr://auth/callback"]
+jwt_expiry = 3600
+enable_signup = true
+# SPEC-001 R06: minimum 12 characters, no composition rules, no rotation policy.
+# (The "no maximum below 128" half of R06 and the HIBP breached-password check are not
+# expressible here: HIBP is a hosted Pro-plan toggle, and the client pre-check lives in
+# src/domain/auth/hibp.ts.)
+minimum_password_length = 12
+password_requirements = ""
+# SPEC-001 R22: rotate refresh tokens on use; 10 s reuse window absorbs two-device races,
+# reuse outside it revokes the session family.
+enable_refresh_token_rotation = true
+refresh_token_reuse_interval = 10
+
+[auth.sessions]
+# SPEC-001 R23: 30 days inactivity, 90 days absolute (not extendable by activity).
+# NOTE: hosted Supabase gates these two settings to the Pro plan.
+inactivity_timeout = "720h"
+timebox = "2160h"
+
+[auth.rate_limit]
+# SPEC-001 R18 / R30 want 3 emails per hour PER ADDRESS. The CLI config cannot express
+# a per-address count: email_sent is a project-wide hourly cap (only applies with custom
+# SMTP) and email.max_frequency below is a per-user minimum interval. Per-address
+# 3/hour must be enforced in a send_email auth hook or an Edge Function token bucket
+# (tracked against SPEC-001 T14/T23). Do NOT set email_sent to 3: it would cap the
+# whole project at 3 emails per hour.
+email_sent = 30
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+enable_confirmations = true
+# Minimum interval between emails to the same user (default). Not the R18/R30 3-per-hour
+# per-address limit; see the [auth.rate_limit] note above.
+max_frequency = "1m"
+
+[analytics]
+enabled = false

@@ -1,0 +1,17 @@
+# CODEOWNERS — see docs/05-operations/02-cicd.md §2 and RLS Design §7.
+# Last matching pattern wins. This repo is user-owned, so there are no teams;
+# "DB owner" is a person. When a second DB reviewer exists, add them to the
+# supabase lines (THR-03, ADR-0003 call for a *second* DB-tagged reviewer).
+#
+# Note: CODEOWNERS only gates merges once branch protection enables
+# "Require review from Code Owners" (not configured yet — SCRUM-11 AC1).
+
+# DB owner: migrations are the one change a new build cannot revert (CI/CD §3).
+/supabase/migrations/   @corbui317
+/supabase/seed_harness.sql @corbui317
+# Reviewed allowlist for SECURITY DEFINER readers of private (API-02, LP-02). Planned path.
+/supabase/policy/       @corbui317
+
+# The gates themselves: weakening CI or ownership is a DB-safety change.
+/.github/               @corbui317
+/scripts/ci-assert-*.sh @corbui317

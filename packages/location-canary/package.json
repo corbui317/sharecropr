@@ -1,0 +1,19 @@
+{
+  "name": "@sharecropr/location-canary",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SCR-0210: Continuous location-privacy canary (LP-10 scaffold)",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "check": "node dist/index.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.1"
+  },
+  "devDependencies": {
+    "typescript": "~6.0.3"
+  }
+}
