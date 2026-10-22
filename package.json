@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit",
     "test:auth-domain": "node --experimental-strip-types scripts/auth-domain-tests.mjs",
     "test:dependency-audit": "node --test scripts/dependency-audit.test.mjs",
+    "test:map": "node --experimental-strip-types scripts/map-tests.mjs",
     "lint": "eslint src app --max-warnings 0",
     "lint:fixtures": "node scripts/lint-fixtures.mjs",
     "postinstall": "patch-package",

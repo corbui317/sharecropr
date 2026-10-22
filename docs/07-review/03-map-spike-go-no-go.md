@@ -61,7 +61,7 @@
 | Every tile host is Sharecropr-controlled (network trace inspected) | | |
 | **ODbL attribution renders and is not obscured** in every map state | | |
 | Tile failure degrades to neutral background with markers still positioned and tappable | | |
-| Time-to-first-tile recorded | | |
+| Time-to-first-tile recorded | | See SCR-0103 → Time to first painted tile |
 | Map is pannable and tappable **before** first tile paints | | |
 
 ---
@@ -81,7 +81,54 @@
 
 ## SCR-0103 — Performance profiling
 
-Record using in-app **Record FPS** control, then **Export trace**. Attach JSON here or in `spike-traces/`.
+> **What counts as evidence.** MapLibre renders on its own GL (Android) / Metal (iOS) thread into a
+> SurfaceView / MTKView. The in-app profiler's channels — Reanimated UI-thread frames, JS-thread
+> `requestAnimationFrame`, and MapLibre frame-completion events received on the JS thread — are **not GL
+> frame times**. `dumpsys gfxinfo` is not either: it covers the hwui UI thread and excludes SurfaceView content.
+> **The SCR-0103 acceptance criteria are met only by platform traces:** Perfetto on Android, Instruments on iOS.
+> The in-app export is supporting evidence (JS-thread stalls, clustering cost, JS heap) attached alongside.
+
+### How to measure
+
+1. **Build a release build with the profiler compiled in.** Dev builds are not representative.
+   `EXPO_PUBLIC_MAP_PROFILER=1 npx expo run:android --variant release` ·
+   `EXPO_PUBLIC_MAP_PROFILER=1 npx expo run:ios --configuration Release --device`.
+   The map tab sits behind sign-in, so a reachable Supabase auth backend is required.
+2. **Confirm tiles actually load** (network trace: range requests to the tile origin succeed). If the PMTiles archive is
+   not reachable, "fully rendered" fires on failed tiles and every render number below is invalid.
+3. **Android — Perfetto.** Per gesture, a ≥ 30 s trace:
+   `adb shell perfetto -o /data/misc/perfetto-traces/map-<gesture>.perfetto-trace -t 30s sched freq gfx view input am wm`
+   then `adb pull` it and open in ui.perfetto.dev. Read the MapLibre render thread's frame slices (confirm the thread
+   name in the trace) and the SurfaceView layer's buffer cadence in SurfaceFlinger. Record p95 frame time, worst frame,
+   and frames > 32 ms. Store traces in `spike-traces/` (create it) as `android-<device>-<gesture>-<date>.perfetto-trace`.
+4. **iOS — Instruments.** *Animation Hitches* + *Metal System Trace* per gesture, ≥ 30 s; save the `.trace` alongside.
+5. **Memory (NFR-09).** After 60 s of continuous pan: `adb shell dumpsys meminfo com.sharecropr.app` → TOTAL PSS;
+   iOS: Instruments *Allocations*/*VM Tracker* or the Xcode memory gauge (physical footprint). The in-app `jsHeap`
+   channel is the JS heap only.
+6. **In-app export (supporting).** Tap **Record frames**, do the gesture for ≥ 30 s, **Stop recording**, **Export trace**.
+   Each channel reports p50/p95/p99 frame ms, frames over 32 ms, dropped frames vs 60 Hz, and per-second window fps
+   (`worstWindowFps` is the "sustained" signal). Buffers hold 120 s at 120 Hz. The export contains no coordinates.
+
+### Time to first painted tile (R73)
+
+MapLibre exposes no "first tile painted" event. The canvas records, in ms **from `MapCanvas` mount** (JS receipt time,
+so biased late by JS-thread latency):
+
+| Milestone | Event | Meaning |
+| --- | --- | --- |
+| `styleLoaded` | `onDidFinishLoadingStyle` | Style parsed and applied |
+| `firstFrame` | first `onDidFinishRenderingFrame[Fully]` after style load | **Lower bound** for first painted tile |
+| `firstFullFrame` | first `onDidFinishRenderingFrameFully` | **Upper bound**: every visible tile rendered |
+| `mapFullyRendered` | `onDidFinishRenderingMapFully` | Map idle (the metric previously mislabelled "First tile") |
+
+Run ≥ 20 cold mounts against a warm edge; report nearest-rank p95 of `firstFrame` and `firstFullFrame`.
+**Proposed** reporting rule (awaiting mobile lead confirmation; not adopted): R73 is claimed as met only if
+**`firstFullFrame` p95 < 1000 ms**; `firstFrame` alone does not show that a tile painted.
+
+| Milestone | p50 (ms) | p95 (ms) | Runs | Pass (< 1000 ms p95)? |
+| --- | --- | --- | --- | --- |
+| `firstFrame` (lower bound) | | | | n/a |
+| `firstFullFrame` (upper bound) | | | | |
 
 | Metric | Budget (NFR-03 / EPIC-01 AC) | Measured | Pass? |
 | --- | --- | --- | --- |
@@ -91,11 +138,12 @@ Record using in-app **Record FPS** control, then **Export trace**. Attach JSON h
 | Max frame time | ≤ 32 ms (no frame > 32 ms per SPEC-008 R53) | | |
 | Memory steady state | < 250 MB (NFR-09) | | |
 | Cluster recompute (integer zoom step) | < 8 ms | | |
+| Time to first painted tile, from canvas mount (SPEC-008 R73) | p95 < 1.0 s | | |
 
 ### Profiler traces
 
 ```
-Paste exported JSON or link to spike-traces/ file:
+Link the Perfetto / Instruments traces in spike-traces/ and paste the in-app export JSON:
 ```
 
 ---

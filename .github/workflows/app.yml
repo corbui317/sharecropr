@@ -54,3 +54,6 @@ jobs:
 
       - name: Unit — dependency audit script
         run: npm run test:dependency-audit
+
+      - name: Unit — map
+        run: npm run test:map
