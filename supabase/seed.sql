@@ -47,7 +47,17 @@ INSERT INTO auth.users (
    '{"provider":"email","providers":["email"]}', '{"display_name":"Canary B"}', now(), now()),
   ('33333333-3333-3333-3333-333333333301', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
    'reviewer@sharecropr.app', crypt('testpassword12', gen_salt('bf')), now(),
-   '{"provider":"email","providers":["email"]}', '{"display_name":"App Reviewer"}', now(), now())
+   '{"provider":"email","providers":["email"]}', '{"display_name":"App Reviewer"}', now(), now()),
+  ('44444444-4444-4444-4444-444444444401', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+   'mfa@test.local', crypt('testpassword12', gen_salt('bf')), now(),
+   '{"provider":"email","providers":["email"]}', '{"display_name":"MFA Enrolled"}', now(), now())
+ON CONFLICT (id) DO NOTHING;
+
+-- Fixture user with a VERIFIED TOTP factor (step-up path, SPEC-001 T28/T34).
+-- The secret is a placeholder; no test authenticates against it.
+INSERT INTO auth.mfa_factors (id, user_id, friendly_name, factor_type, status, secret, created_at, updated_at)
+VALUES ('44444444-4444-4444-4444-4444444444f1', '44444444-4444-4444-4444-444444444401',
+        'fixture totp', 'totp', 'verified', 'FIXTURE-NOT-A-REAL-SECRET', now(), now())
 ON CONFLICT (id) DO NOTHING;
 
 -- Profiles created by handle_new_user trigger; patch verification/garden states
@@ -130,7 +140,8 @@ INSERT INTO tests.fixtures_users (handle, id, staff_role) VALUES
   ('deleted', '11111111-1111-1111-1111-11111111110b', 'authenticated'),
   ('canary_a', '22222222-2222-2222-2222-222222222201', 'authenticated'),
   ('canary_b', '22222222-2222-2222-2222-222222222202', 'authenticated'),
-  ('reviewer', '33333333-3333-3333-3333-333333333301', 'authenticated')
+  ('reviewer', '33333333-3333-3333-3333-333333333301', 'authenticated'),
+  ('mfa', '44444444-4444-4444-4444-444444444401', 'authenticated')
 ON CONFLICT DO NOTHING;
 
 INSERT INTO private.review_bypass_accounts (user_id, reason, expires_at)
@@ -149,5 +160,15 @@ INSERT INTO tests.fixtures_named (name, id) VALUES
   ('canary_a_garden', 'cccccccc-cccc-cccc-cccc-ccccccccccc1'),
   ('canary_b_garden', 'cccccccc-cccc-cccc-cccc-ccccccccccc2'),
   ('blocker', '11111111-1111-1111-1111-111111111107'),
-  ('blocked', '11111111-1111-1111-1111-111111111108')
+  ('blocked', '11111111-1111-1111-1111-111111111108'),
+  ('unverified', '11111111-1111-1111-1111-111111111104'),
+  ('no_garden', '11111111-1111-1111-1111-111111111105'),
+  ('suspended', '11111111-1111-1111-1111-111111111106'),
+  ('moderator', '11111111-1111-1111-1111-111111111109'),
+  ('admin', '11111111-1111-1111-1111-11111111110a'),
+  ('deleted', '11111111-1111-1111-1111-11111111110b'),
+  ('canary_a', '22222222-2222-2222-2222-222222222201'),
+  ('canary_b', '22222222-2222-2222-2222-222222222202'),
+  ('reviewer', '33333333-3333-3333-3333-333333333301'),
+  ('mfa', '44444444-4444-4444-4444-444444444401')
 ON CONFLICT DO NOTHING;

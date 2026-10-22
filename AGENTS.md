@@ -135,10 +135,7 @@ Both Claude Code and Cursor read this file. Neither can see the other's chat his
 
 **Session-scoped notes go in `docs/07-review/`, not here.** This file is loaded into every agent session in both tools; it earns its size back only if everything in it is durable.
 
-### Decision log
-
-Newest first. `[YYYY-MM-DD] [tool] fact — link.`
-
+- `[2026-10-21] [claude] Client privileges on public tables are revoke-then-grant (a column REVOKE is a no-op under Supabase's default table grants); new public tables start with no client grants. Other users' profiles are readable via profiles_select_visible, so every column granted on profiles is public to visible users; owner-only columns come from get_my_profile(). Client-callable app helpers are caller-scoped (can_transact(), is_blocked_with(other)) because the app schema is PostgREST-exposed. Step-up is AAL2 only when a factor is enrolled. The pgTAP harness lives in supabase/seed_harness.sql, not a migration — [ADR-0022](docs/01-architecture/adr/ADR-0022-profiles-other-user-reads.md).`
 - `[2026-10-21] [claude] N-15 resolved: `composted` is an inventory_status value only and is not in the archive_reason vocabulary — SPEC-006 v1.1.0 Q3.`
 - `[2026-10-21] [claude] Docs claimed CI gates that did not exist. Added .github/workflows/app.yml (bridge, lint, typecheck, auth unit); everything else in CI/CD §2 is labelled planned. Treat any "CI enforces" claim as unverified until you find the workflow step.`
 - `[2026-08-10] [cursor] EPIC-01 spike ported to MapLibre: MapCanvas is the sole @maplibre/* import site; supercluster client-side (R70); Camera center+zoom; GPU GeoJSON layers; OsmAttribution; style JSON + tile-build scaffold. Prior react-native-maps spike invalidated — re-run go/no-go on device.`

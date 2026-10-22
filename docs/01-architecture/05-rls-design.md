@@ -1,6 +1,6 @@
 # Row-Level Security Design
 
-**Status:** Review · **Version:** 1.0.0 · **Owner:** Architecture + Security
+**Status:** Review · **Version:** 1.1.0 · **Owner:** Architecture + Security
 **Security review:** required for any change.
 
 RLS *is* the authorization layer in Sharecropr. There is no service tier that could enforce access control instead, which means a missing or wrong policy is a data breach with no error, no crash, and no alert. This document defines the patterns, the helper functions, the performance traps, and the proof obligations.
@@ -50,17 +50,23 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog AS $$
     false);
 $$;
 
--- Either direction. Used everywhere content could be seen by the wrong person.
-CREATE OR REPLACE FUNCTION app.is_blocked_either_way(a uuid, b uuid) RETURNS boolean
+-- Is the caller blocked with `other`, in either direction? Caller-scoped: it can only
+-- answer about auth.uid() vs `other`, so it is safe to expose. This is the form policies use.
+CREATE OR REPLACE FUNCTION app.is_blocked_with(other uuid) RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public AS $$
   SELECT EXISTS (
-    SELECT 1 FROM public.blocks
-     WHERE (blocker_id = a AND blocked_id = b)
-        OR (blocker_id = b AND blocked_id = a));
+    SELECT 1 FROM public.blocks b
+     WHERE (b.blocker_id = auth.uid() AND b.blocked_id = other)
+        OR (b.blocker_id = other AND b.blocked_id = auth.uid()));
 $$;
+-- app.is_blocked_either_way(a uuid, b uuid) remains as a definer-internal two-argument form
+-- with NO client grant: a client-callable two-argument form lets any user probe whether two
+-- other users are blocked.
 
--- Can the caller transact? Verified, not suspended, garden verified.
-CREATE OR REPLACE FUNCTION app.can_transact(u uuid DEFAULT auth.uid()) RETURNS boolean
+-- Can the caller transact? Verified, not suspended, garden verified. No parameter: a
+-- client-callable `can_transact(u)` would let any user query any other user's state.
+-- app.can_transact_for(u uuid) is the ungranted, definer-internal form.
+CREATE OR REPLACE FUNCTION app.can_transact_for(u uuid) RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, private AS $$
   SELECT EXISTS (
     SELECT 1
@@ -74,6 +80,11 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, priva
                         WHERE r.user_id = u AND r.expires_at > now()))
        AND EXISTS (SELECT 1 FROM public.gardens g
                     WHERE g.owner_id = u AND g.status = 'verified' AND g.deleted_at IS NULL));
+$$;
+
+CREATE OR REPLACE FUNCTION app.can_transact() RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, private, app AS $$
+  SELECT app.can_transact_for(auth.uid());
 $$;
 
 -- Is the caller a participant in this exchange?
@@ -99,9 +110,16 @@ Grants are explicit and minimal:
 
 ```sql
 REVOKE ALL ON ALL FUNCTIONS IN SCHEMA app FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION app.is_blocked_either_way(uuid,uuid) TO authenticated;
-GRANT EXECUTE ON FUNCTION app.can_transact(uuid)               TO authenticated;
--- app.derive_display_point is deliberately NOT granted to anyone.
+GRANT EXECUTE ON FUNCTION app.is_blocked_with(uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION app.can_transact()        TO authenticated;
+-- Policies run as the invoker, and EXECUTE is checked when a policy expression is
+-- initialised, so every helper a policy calls needs this grant. is_moderator only reads
+-- the caller's own JWT.
+GRANT EXECUTE ON FUNCTION app.is_moderator()        TO authenticated;
+-- NOT granted: is_blocked_either_way(uuid,uuid), can_transact_for(uuid),
+-- idempotency_probe/record, require_aal2_if_enrolled, derive_display_point. The `app` schema
+-- is exposed by PostgREST, so every EXECUTE grant above is a public RPC; anything that
+-- takes a user id, or is only called from SECURITY DEFINER RPCs, stays ungranted.
 ```
 
 > **Why `SECURITY DEFINER` helpers instead of inline subqueries?** Two reasons. First, `blocks` itself has RLS, so an inline subquery against it from another table's policy would be filtered by *that* table's policy and silently return the wrong answer. A definer function sees the raw table. Second, one function called once beats the same three-way join pasted into eleven policies and drifting.
@@ -110,36 +128,57 @@ GRANT EXECUTE ON FUNCTION app.can_transact(uuid)               TO authenticated;
 
 ## 4. The column-privacy problem
 
-RLS is row-level. `profiles.trust_score` and `cancellation_count_90d` must be visible to the user themselves and to moderators, but never to other users — and a row-level policy cannot express that.
+RLS is row-level. `profiles.trust_score` and `cancellation_count_90d` must never be visible to other users, and a row-level policy cannot express that. Decision record: [ADR-0022](adr/ADR-0022-profiles-other-user-reads.md).
 
-Two mechanisms, used together:
-
-**1. Column-level `REVOKE`:**
+> **A column-level `REVOKE` does nothing while a table-level grant exists.** Supabase default privileges grant `ALL` on `public` tables to `anon` and `authenticated`, so `REVOKE SELECT (trust_score) ON public.profiles FROM authenticated` is a silent no-op. The same grant lets any user `PATCH` their own `is_suspended`, `trust_tier`, or a garden's `status`. The pattern is therefore **revoke the table, grant the columns**:
 
 ```sql
-REVOKE SELECT (trust_score, cancellation_count_90d, home_h3_r7, is_suspended)
-  ON public.profiles FROM authenticated;
+REVOKE ALL ON public.profiles FROM PUBLIC, anon, authenticated;
+
+GRANT SELECT (id, handle, display_name, avatar_path, bio, city_label, trust_tier,
+              rating_avg, rating_count, completed_exchanges, created_at)
+  ON public.profiles TO authenticated;
+GRANT UPDATE (display_name, avatar_path, bio, locale, timezone, onboarding_completed_at)
+  ON public.profiles TO authenticated;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM anon, authenticated;
 ```
 
-**2. A `security_invoker` view for the other-user case:**
+Rows and columns are then decided separately:
 
 ```sql
-CREATE VIEW public.profile_cards
+-- Own row (including during deletion grace)
+CREATE POLICY profiles_select_own ON public.profiles
+  FOR SELECT TO authenticated USING (id = (SELECT auth.uid()));
+
+-- Other users' rows: live, not suspended, not blocked either way.
+CREATE POLICY profiles_select_visible ON public.profiles
+  FOR SELECT TO authenticated
+  USING (deleted_at IS NULL AND is_suspended = false AND NOT app.is_blocked_with(id));
+```
+
+**Every column granted `SELECT` is visible for every other visible user's row** — through `profiles` and through `profile_cards` alike. Adding a column to that grant is a privacy decision.
+
+Owner-only columns (`locale`, `timezone`, `onboarding_completed_at`, `deleted_at`, `is_suspended`, `suspended_until`) are read through a no-argument definer RPC, `public.get_my_profile()`. `trust_score`, `cancellation_count_90d`, and `home_h3_r7` are returned to no client ([SPEC-012-R48](../03-specs/SPEC-012-trust-and-safety.md)).
+
+`public.profile_cards` remains a `security_invoker` projection:
+
+```sql
+CREATE OR REPLACE VIEW public.profile_cards
 WITH (security_invoker = on) AS
 SELECT p.id, p.handle, p.display_name, p.avatar_path, p.bio,
        p.city_label, p.trust_tier, p.rating_avg, p.rating_count,
        p.completed_exchanges, p.created_at
   FROM public.profiles p
- WHERE p.deleted_at IS NULL
-   AND p.is_suspended = false
-   AND NOT app.is_blocked_either_way(auth.uid(), p.id);
+ WHERE NOT app.is_blocked_with(p.id);
 
+REVOKE ALL ON public.profile_cards FROM PUBLIC, anon, authenticated;
 GRANT SELECT ON public.profile_cards TO authenticated;
 ```
 
-> `security_invoker = on` is essential. Without it the view runs as its owner and **bypasses RLS on `profiles` entirely** — a classic Postgres footgun that has caused real breaches. It is checked by a pgTAP assertion on every view in `public`.
+> `security_invoker = on` is essential. Without it the view runs as its owner and **bypasses RLS on `profiles` entirely**. It is checked by a pgTAP assertion on every view in `public`. Because an invoker view needs `SELECT` on every column it references, it cannot reference `is_suspended` or `deleted_at`; those filters live in `profiles_select_visible`.
 
-The client reads its own profile from `profiles` and everyone else's from `profile_cards`. Two different shapes, deliberately.
+Clients must name their columns: `SELECT *` on `profiles` or `gardens` fails with `42501` because some columns are not granted. The same revoke-then-grant pattern applies to `gardens` (`h3_r9` unreadable; `status` and derived columns RPC-only), `verifications` (read-only), and `blocks` (select + insert).
 
 ---
 
@@ -199,14 +238,15 @@ CREATE POLICY requests_select_participant ON public.exchange_requests
   FOR SELECT TO authenticated
   USING (
     (SELECT auth.uid()) IN (requester_id, owner_id)
-    AND NOT app.is_blocked_either_way(requester_id, owner_id));
+    AND NOT app.is_blocked_with(
+      CASE WHEN requester_id = (SELECT auth.uid()) THEN owner_id ELSE requester_id END));
 
 CREATE POLICY requests_insert_requester ON public.exchange_requests
   FOR INSERT TO authenticated
   WITH CHECK (
     requester_id = (SELECT auth.uid())
     AND app.can_transact()
-    AND NOT app.is_blocked_either_way((SELECT auth.uid()), owner_id)
+    AND NOT app.is_blocked_with(owner_id)
     AND EXISTS (SELECT 1 FROM public.listings l
                  WHERE l.id = listing_id
                    AND l.status = 'active'
@@ -231,7 +271,7 @@ CREATE POLICY listings_select_discoverable ON public.listings
     OR (
       status IN ('active','reserved')
       AND expires_at > now()
-      AND NOT app.is_blocked_either_way((SELECT auth.uid()), owner_id)
+      AND NOT app.is_blocked_with(owner_id)
       AND EXISTS (SELECT 1 FROM public.profiles p
                    WHERE p.id = owner_id
                      AND p.is_suspended = false
@@ -284,8 +324,8 @@ Blocking is not a UI filter. When A blocks B:
 | Surface | Effect | Enforced by |
 | --- | --- | --- |
 | Listings | B's listings vanish from A's queries and vice versa | `listings_select_discoverable` |
-| Safe-spot counts | B's listings don't contribute to counts A sees | `NOT app.is_blocked_either_way` inside `safe_spots_near` |
-| Profiles | Neither can load the other's `profile_cards` row | View predicate |
+| Safe-spot counts | B's listings don't contribute to counts A sees | `NOT app.is_blocked_with` inside `safe_spots_near` |
+| Profiles | Neither can load the other's `profiles` / `profile_cards` row | `profiles_select_visible` policy + view predicate |
 | Messages | Thread `is_closed = true`; `app.is_thread_participant` returns false | Trigger + policy |
 | In-flight exchange | Cancelled with reason `blocked`, both notified | `on_block_created` trigger |
 | New requests | Insert fails the `WITH CHECK` | `requests_insert_requester` |
@@ -422,3 +462,4 @@ Every table needs all of these before it can ship. Full matrix in [RLS Test Plan
 | Date | Version | Author | Change |
 | --- | --- | --- | --- |
 | 2026-08-08 | 1.0.0 | Architecture + Security | Initial RLS design |
+| 2026-10-21 | 1.1.0 | Architecture + Security | §3: caller-scoped `is_blocked_with()` / `can_transact()`, two-argument forms made internal, `is_moderator` grant explained. §4 rewritten: revoke-then-grant column privileges, `profiles_select_visible`, `get_my_profile()` ([ADR-0022](adr/ADR-0022-profiles-other-user-reads.md)) |

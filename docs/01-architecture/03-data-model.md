@@ -1,6 +1,6 @@
 # Data Model
 
-**Status:** Review · **Version:** 1.1.0 · **Owner:** Architecture
+**Status:** Review · **Version:** 1.3.0 · **Owner:** Architecture
 
 This document is **authoritative for the schema**. Specs reference it; they never redefine types. Every table listed here has a corresponding migration under `supabase/migrations/`, RLS policies in [RLS Design](05-rls-design.md), and pgTAP tests in [RLS Test Plan](../04-testing/02-rls-test-plan.md).
 
@@ -142,7 +142,7 @@ CREATE INDEX profiles_home_h3_r7_idx  ON public.profiles (home_h3_r7) WHERE dele
 CREATE INDEX profiles_trust_tier_idx  ON public.profiles (trust_tier);
 ```
 
-> **Column-level protection.** `trust_score` and `cancellation_count_90d` are internal. Because Postgres RLS is row-level, not column-level, these are protected by revoking column `SELECT` from `authenticated` and exposing profiles to *other* users through the `public.profile_cards` view instead. See [RLS Design §4](05-rls-design.md).
+> **Column-level protection.** Postgres ignores a column-level `REVOKE` while a table-level grant exists, so `profiles` is protected by *revoking the table grant and granting columns*: only card-safe columns are `SELECT`able by `authenticated`, and only presentation columns are `UPDATE`able. Because other users' rows are readable (`profiles_select_visible`), every granted column is visible for every visible user. Owner-only columns are read through `public.get_my_profile()`; `trust_score`, `cancellation_count_90d`, and `home_h3_r7` are returned to no client. See [RLS Design §4](05-rls-design.md) and [ADR-0022](adr/ADR-0022-profiles-other-user-reads.md).
 
 ### `public.verifications`
 
@@ -801,3 +801,4 @@ Full policy and DSAR handling: [Privacy & Data Retention](../02-security/04-priv
 | 2026-08-08 | 1.0.0 | Architecture | Initial data model |
 | 2026-08-09 | 1.1.0 | Architecture | Workflow-architect review fixes ([review](../07-review/01-workflow-architect-review.md)). §10: added `listings_reservation_coherent` so `status` and `reserved_request_id` cannot drift apart, and a comment pinning `listings_single_reservation` to its only correct form. §14: retention entry for `private.idempotency_keys` |
 | 2026-08-09 | 1.2.0 | Architecture | `exchange_sessions.handoff_code` is now `bytea`, encrypted at rest ([Exchange State Machine §3.3](07-exchange-state-machine.md)), with `SELECT` revoked from `authenticated`. Added `no_show_contested_by` / `no_show_contested_at` for SPEC-010 R64a |
+| 2026-10-21 | 1.3.0 | Architecture | §5 column-protection note rewritten for revoke-then-grant privileges ([ADR-0022](adr/ADR-0022-profiles-other-user-reads.md)); client grants on `profiles`, `gardens`, `verifications`, `blocks` are explicit column lists |
