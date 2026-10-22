@@ -1,6 +1,6 @@
 # Environments
 
-**Status:** Approved · **Version:** 1.1.3 · **Owner:** Platform Engineering
+**Status:** Approved · **Version:** 1.2.0 · **Owner:** Platform Engineering
 
 ---
 
@@ -109,7 +109,7 @@ Restore is rehearsed quarterly against staging. A restore procedure that has nev
 | Feature flags | Database table, cached client-side | Server-controlled, changeable without a release |
 | Basemap style URL | `app.config.ts` per EAS profile | Points at one explicit dated archive (§11). Public by design — it addresses an unauthenticated public bucket |
 | R2 write credential (tile bucket) | GitHub Actions secrets, tile-build workflow only | Write is CI-only. **No runtime component holds it**, and nothing in the app has any credential for the tile origin at all |
-| `handoff_code_key` (Vault) | Supabase Vault in each project; provisioned by migration `20260822000006_vault_handoff_key.sql` locally | **Symmetric key for `pgp_sym_encrypt` on `exchange_sessions.handoff_code`.** Readable only by `service_role` and `SECURITY DEFINER` RPCs (`get_handoff_code`, `accept_exchange_request`). **Custody:** Platform Engineering + Security (two-person) for production rotation per [Runbook 14](05-runbooks.md). Local dev uses a documented placeholder — never reuse in staging/production. Client and `authenticated` roles cannot call `vault.get_secret`. |
+| `handoff_code_key` (Vault) | Supabase Vault in each project; provisioned locally by `supabase/seed.sql` (placeholder, never in a migration); hosted projects via the custody procedure. Read only through `private.get_handoff_key()` (definer, no client EXECUTE, fails closed) | **Symmetric key for `pgp_sym_encrypt` on `exchange_sessions.handoff_code`.** Readable only by `service_role` and `SECURITY DEFINER` RPCs (`get_handoff_code`, `accept_exchange_request`). **Custody:** Platform Engineering + Security (two-person) for production rotation per [Runbook 14](05-runbooks.md). Local dev uses a documented placeholder — never reuse in staging/production. Client and `authenticated` roles cannot call `private.get_handoff_key()` or read `vault.decrypted_secrets`. |
 
 Rotation: quarterly for service keys, immediately on any suspected exposure, and on any personnel change with access.
 
@@ -254,3 +254,4 @@ Only the production function has the Overpass host on its egress allowlist ([SPE
 | 2026-10-21 | 1.1.1 | Platform Engineering | §2 corrected: removed `npm run seed:local` (never existed); local setup is `npm run db:start` + `npm run db:reset`, whose seed is the pgTAP fixture set. §7's `packages/seed` is marked planned. (SCR-0001) |
 | 2026-10-22 | 1.1.2 | Platform Engineering | Migration filename updated to 14-digit version (SCR-0201) |
 | 2026-10-22 | 1.1.3 | Platform Engineering | H3 removed; renamed to location tiers per [ADR-0023](../01-architecture/adr/ADR-0023-postgis-location-tiers.md). Local stack no longer lists h3. |
+| 2026-10-22 | 1.2.0 | Platform Engineering | §6 handoff_code_key: placeholder moved from migration 000006 to `supabase/seed.sql`; read path is `private.get_handoff_key()` (SCR-0208). |

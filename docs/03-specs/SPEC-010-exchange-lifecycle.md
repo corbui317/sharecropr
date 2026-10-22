@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | **Status** | Review |
-| **Version** | 1.2.0 |
+| **Version** | 1.2.1 |
 | **Owner** | Backend Engineering |
 | **Phase** | MVP |
 | **Security review** | required |
@@ -355,7 +355,7 @@ CREATE INDEX sessions_request_idx ON public.exchange_sessions (request_id);
 ------------------------------------------------------------------------
 ALTER TABLE public.exchange_sessions
   ALTER COLUMN handoff_code TYPE bytea
-  USING pgp_sym_encrypt(handoff_code::text, vault.get_secret('handoff_code_key'));
+  USING pgp_sym_encrypt(handoff_code::text, private.get_handoff_key());
 
 REVOKE SELECT (handoff_code) ON public.exchange_sessions FROM authenticated;
 
@@ -376,7 +376,7 @@ BEGIN
   VALUES (auth.uid(), 'authenticated', 'exchange.code_read', 'session', p_session_id);
 
   RETURN QUERY SELECT pgp_sym_decrypt(v_s.handoff_code,
-                        vault.get_secret('handoff_code_key'))::text;
+                        private.get_handoff_key())::text;
 END; $$;
 
 REVOKE ALL ON FUNCTION public.get_handoff_code(uuid) FROM PUBLIC, anon;
@@ -533,7 +533,7 @@ BEGIN
   -- R30/R54: decrypt, then compare in constant time. The decrypt runs on every
   -- attempt, right and wrong alike, so it leaks nothing the comparison doesn't.
   IF NOT app.digest_equals(
-       pgp_sym_decrypt(v_s.handoff_code, vault.get_secret('handoff_code_key'))::text,
+       pgp_sym_decrypt(v_s.handoff_code, private.get_handoff_key())::text,
        p_code) THEN
     UPDATE public.exchange_sessions
        SET handoff_attempts          = handoff_attempts + 1,
@@ -1418,3 +1418,4 @@ Exact strings.
 | 2026-08-08 | 1.0.0 | Backend Engineering | Initial spec |
 | 2026-08-09 | 1.1.0 | Backend Engineering | Workflow-architect review fixes ([review](../07-review/01-workflow-architect-review.md)). **R49a is the important one**: `confirm_handoff` now returns failures instead of raising them, because a `RAISE` rolled back the very counter the brute-force lockout depends on — the control did not exist at runtime. R67/R68a–d: four edges into `disputed` (a `scheduled` session was unfreezable), two moderator edges out, and a release path so a dispute stops orphaning its listing and inventory item forever. R71: index corrected to `(reserved_request_id)`; the `(id)` form was a no-op. R42a: `confirm_handoff` exempted from the version guard, which silently defeated H4. R30a: rejection sampling — the old generator would not compile and was 6.25% biased. R80/R80a: real key-based idempotency. R26a, R63a–b, R64 buffer, R79a. Tests T24a, T29a, T35a–c, T49a–c, T60a–b added; T24, T30, T31, T35, T49, T54, T55, T59, T60 rewritten to assert the fixed behaviour |
 | 2026-08-09 | 1.2.0 | Backend Engineering | Applied the three deferred review suggestions after a product/security decision. **R30/R45/R54:** the handoff code is encrypted at rest and read only through the audited `rpc.get_handoff_code` — encrypted rather than hashed, because both parties must be able to *read* it at the meeting. **R64a–d:** a no-show marker is now contestable in one tap; attribution clears, the session stays terminal, and the contest itself is a trust signal rather than a hard clear — EC-22's person-with-no-signal finally has an answer. **§5.10 / R87–R91:** Q7 closed in favour of dual confirmation, with `dual_with_fallback` written, tested, and disabled, and the switching threshold committed in advance so it cannot be argued into existence after the data lands. Tests T48a–b, T73a–c |
+| 2026-10-22 | 1.2.1 | Backend Engineering | Handoff key is read through `private.get_handoff_key()` (SCR-0208). |
