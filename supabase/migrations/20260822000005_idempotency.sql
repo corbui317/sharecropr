@@ -34,7 +34,7 @@ BEGIN
    WHERE user_id = p_user AND key = p_key;
   IF NOT FOUND THEN RETURN NULL; END IF;
   IF v_row.rpc_name <> p_rpc
-     OR v_row.args_hash <> digest(p_args::text, 'sha256') THEN
+     OR v_row.args_hash <> extensions.digest(p_args::text, 'sha256') THEN
     RAISE EXCEPTION 'idempotency_conflict' USING ERRCODE = 'P0001';
   END IF;
   RETURN v_row.result;
@@ -45,7 +45,7 @@ CREATE OR REPLACE FUNCTION app.idempotency_record(
 ) RETURNS void
 LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, private, public AS $$
   INSERT INTO private.idempotency_keys (user_id, key, rpc_name, args_hash, result)
-  VALUES (p_user, p_key, p_rpc, digest(p_args::text, 'sha256'), p_result)
+  VALUES (p_user, p_key, p_rpc, extensions.digest(p_args::text, 'sha256'), p_result)
   ON CONFLICT (user_id, key) DO NOTHING;
 $$;
 
