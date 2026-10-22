@@ -6,6 +6,8 @@ import { AuthButton } from '@/features/auth/components/AuthButton';
 import { AuthScreenShell } from '@/features/auth/components/AuthScreenShell';
 import { AuthTextField } from '@/features/auth/components/AuthTextField';
 import { useAuthSession } from '@/features/auth/hooks/useAuthSession';
+import { normalizeEmail } from '@/domain/validation/email';
+import { useIntentKey } from '@/features/auth/hooks/useIntentKey';
 import { requestEmailChange, updatePassword } from '@/features/auth/lib/auth-service';
 import { authCopy } from '@/features/auth/lib/copy';
 import { routes } from '@/features/auth/lib/routes';
@@ -13,6 +15,7 @@ import { routes } from '@/features/auth/lib/routes';
 export function SecuritySettingsScreen() {
   const { user } = useAuthSession();
   const [newEmail, setNewEmail] = useState('');
+  const emailIntent = useIntentKey(normalizeEmail(newEmail));
   const [newPassword, setNewPassword] = useState('');
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -22,7 +25,7 @@ export function SecuritySettingsScreen() {
     setError(null);
     setMessage(null);
     setLoading('email');
-    const result = await requestEmailChange(newEmail);
+    const result = await requestEmailChange(newEmail, emailIntent.key);
     setLoading(null);
     if ('error' in result && result.error) {
       setError(authCopy.aal2Required);
@@ -32,6 +35,7 @@ export function SecuritySettingsScreen() {
       setError(authCopy.aal2Required);
       return;
     }
+    emailIntent.renew();
     setMessage(`Confirmation sent to ${newEmail}. Your current address stays active until you confirm.`);
   };
 

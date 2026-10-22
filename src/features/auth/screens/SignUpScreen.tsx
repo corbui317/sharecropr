@@ -7,9 +7,10 @@ import { AuthScreenShell } from '@/features/auth/components/AuthScreenShell';
 import { AuthTextField } from '@/features/auth/components/AuthTextField';
 import { ProviderButtons } from '@/features/auth/components/ProviderButtons';
 import { useIsOffline } from '@/features/auth/hooks/useIsOffline';
+import { normalizeEmail } from '@/domain/validation/email';
 import { signUpWithEmail } from '@/features/auth/lib/auth-service';
 import { authCopy } from '@/features/auth/lib/copy';
-import { routes } from '@/features/auth/lib/routes';
+import { verifyEmailHref, routes } from '@/features/auth/lib/routes';
 import { signInWithApple, signInWithGoogle } from '@/features/auth/lib/oauth';
 
 export function SignUpScreen() {
@@ -43,20 +44,25 @@ export function SignUpScreen() {
       setFieldError(authCopy.passwordBreached);
       return;
     }
+    if (result.error === 'network') {
+      setFieldError(authCopy.network);
+      return;
+    }
     if (result.error) {
       setFieldError('Something went wrong. Try again.');
       return;
     }
 
-    router.replace(routes.verifyEmail);
+    router.replace(verifyEmailHref(normalizeEmail(email)));
   };
 
   const handleProvider = async (provider: 'apple' | 'google') => {
     setFieldError(null);
     setLoadingProvider(provider);
     const fn = provider === 'apple' ? signInWithApple : signInWithGoogle;
-    const { error } = await fn();
+    const { error, cancelled } = await fn();
     setLoadingProvider(null);
+    if (cancelled) return;
     if (error) {
       setFieldError(authCopy.providerFailed(provider === 'apple' ? 'Apple' : 'Google'));
       return;

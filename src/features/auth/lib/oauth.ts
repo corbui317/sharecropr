@@ -14,7 +14,16 @@ const redirectTo = makeRedirectUri({
 
 export type OAuthProvider = 'apple' | 'google';
 
-export async function signInWithApple(): Promise<{ error: Error | null }> {
+export type OAuthResult = { error: Error | null; cancelled?: boolean };
+
+// expo-modules CodedError: the code is on .code; the message is 'The user canceled the authorization attempt'.
+function isUserCancel(err: unknown): boolean {
+  return (
+    typeof err === 'object' && err !== null && (err as { code?: unknown }).code === 'ERR_REQUEST_CANCELED'
+  );
+}
+
+export async function signInWithApple(): Promise<OAuthResult> {
   if (Platform.OS !== 'ios') {
     return signInWithOAuth('apple');
   }
@@ -53,18 +62,16 @@ export async function signInWithApple(): Promise<{ error: Error | null }> {
 
     return { error: null };
   } catch (err) {
-    if (err instanceof Error && err.message.includes('ERR_REQUEST_CANCELED')) {
-      return { error: null };
-    }
+    if (isUserCancel(err)) return { error: null, cancelled: true };
     return { error: err instanceof Error ? err : new Error('apple_sign_in_failed') };
   }
 }
 
-export async function signInWithGoogle(): Promise<{ error: Error | null }> {
+export async function signInWithGoogle(): Promise<OAuthResult> {
   return signInWithOAuth('google');
 }
 
-async function signInWithOAuth(provider: OAuthProvider): Promise<{ error: Error | null }> {
+async function signInWithOAuth(provider: OAuthProvider): Promise<OAuthResult> {
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider,
     options: {
@@ -79,7 +86,7 @@ async function signInWithOAuth(provider: OAuthProvider): Promise<{ error: Error 
 
   const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
   if (result.type !== 'success' || !result.url) {
-    return { error: null };
+    return { error: null, cancelled: true };
   }
 
   const url = new URL(result.url);

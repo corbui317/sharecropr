@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, Redirect, router } from 'expo-router';
+import { Link, Redirect, router, useLocalSearchParams } from 'expo-router';
 import { StyleSheet, Text } from 'react-native';
 
 import { AuthButton } from '@/features/auth/components/AuthButton';
 import { AuthScreenShell } from '@/features/auth/components/AuthScreenShell';
+import { BootSplash } from '@/features/auth/components/BootSplash';
 import { useAuthSession } from '@/features/auth/hooks/useAuthSession';
 import { resendVerificationEmail, signOut } from '@/features/auth/lib/auth-service';
 import { authCopy, formatMmSs } from '@/features/auth/lib/copy';
@@ -13,7 +14,8 @@ const RESEND_COOLDOWN_SEC = 3600;
 
 export function VerifyEmailScreen() {
   const { user, status, isEmailVerified } = useAuthSession();
-  const email = user?.email ?? '';
+  const params = useLocalSearchParams<{ email?: string }>();
+  const email = user?.email ?? (typeof params.email === 'string' ? params.email : '');
   const [cooldown, setCooldown] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -31,8 +33,12 @@ export function VerifyEmailScreen() {
     const { error: resendError } = await resendVerificationEmail(email);
     setLoading(false);
     if (resendError) {
-      if (resendError.message.toLowerCase().includes('rate')) {
+      if (resendError === 'rate_limited') {
         setCooldown(RESEND_COOLDOWN_SEC);
+        return;
+      }
+      if (resendError === 'network') {
+        setError(authCopy.network);
         return;
       }
       setError('Could not resend right now. Try again shortly.');
@@ -41,9 +47,9 @@ export function VerifyEmailScreen() {
     setCooldown(RESEND_COOLDOWN_SEC);
   }, [cooldown, email]);
 
-  if (status === 'loading') return null;
-  if (!user) return <Redirect href={routes.signIn} />;
-  if (isEmailVerified) return <Redirect href={routes.map} />;
+  if (status === 'loading') return <BootSplash />;
+  if (!user && !email) return <Redirect href={routes.signIn} />;
+  if (user && isEmailVerified) return <Redirect href={routes.map} />;
 
   return (
     <AuthScreenShell
@@ -63,9 +69,13 @@ export function VerifyEmailScreen() {
             Wrong address? Start over
           </Link>
           <AuthButton
-            label="Sign out"
+            label={user ? authCopy.signOut : authCopy.backToSignIn}
             onPress={() => {
-              void signOut().then(() => router.replace(routes.signIn));
+              if (user) {
+                void signOut().then(() => router.replace(routes.signIn));
+              } else {
+                router.replace(routes.signIn);
+              }
             }}
             variant="secondary"
           />

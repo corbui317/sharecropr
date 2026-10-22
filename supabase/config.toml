@@ -38,7 +38,11 @@ enabled = true
 [auth]
 enabled = true
 site_url = "http://127.0.0.1:3000"
-additional_redirect_urls = ["sharecropr://auth/callback"]
+# SPEC-001-T47: reset emails redirect to sharecropr://reset-password. Expo Router reads the scheme
+# host as the first path segment and the (auth) group adds none, so it opens
+# app/(auth)/reset-password.tsx, which exchanges the PKCE ?code=. The hosted project's
+# Redirect URLs allowlist (dashboard) must list the same URL.
+additional_redirect_urls = ["sharecropr://auth/callback", "sharecropr://reset-password"]
 jwt_expiry = 3600
 enable_signup = true
 # SPEC-001 R06: minimum 12 characters, no composition rules, no rotation policy.

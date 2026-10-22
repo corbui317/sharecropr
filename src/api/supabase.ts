@@ -12,10 +12,12 @@ if (!supabaseUrl || !supabaseAnonKey) {
   );
 }
 
+const AUTH_STORAGE_KEY = 'sc.auth.session';
+
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     storage: chunkedSecureStorage,
-    storageKey: 'sc.auth.session',
+    storageKey: AUTH_STORAGE_KEY,
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,
@@ -47,4 +49,26 @@ export function startAutoRefresh(): Promise<void> {
 
 export function stopAutoRefresh(): Promise<void> {
   return supabase.auth.stopAutoRefresh();
+}
+
+/**
+ * Sign out, revoking the refresh token server-side when the server is reachable (SPEC-001 R25, T19).
+ *
+ * GoTrue's signOut() loads the session first. If the access token has expired and the refresh
+ * cannot reach the server (offline, 5xx), it returns that error WITHOUT clearing storage, and
+ * signOut({ scope: 'local' }) takes the same early return. So on any failure we purge the persisted
+ * session ourselves, then run the local sign-out: it now finds no session, clears the PKCE verifier
+ * and user entries, and emits SIGNED_OUT so AuthProvider updates. Offline, the refresh token stays
+ * valid server-side until it expires (R23); that is the honest limit of signing out offline.
+ */
+export async function signOutWithLocalFallback(): Promise<{ remoteRevoked: boolean }> {
+  try {
+    const { error } = await supabase.auth.signOut({ scope: 'global' });
+    if (!error) return { remoteRevoked: true };
+  } catch {
+    // fall through: purge locally
+  }
+  await chunkedSecureStorage.removeItem(AUTH_STORAGE_KEY);
+  await supabase.auth.signOut({ scope: 'local' });
+  return { remoteRevoked: false };
 }

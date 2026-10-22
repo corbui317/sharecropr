@@ -34,6 +34,18 @@ export const authCopy = {
   restoreContinue: 'Continue with deletion',
   graceElapsed:
     "This account was deleted and can't be recovered. You're welcome to start a new one.",
+  network: "We couldn't reach Sharecropr. Check your connection and try again.",
+  signInRateLimited: 'Too many sign-in attempts. Wait a few minutes and try again.',
+  accountStatusTitle: "We couldn't check your account",
+  accountStatusBody: 'Check your connection and try again.',
+  tryAgain: 'Try again',
+  signOut: 'Sign out',
+  restoreFailed: "We couldn't restore your account just now. Try again.",
+  resetLinkInvalidTitle: "That reset link didn't work",
+  resetLinkInvalidBody:
+    'Reset links work once, expire after 60 minutes, and open only on the device that asked for them. Request a new one.',
+  resetLinkRequestNew: 'Request a new link',
+  backToSignIn: 'Back to sign in',
 } as const;
 
 export function formatMmSs(totalSeconds: number): string {

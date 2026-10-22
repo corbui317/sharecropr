@@ -1,6 +1,6 @@
 # CI/CD
 
-**Status:** Approved · **Version:** 1.0.2 · **Owner:** Platform Engineering
+**Status:** Approved · **Version:** 1.0.3 · **Owner:** Platform Engineering
 
 GitHub Actions for verification, EAS for building and shipping. The pipeline's job is to make the [five rules](../README.md) mechanically enforced rather than culturally enforced, because culture degrades under deadline pressure and a `grep` in CI does not.
 
@@ -130,7 +130,7 @@ A migration creating a table without a matching `supabase/tests/rls_<table>.test
 | Telemetry scrubber test | Coordinate survives a synthetic Sentry event |
 | Merged-manifest check | `ACCESS_BACKGROUND_LOCATION` injected by a transitive dependency |
 | Info.plist check | Permission strings present and non-generic |
-| Dependency audit | Known CVEs at high or critical |
+| Dependency audit | Known CVEs at high or critical — residual, unfixable-in-SDK advisories live in the [Dependency Risk Register](06-dependency-risk-register.md) |
 | License audit | Copyleft in a shipped dependency |
 
 The merged-manifest check exists because a background-location permission can arrive through a dependency without anyone adding it, and it lands us in an App Store review category we've deliberately avoided.
@@ -289,7 +289,7 @@ There are no `DOWN` migrations. Reversing a migration on a live database with co
 | Full Maestro suite | Nightly | Beyond smoke |
 | Performance suite | Nightly | k6 + `EXPLAIN` diffs |
 | **Location invariant canary (LP-10)** | **Every 15 min against production** | Verifies what we deployed, not what we intended |
-| Dependency audit | Weekly | CVEs — **Running (weekly, not a PR gate)**: [dependency-audit.yml](../../.github/workflows/dependency-audit.yml) opens one issue per advisory; Dependabot for npm + actions |
+| Dependency audit | Weekly | CVEs — **Running (weekly, not a PR gate)**: [dependency-audit.yml](../../.github/workflows/dependency-audit.yml) opens one issue per advisory; Dependabot for npm + actions. Advisories we cannot patch without an SDK/major upgrade are listed in the [Dependency Risk Register](06-dependency-risk-register.md); an accepted one is labelled `wontfix` so the job stops reopening it |
 | Data-quality checks | Nightly | Stale safe-spot hours, orphaned media |
 | Preview cleanup | Daily | Destroy orphaned branch projects |
 | Flake report | Weekly | Auto-quarantine above 2% |
@@ -351,3 +351,4 @@ Production-scoped secrets live in a protected GitHub Environment requiring a nam
 | 2026-08-08 | 1.0.0 | Platform Engineering | Initial CI/CD |
 | 2026-10-21 | 1.0.1 | Architecture | §2 gains a State column (running / partial / planned); `pnpm` → `npm run` to match the repo's package manager. Scripts named in §4–§5 that do not exist in `package.json` are planned |
 | 2026-10-21 | 1.0.2 | Engineering | §2 `unit` is Running: `app.yml` runs `npm test` (Jest + React Native Testing Library over `src/` and `app/`), replacing the auth-domain and map `node:test` scripts (SCRUM-64, SCR-0002) |
+| 2026-10-22 | 1.0.3 | Platform Engineering | §4 and §9 link the new Dependency Risk Register (WP-DEPS): in-range lockfile refresh cleared 8 of 12 advisories including the critical; 4 with no in-SDK-57 fix are recorded there pending acceptance |

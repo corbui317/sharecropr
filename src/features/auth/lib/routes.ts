@@ -13,3 +13,7 @@ export const routes = {
   profileSecurity: '/(tabs)/profile/security' as Href,
   deleteAccount: '/(tabs)/profile/delete-account' as Href,
 } as const;
+
+/** Verify screen with the address the mail went to: signUp returns no session while confirmations are on (SPEC-001-T48). */
+export const verifyEmailHref = (email: string): Href =>
+  ({ pathname: '/(auth)/verify-email', params: { email } }) as Href;
