@@ -56,7 +56,7 @@ None of these are advisory once built. A PR cannot merge with any *running* chec
 | `secret-scan` | Any secret in source or the built bundle | Planned |
 | `e2e-smoke` | Any smoke flow on either platform | Planned |
 | `perf-baseline` | An unreviewed `EXPLAIN` plan change on a hot path | Planned |
-| `map-style` | An invalid style JSON, or one referencing a tile, sprite, or glyph host we do not control (§4.1) | Planned |
+| `map-style` | An invalid style JSON, or one referencing a tile, sprite, or glyph host we do not control (§4.1) | Running (app.yml) |
 | `map-attribution` | The OSM attribution missing, zero-area, or obscured in any map state — **NFR-99, a licence obligation** (§4.1) | Planned |
 | `map-egress` | Any map-screen request to a non-allowlisted host, or a tile request carrying a credential or a coordinate — NFR-102 (§4.1) | Planned |
 

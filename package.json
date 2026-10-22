@@ -27,6 +27,7 @@
     "ci:assert-rls": "bash scripts/ci-assert-rls.sh",
     "ci:assert-no-private-grants": "bash scripts/ci-assert-no-private-grants.sh",
     "ci:assert-definer-allowlist": "bash scripts/ci-assert-definer-allowlist.sh",
+    "ci:validate-map-style": "node scripts/validate-map-style.mjs",
     "location-canary": "npm run build --prefix packages/location-canary && npm run check --prefix packages/location-canary"
   },
   "dependencies": {
@@ -56,6 +57,7 @@
     "zustand": "^5.0.8"
   },
   "devDependencies": {
+    "@maplibre/maplibre-gl-style-spec": "24.8.5",
     "@types/geojson": "^7946.0.16",
     "@types/react": "~19.2.2",
     "@types/supercluster": "^7.1.3",

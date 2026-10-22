@@ -40,6 +40,9 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: Map style — schema-valid, own hosts, dated archive (CI/CD §4.1, TC-GEO-48)
+        run: npm run ci:validate-map-style
+
       - name: Lint (incl. import seams — src/domain purity, src/api RN ban, SDK + map-renderer isolation)
         run: npm run lint
 
