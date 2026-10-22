@@ -1,5 +1,5 @@
 BEGIN;
-SELECT plan(13);
+SELECT plan(15);
 
 -- LP-01: private schema grants
 SELECT is(
@@ -35,17 +35,42 @@ SELECT is(
     WHERE g.id = tests.fixture('owner_garden'))::int,
   1, 'LP-05: identical display_point on repeated read');
 
--- LP-06: averaging resistance
-WITH samples AS (
-  SELECT g.display_point AS p, l.exact_point AS truth
-    FROM public.gardens g
-    JOIN private.garden_locations l ON l.garden_id = g.id
-   CROSS JOIN generate_series(1, 100)
-   WHERE g.id = tests.fixture('owner_garden')
-)
+-- LP-06: averaging resistance (Location Privacy §11; mean of 1,000 reads > 400 m from truth).
+-- display_point is deterministic per garden (§4.1), so the attack is: read the same garden
+-- 1,000 times through the client path and average. Each read is a separate execution of the
+-- PostgREST-shaped query, as `authenticated` with JWT claims, under RLS (gardens_select_own).
+-- Exact coordinates never leave SQL: assertions use ok()/is() on booleans and counts only.
+CREATE TEMP TABLE lp06_samples (p geography(Point, 4326)) ON COMMIT DROP;
+GRANT INSERT ON lp06_samples TO authenticated;
+SELECT tests.authenticate_as('owner');
+DO $$
+BEGIN
+  FOR i IN 1..1000 LOOP
+    INSERT INTO lp06_samples (p)
+    SELECT g.display_point FROM public.gardens g WHERE g.id = tests.fixture('owner_garden');
+  END LOOP;
+END $$;
+SELECT tests.clear_authentication();
+
+SELECT is(
+  (SELECT count(p) FROM lp06_samples)::int,
+  1000, 'LP-06: 1000 client-path reads each returned a display_point');
+
 SELECT ok(
-  (SELECT ST_Distance(ST_Centroid(ST_Collect(p::geometry))::geography, MIN(truth)) > 400 FROM samples),
-  'LP-06: mean of samples stays >400m from truth');
+  (SELECT ST_Distance(
+            ST_Centroid(ST_Collect(s.p::geometry))::geography,
+            (SELECT l.exact_point FROM private.garden_locations l
+              WHERE l.garden_id = tests.fixture('owner_garden'))) > 400
+     FROM lp06_samples s),
+  'LP-06: mean of 1000 client reads stays >400m from exact_point');
+
+SELECT ok(
+  (SELECT ST_Distance(
+            ST_Centroid(ST_Collect(s.p::geometry))::geography,
+            (SELECT g.display_point FROM public.gardens g
+              WHERE g.id = tests.fixture('owner_garden'))) < 0.01
+     FROM lp06_samples s),
+  'LP-06: mean of client reads equals the stored display_point (no per-read noise)');
 
 -- LP-07: bearing varies across seeds (spot check, not full chi-squared at baseline)
 SELECT ok(
@@ -70,13 +95,13 @@ SELECT lives_ok(
        VALUES ('test', 'test.ok', '{"note": "safe"}'::jsonb) $$,
   'LP-11b: audit accepts safe metadata');
 
--- LP-08..LP-10: Jest/cron — scaffold only at baseline
-SELECT pass('LP-08: telemetry scrubber tested in Jest (packages/location-canary)');
-SELECT pass('LP-09: EXIF integration deferred to EPIC-06');
-SELECT pass('LP-10: production canary in packages/location-canary');
-
--- LP-12: cell boundary recall stub
-SELECT pass('LP-12: cell-boundary recall requires safe_spots seed (EPIC-07)');
+-- LP-08/09/10/12 are not implemented here. skip(), not pass(): a placeholder must not
+-- report as a passing location invariant. Descriptions start with the backlog key (not
+-- 'LP-NN:') so ci-assert-negative-ratio does not count them as negatives.
+SELECT skip('SCR-1701: LP-08 telemetry scrubber on a synthetic Sentry event (JS test, not pgTAP)');
+SELECT skip('SCR-0604: LP-09 EXIF absent from every stored asset (integration test, EPIC-06)');
+SELECT skip('SCR-0210: LP-10 scheduled production canary (cron job, not pgTAP)');
+SELECT skip('SCR-0804: LP-12 radius recall across a coarse-cell edge needs safe_spots (EPIC-08)');
 
 -- derive_display_point not granted to authenticated
 SELECT tests.authenticate_as('owner');
