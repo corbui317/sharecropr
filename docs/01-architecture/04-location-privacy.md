@@ -352,4 +352,4 @@ Stated honestly:
 | Date | Version | Author | Change |
 | --- | --- | --- | --- |
 | 2026-08-08 | 1.0.0 | Architecture + Security | Initial location privacy architecture |
-| 2026-10-22 | 1.1.0 | Architecture + Security | H3 removed ([ADR-0023](adr/ADR-0023-postgis-location-tiers.md)): location tiers region/coarse/fine replace H3 r5/r7/r9; §2, §3, §4.3, §5, §7, §8 and LP-12 updated. Security review pending (Corey) |
+| 2026-10-22 | 1.1.0 | Architecture + Security | H3 removed ([ADR-0023](adr/ADR-0023-postgis-location-tiers.md)): location tiers region/coarse/fine replace H3 r5/r7/r9; §2, §3, §4.3, §5, §7, §8 and LP-12 updated. Security review approved (Corey, 2026-10-22) |

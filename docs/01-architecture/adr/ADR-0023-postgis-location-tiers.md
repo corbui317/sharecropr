@@ -4,7 +4,7 @@
 | --- | --- |
 | **Status** | Accepted |
 | **Date** | 2026-10-22 |
-| **Deciders** | Corey (owner), Architecture, Security (review pending) |
+| **Deciders** | Corey (owner), Architecture, Security (review approved by Corey, 2026-10-22) |
 | **Supersedes** | [ADR-0005](ADR-0005-geospatial-model.md) |
 | **Superseded by** | — |
 
@@ -124,6 +124,10 @@ The counter-argument: the arithmetic is small, pure and pinned by pgTAP (sizes a
 - A feature needs a tier hierarchy or rendered cells.
 - We have users beyond ±60° latitude or a metro on the antimeridian.
 - Supabase shipping h3 is **not** a trigger on its own.
+
+## Security review
+
+Approved by Corey (owner) on 2026-10-22, covering this ADR and the matching changes to [Location Privacy](../04-location-privacy.md) 1.1.0 and [RLS Design](../05-rls-design.md) 1.2.0. Merge of WP-DB-BASELINE is gated on this approval plus a green `db.yml` run.
 
 ## Related
 
