@@ -89,6 +89,22 @@ If your work runs into one of these, **stop and surface it**. Picking a side in 
 
 ---
 
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues on `corbui317/sharecropr` via the `gh` CLI. Story keys (`SCR-EENN`) from the Delivery Backlog go in issue titles. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five-role vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: glossary at `docs/00-foundation/04-glossary.md`, ADRs at `docs/01-architecture/adr/`. See `docs/agents/domain.md`.
+
+---
+
 ## 7. Agent memory protocol
 
 Both Claude Code and Cursor read this file. Neither can see the other's chat history, so **this file is the handoff**.
