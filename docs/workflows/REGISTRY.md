@@ -76,7 +76,7 @@ The authoritative index of every workflow in Sharecropr — not a list of spec f
 | Workflow | Spec | Status | Trigger | Primary actor | Last verified |
 |---|---|---|---|---|---|
 | Safe-spot curation and seeding | SPEC-007 | Review | Manual, pre-launch | Ops | — |
-| Safe-spot proximity query | SPEC-007 · ADR-0005 | Review | `rpc.safe_spots_near` | Database | — |
+| Safe-spot proximity query | SPEC-007 · ADR-0023 | Review | `rpc.safe_spots_near` | Database | — |
 | Venue-hours evaluation | SPEC-007 | Review | `app.venue_open_during` | Database | — |
 | Safe-spot suspension fanout | SPEC-007 R28 | Review | Moderator / partner | Database trigger | — |
 | Stale-hours auto-suspension (180 d) | SPEC-007 R21 | Review | Cron | Database | — |

@@ -1,6 +1,6 @@
 # CI/CD
 
-**Status:** Approved · **Version:** 1.0.5 · **Owner:** Platform Engineering
+**Status:** Approved · **Version:** 1.0.6 · **Owner:** Platform Engineering
 
 GitHub Actions for verification, EAS for building and shipping. The pipeline's job is to make the [five rules](../README.md) mechanically enforced rather than culturally enforced, because culture degrades under deadline pressure and a `grep` in CI does not.
 
@@ -90,7 +90,7 @@ Migrations are the most dangerous thing in the pipeline, because they are the on
   run: npm run ci:assert-security-invoker
 
 - name: No forbidden column in any client-reachable return type
-  run: npm run ci:assert-no-forbidden-columns    # h3_r9, exact_point, fuzz_seed, trust_score
+  run: npm run ci:assert-no-forbidden-columns    # fine_cell, exact_point, fuzz_seed, trust_score
 ```
 
 ### 3.2 The destructive-migration gate
@@ -126,7 +126,7 @@ A migration creating a table without a matching `supabase/tests/rls_<table>.test
 | Check | What it catches |
 | --- | --- |
 | Bundle secret grep | `service_role`, Persona key, webhook secret in the built JS |
-| Forbidden-column sweep | `h3_r9`, `exact_point`, `fuzz_seed`, `trust_score` in any client-facing type |
+| Forbidden-column sweep | `fine_cell`, `exact_point`, `fuzz_seed`, `trust_score` in any client-facing type |
 | Telemetry scrubber test | Coordinate survives a synthetic Sentry event |
 | Merged-manifest check | `ACCESS_BACKGROUND_LOCATION` injected by a transitive dependency |
 | Info.plist check | Permission strings present and non-generic |
@@ -354,3 +354,4 @@ Production-scoped secrets live in a protected GitHub Environment requiring a nam
 | 2026-10-22 | 1.0.3 | Platform Engineering | §4 and §9 link the new Dependency Risk Register (WP-DEPS): in-range lockfile refresh cleared 8 of 12 advisories including the critical; 4 with no in-SDK-57 fix are recorded there pending acceptance |
 | 2026-10-22 | 1.0.4 | Platform Engineering | db.yml now runs `supabase start`; before this every run failed with "supabase start is not running" before any migration (WP-DBCI) |
 | 2026-10-22 | 1.0.5 | Platform Engineering | §2 db.yml rows corrected: pins the Supabase CLI (2.120.0, setup-cli v3.0.1), runs static gates before start, excludes all non-DB services, and writes the first migration error to the job summary; pgtap rows are wired, not passing and is red at the first real migration error (SCRUM-37) |
+| 2026-10-22 | 1.0.6 | Platform Engineering | H3 removed; renamed to location tiers per [ADR-0023](../01-architecture/adr/ADR-0023-postgis-location-tiers.md). `fine_cell` replaces `h3_r9` in the gate descriptions. |

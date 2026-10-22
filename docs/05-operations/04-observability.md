@@ -1,6 +1,6 @@
 # Observability
 
-**Status:** Approved · **Version:** 1.0.0 · **Owner:** Platform Engineering
+**Status:** Approved · **Version:** 1.0.1 · **Owner:** Platform Engineering
 
 ---
 
@@ -17,7 +17,7 @@ So: log deliberately, scrub aggressively, and **test the scrubbing** — because
 | Tool | Purpose | Data |
 | --- | --- | --- |
 | Sentry | Crashes, errors, mobile performance | Scrubbed diagnostics; no PII, no coordinates |
-| PostHog | Product analytics | Pseudonymous ids; spatial capped at H3 r5 |
+| PostHog | Product analytics | Pseudonymous ids; spatial capped at the region tier |
 | Supabase logs | Postgres, PostgREST, Auth, Edge Functions | Query and request logs, RPC params suppressed for spatial functions |
 | Grafana + Prometheus | Infrastructure and custom metrics | Aggregates only |
 | PagerDuty | On-call | Alert payloads only |
@@ -31,7 +31,7 @@ The single most important control in this document.
 
 ```ts
 // src/observability/scrub.ts
-const FORBIDDEN_KEY = /lat|lng|latitude|longitude|coord|point|geohash|h3_r[89]|
+const FORBIDDEN_KEY = /lat|lng|latitude|longitude|coord|point|geohash|fine_cell|
                        password|passwd|secret|token|authorization|api[_-]?key|
                        handoff_code|fuzz_seed|exact_point/ix;
 
@@ -160,7 +160,7 @@ PostHog, with hard rules:
 | Rule | Detail |
 | --- | --- |
 | Pseudonymous ids only | The user's UUID, never email or handle |
-| **Spatial resolution capped at H3 r5** (~250 km²) | Enforced in the event wrapper; an event carrying anything finer is dropped and an error is logged |
+| **Spatial resolution capped at the region tier** (16 km cells, 256 km²) | Enforced in the event wrapper; an event carrying anything finer is dropped and an error is logged |
 | No message content, ever | — |
 | No exchange times or safe-spot ids | These are P1 and are the burglary primitive ([THR-43](../02-security/01-threat-model.md)) |
 | Retention 25 months | Then deleted |
@@ -170,9 +170,11 @@ PostHog, with hard rules:
 // The wrapper is the enforcement point, not a convention.
 export function track(event: string, props: Record<string, unknown> = {}) {
   const clean = scrub(props) as Record<string, unknown>;
-  if ('h3' in clean && h3Resolution(String(clean.h3)) > 5) {
-    logger.error('analytics: spatial resolution above r5 rejected', { event });
-    delete clean.h3;
+  for (const key of Object.keys(clean)) {
+    if (/_cell$/.test(key) && !(key === 'region_cell' && /^16000:\d+:\d+$/.test(String(clean[key])))) {
+      logger.error('analytics: spatial property finer than the region tier rejected', { event });
+      delete clean[key];
+    }
   }
   posthog.capture(event, clean);
 }
@@ -256,3 +258,4 @@ KYC is the one to watch: it is the only cost that an attacker can drive up direc
 | Date | Version | Author | Change |
 | --- | --- | --- | --- |
 | 2026-08-08 | 1.0.0 | Platform Engineering | Initial observability |
+| 2026-10-22 | 1.0.1 | Platform Engineering | H3 removed; renamed to location tiers per [ADR-0023](../01-architecture/adr/ADR-0023-postgis-location-tiers.md). PostHog wrapper accepts only a `region_cell` matching `^16000:`. |

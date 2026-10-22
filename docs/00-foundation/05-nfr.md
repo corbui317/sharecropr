@@ -1,6 +1,6 @@
 # Non-Functional Requirements
 
-**Status:** Approved · **Version:** 1.0.0 · **Owner:** Engineering
+**Status:** Approved · **Version:** 1.2.0 · **Owner:** Engineering
 
 Budgets, not aspirations. Every number here is measured somewhere and enforced somewhere. A target with no measurement is deleted from this document.
 
@@ -133,7 +133,7 @@ The scaling order is in [System Architecture §7](../01-architecture/01-system-a
 | NFR-58 | Account deletion: functional removal immediately, hard deletion at 30 days |
 | NFR-59 | DSAR export within 30 days, in a form a human can actually read |
 | NFR-60 | Telemetry scrubbing enforced by tested code, not by convention |
-| NFR-61 | Analytics spatial resolution capped at H3 r5 |
+| NFR-61 | Analytics spatial resolution capped at the region tier (16 km, ADR-0023) |
 | NFR-62 | No third party receives PII beyond what the [sub-processor register](../02-security/04-privacy-and-data-retention.md#7-sub-processors) documents |
 
 ---
@@ -265,3 +265,4 @@ NFR-102 is the wire-level restatement of the privacy consistency argument in ADR
 | --- | --- | --- | --- |
 | 2026-08-08 | 1.0.0 | Engineering | Initial NFRs |
 | 2026-08-09 | 1.1.0 | Engineering | §12 added for the OpenStreetMap basemap ([ADR-0019](../01-architecture/adr/ADR-0019-openstreetmap-maplibre.md), [ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md)): NFR-99 ODbL attribution, NFR-100 tile p95, NFR-101 `basemap_age_days`, NFR-102 no map request leaves our infrastructure. Verification summary extended. §1.1 annotated for GPU-layer marker rendering; the old Verification summary is now §13 |
+| 2026-10-22 | 1.2.0 | Engineering | H3 removed; renamed to location tiers per [ADR-0023](../01-architecture/adr/ADR-0023-postgis-location-tiers.md). NFR-61 now caps analytics at the region tier (16 km). |

@@ -48,7 +48,8 @@ CREATE TABLE public.profiles (
   avatar_path             text CHECK (avatar_path IS NULL OR length(avatar_path) <= 300),
   bio                     text CHECK (bio IS NULL OR length(bio) <= 280),
   city_label              text CHECK (city_label IS NULL OR length(city_label) <= 80),
-  home_h3_r7              text,
+  home_coarse_cell        text CONSTRAINT profiles_home_coarse_cell_tier
+                            CHECK (home_coarse_cell IS NULL OR home_coarse_cell ~ '^2500:[0-9]+:[0-9]+$'),
   trust_tier              public.trust_tier NOT NULL DEFAULT 'unverified',
   trust_score             numeric(5,2) NOT NULL DEFAULT 0 CHECK (trust_score BETWEEN 0 AND 100),
   rating_avg              numeric(3,2) CHECK (rating_avg IS NULL OR rating_avg BETWEEN 1 AND 5),
@@ -66,7 +67,7 @@ CREATE TABLE public.profiles (
 );
 
 CREATE UNIQUE INDEX profiles_handle_key ON public.profiles (handle) WHERE deleted_at IS NULL;
-CREATE INDEX profiles_home_h3_r7_idx ON public.profiles (home_h3_r7) WHERE deleted_at IS NULL;
+CREATE INDEX profiles_home_coarse_cell_idx ON public.profiles (home_coarse_cell) WHERE deleted_at IS NULL;
 CREATE INDEX profiles_trust_tier_idx ON public.profiles (trust_tier);
 CREATE INDEX profiles_active_idx ON public.profiles (id)
   WHERE is_suspended = false AND deleted_at IS NULL;

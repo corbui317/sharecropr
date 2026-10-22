@@ -8,6 +8,8 @@
 | **Supersedes** | — |
 | **Superseded by** | — |
 
+> **Note (2026-10-22):** `h3-pg` is not available on Supabase and was removed; see [ADR-0023](ADR-0023-postgis-location-tiers.md).
+
 ## Context
 
 [ADR-0003](ADR-0003-database-centric-authz.md) commits us to Postgres as the application tier: RLS is the authorization layer, definer RPCs are the business logic, PostgREST is the transport. That decision constrains this one heavily — we need a platform where **Postgres is the product**, not a persistence option behind an opinionated SDK.

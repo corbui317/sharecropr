@@ -54,8 +54,8 @@ SELECT throws_ok($$ SELECT trust_score FROM public.profiles WHERE id = tests.fix
 SELECT tests.authenticate_as('owner');
 SELECT throws_ok($$ SELECT trust_score FROM public.profiles WHERE id = tests.fixture('owner') $$,
           '42501', NULL, 'N7: trust_score not table-selectable even for self');
-SELECT throws_ok($$ SELECT home_h3_r7 FROM public.profiles WHERE id = tests.fixture('owner') $$,
-          '42501', NULL, 'N8: home_h3_r7 not selectable');
+SELECT throws_ok($$ SELECT home_coarse_cell FROM public.profiles WHERE id = tests.fixture('owner') $$,
+          '42501', NULL, 'N8: home_coarse_cell not selectable (SPEC-001-N08)');
 SELECT throws_ok($$ SELECT is_suspended FROM public.profiles WHERE id = tests.fixture('owner') $$,
           '42501', NULL, 'N9: is_suspended not selectable');
 SELECT throws_ok($$ SELECT locale FROM public.profiles WHERE id = tests.fixture('owner') $$,

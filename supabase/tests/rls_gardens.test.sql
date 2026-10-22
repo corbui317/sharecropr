@@ -18,7 +18,7 @@ SELECT is((SELECT count(*) FROM public.gardens WHERE id = tests.fixture('owner_g
           'P3: moderator reads garden');
 
 -- Negative
--- SPEC-004-T23 (h3_r9), SPEC-004-N09 (other user's garden)
+-- SPEC-004-T23 (fine_cell), SPEC-004-N09 (other user's garden)
 SELECT tests.authenticate_as('stranger');
 SELECT is((SELECT count(*) FROM public.gardens WHERE id = tests.fixture('owner_garden')), 0::bigint,
           'N1: stranger cannot read other garden');
@@ -34,8 +34,8 @@ SELECT tests.authenticate_as('owner');
 SELECT throws_ok($$ UPDATE public.gardens SET display_point = ST_SetSRID(ST_MakePoint(0,0),4326)::geography
                      WHERE id = tests.fixture('owner_garden') $$,
           '42501', NULL, 'N3: client cannot write display_point');
-SELECT throws_ok($$ SELECT h3_r9 FROM public.gardens WHERE id = tests.fixture('owner_garden') $$,
-          '42501', NULL, 'N4: h3_r9 column revoked');
+SELECT throws_ok($$ SELECT fine_cell FROM public.gardens WHERE id = tests.fixture('owner_garden') $$,
+          '42501', NULL, 'N4: fine_cell column revoked (SPEC-004-T23)');
 
 SELECT throws_ok($$ SELECT exact_point FROM private.garden_locations LIMIT 1 $$,
           '42501', NULL, 'N5: private garden_locations unreachable');
@@ -73,8 +73,8 @@ SELECT throws_ok($$ INSERT INTO public.gardens (owner_id, name, status)
           '42501', NULL, 'N20: cannot insert a garden with a chosen status');
 
 SELECT tests.authenticate_as('moderator');
-SELECT throws_ok($$ SELECT h3_r9 FROM public.gardens $$,
-          '42501', NULL, 'N21: moderator cannot select h3_r9 either');
+SELECT throws_ok($$ SELECT fine_cell FROM public.gardens $$,
+          '42501', NULL, 'N21: moderator cannot select fine_cell either (SPEC-004-T23)');
 
 -- Fuzz invariant needs private.garden_locations, unreachable by clients: run as migration role.
 SELECT tests.clear_authentication();
@@ -118,9 +118,11 @@ SELECT tests.authenticate_as('suspended');
 SELECT is((SELECT count(*) FROM public.gardens WHERE owner_id = tests.fixture('suspended')), 0::bigint,
           'N14: suspended user gardens hidden (no gardens seeded)');
 
--- app.k_for_radius is internal (not granted to clients); exercised as the migration role.
+-- app.location_cell is internal (not granted to clients); exercised as the migration role.
 SELECT tests.clear_authentication();
-SELECT ok(app.k_for_radius(9, 8000) >= 1, 'P6: k_for_radius returns positive k');
+SELECT ok(app.location_cell(ST_SetSRID(ST_MakePoint(10, 50), 4326)::geography, 'coarse')
+            ~ '^2500:[0-9]+:[0-9]+$',
+          'P6: location_cell derives a coarse-tier cell id (ADR-0023)');
 
 SELECT * FROM finish();
 ROLLBACK;

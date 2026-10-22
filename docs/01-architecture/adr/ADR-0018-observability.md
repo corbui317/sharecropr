@@ -8,6 +8,8 @@
 | **Supersedes** | — |
 | **Superseded by** | — |
 
+> **Note (2026-10-22, [ADR-0023](ADR-0023-postgis-location-tiers.md)):** in the scrubber below, `h3_r[89]` is now `fine_cell`; the PostHog "H3 r5" cap is now the region tier (`region_cell`).
+
 ## Context
 
 We need to know three different things, and they have different consumers and different retention profiles: **is the app broken** (crashes, errors, performance), **is the product working** (funnels, retention, feature adoption), and **is the backend healthy** (query performance, RLS behaviour, Edge Function failures).

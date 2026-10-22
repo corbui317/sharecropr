@@ -1,6 +1,6 @@
 # System Architecture
 
-**Status:** Review · **Version:** 1.0.0 · **Owner:** Architecture
+**Status:** Review · **Version:** 1.1.1 · **Owner:** Architecture
 
 ---
 
@@ -180,7 +180,7 @@ The four-schema split is the backbone of the security model.
 | Tile hosting | Protomaps-built **PMTiles** archive on Cloudflare R2, fronted by Cloudflare CDN. Rebuilt monthly from Geofabrik OSM extracts. No tile server, no vendor, no API key, no per-map-load billing | Archive versioned by build date | [ADR-0020](adr/ADR-0020-pmtiles-self-hosting.md) |
 | Map data source | OpenStreetMap (ODbL 1.0) — basemap **and** safe-spot candidates via Overpass | — | [ADR-0021](adr/ADR-0021-osm-safe-spot-sourcing.md) |
 | Backend platform | Supabase (managed) | Postgres 15 | [ADR-0004](adr/ADR-0004-supabase.md) |
-| Geospatial | PostGIS 3.4 + H3 (`h3-pg`) | — | [ADR-0005](adr/ADR-0005-geospatial-model.md) |
+| Geospatial | PostGIS 3.4 (geography + GiST), named location tiers | — | [ADR-0023](adr/ADR-0023-postgis-location-tiers.md) |
 | Auth | Supabase GoTrue; TOTP MFA | — | [ADR-0006](adr/ADR-0006-auth-providers.md) |
 | Identity verification | Persona (hosted flow) | — | [ADR-0010](adr/ADR-0010-kyc-vendor.md) |
 | Serverless | Supabase Edge Functions (Deno) | — | [ADR-0008](adr/ADR-0008-edge-functions.md) |
@@ -333,7 +333,7 @@ Stated plainly so they can be argued with:
 1. **Business logic in PL/pgSQL is unpopular and under-reviewed.** `accept_exchange_request` is the most safety-critical function in the system and is written in a language most of the team won't be fluent in. The concurrency test harness is the real defense; a `CODEOWNERS` rule on `supabase/migrations/**` is the process defense.
 2. **RLS correctness fails silently.** A missing policy doesn't crash — it returns data. Negative pgTAP tests plus a scheduled canary that authenticates as a synthetic user and asserts it *cannot* read another's garden.
 3. **Single Postgres instance is a single point of failure.** PITR and a documented RTO/RPO, accepted for MVP scale.
-4. **The dual spatial model (PostGIS geography + H3 cells) will produce at least one bug**, most likely a boundary-recall miss where someone queries one cell instead of a disk. Covered by an explicit boundary test in [Geospatial Test Plan](../04-testing/03-geospatial-test-plan.md).
+4. **Location tiers are derived labels that could drift from `exact_point`**; nightly `private.check_location_tiers()` raises on drift. The boundary-recall bug class ADR-0005 predicted is gone because no query filters by cell ([ADR-0023](adr/ADR-0023-postgis-location-tiers.md)).
 5. **Backend and mobile release cadences are coupled.** Mitigated by a two-version compatibility rule enforced mechanically in CI ([ADR-0017](adr/ADR-0017-release-cadence.md)).
 6. **We now operate a piece of geospatial infrastructure.** The basemap used to be Apple's problem and is now ours: a monthly build to run, a tooling version to pin, an extract format that can change under us, and a failure mode — a silently stale archive — with no user-visible symptom. [ADR-0020](adr/ADR-0020-pmtiles-self-hosting.md) argues honestly that this is a small permanent operational tax taken on a team that has not shipped an MVP. `basemap_age_days` and the build-result metric are the detectors; the managed-tiles fallback is a style-URL change and a day of work if the tax turns out to be real.
 
@@ -345,3 +345,4 @@ Stated plainly so they can be argued with:
 | --- | --- | --- | --- |
 | 2026-08-08 | 1.0.0 | Architecture | Initial architecture |
 | 2026-08-09 | 1.1.0 | Architecture | OpenStreetMap adopted as the map substrate. Apple/Google Maps removed from the context diagram and the external-dependency table, replaced by a Sharecropr-owned PMTiles tile origin and by OSM/Overpass as a no-SLA data source. Container view gains the tile CDN and the monthly build. Stack table: MapLibre ([ADR-0019](adr/ADR-0019-openstreetmap-maplibre.md)), tile hosting ([ADR-0020](adr/ADR-0020-pmtiles-self-hosting.md)), OSM data ([ADR-0021](adr/ADR-0021-osm-safe-spot-sourcing.md)). New weakness §10.6: we operate the basemap now |
+| 2026-10-22 | 1.1.1 | Architecture | H3 removed; renamed to location tiers per [ADR-0023](adr/ADR-0023-postgis-location-tiers.md). Geospatial row and risk 4 rewritten. |
