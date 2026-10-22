@@ -6,7 +6,8 @@ Home gardeners inventory surplus crops and barter with nearby gardeners — meet
 
 ## Prerequisites
 
-- Node.js 20+
+- **Node.js 22 LTS, ≥ 22.13** — pinned in [`.nvmrc`](.nvmrc) (`nvm use`) and `package.json` `engines`. Node 20 does not work: `@supabase/supabase-js` requires ≥ 22, React Native 0.86 / Metro require ≥ 22.13 on the 22 line, and `npm run test:auth-domain` uses `node --experimental-strip-types`. Node 23 is not supported by React Native; Node 24 ≥ 24.3 is.
+- Docker + [Supabase CLI](https://supabase.com/docs/guides/local-development/cli/getting-started) — for the local database
 - iOS Simulator (Xcode) and/or Android emulator or device
 - **Expo dev client** — MapLibre does not run in Expo Go
 
@@ -22,10 +23,16 @@ npm run db:start && npm run db:reset && npm run db:test   # needs Docker + Supab
 ## Quick start
 
 ```bash
-npm install
+nvm use                                      # Node from .nvmrc
+npm ci
+cp .env.example .env                         # then set EXPO_PUBLIC_SUPABASE_ANON_KEY (next step prints it)
+npm run db:start                             # Supabase in Docker; prints the local anon key
+npm run db:reset                             # migrations, then supabase/seed_harness.sql + supabase/seed.sql
 npx expo prebuild                            # generates ios/ and android/ with New Architecture
 npx expo run:ios                             # or: npx expo run:android
 ```
+
+The seed is the deterministic pgTAP fixture set (test users, gardens, blocks), not a browsable dataset — there are no seeded listings or safe spots yet. On an Android emulator, `127.0.0.1` is the emulator itself; point `EXPO_PUBLIC_SUPABASE_URL` at `http://10.0.2.2:54321`.
 
 Optional tile CDN overrides (defaults point at staging):
 
