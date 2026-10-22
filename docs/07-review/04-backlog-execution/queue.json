@@ -277,6 +277,37 @@
    "remaining_after": "T70/T77 geometric tests (after the runner), wire-level capture on device (T78-T80)."
   },
   {
+   "id": "WP-12a",
+   "jira_keys": [
+    "SCRUM-37"
+   ],
+   "backlog_keys": [
+    "SCR-0205"
+   ],
+   "title": "db.yml: supabase start + pinned CLI so CI reaches Postgres (expected red at first real migration error)",
+   "class": "do-partial",
+   "position_reason": "db.yml never started Supabase (`db reset` alone fails with \"supabase start is not running\"), so no migration or pgTAP ever ran in CI. Lands before WP-08 so GitHub Actions verifies WP-08..WP-11 without local Docker.",
+   "scope": "Workflow only: setup-cli v3.0.1 (SHA) with CLI 2.120.0; setup-node from .nvmrc (no npm ci); static gates before start; supabase start -x non-DB services, no db reset; failure summary of migration/seed errors; workflow_dispatch(debug); paths + package.json/.nvmrc; doc corrections.",
+   "files": [
+    ".github/workflows/db.yml",
+    "docs/05-operations/02-cicd.md",
+    "docs/07-review/04-backlog-execution/harness-baseline.md",
+    "docs/07-review/04-backlog-execution/README.md",
+    "docs/07-review/04-backlog-execution/queue.json",
+    "AGENTS.md"
+   ],
+   "verify": [
+    "actionlint .github/workflows/db.yml",
+    "git push; gh run watch <id> --exit-status  # expect red past supabase start, first migration error captured"
+   ],
+   "skills": [
+    "ci-cd-and-automation",
+    "debugging-and-error-recovery"
+   ],
+   "risks": "If CI shows h3/h3_postgis unavailable, STOP and raise ADR-0005 with Corey; do not change migrations here.",
+   "remaining_after": "WP-12: broken-policy fixture, first green run, CI/CD \u00a72 verified state."
+  },
+  {
    "id": "WP-08",
    "jira_keys": [
     "SCRUM-35"
@@ -297,7 +328,7 @@
    "verify": [
     "ls supabase/migrations | sed 's/_.*//' | sort | uniq -d | wc -l  # 0",
     "bash harness/run.sh",
-    "WP-12 GitHub run"
+    "db.yml GitHub run (WP-12a)"
    ],
    "skills": [
     "deprecation-and-migration",
@@ -331,7 +362,7 @@
    "verify": [
     "bash harness/run.sh",
     "pg_prove supabase/tests/vault_handoff_key.test.sql",
-    "WP-12 GitHub run (real supabase_vault)"
+    "db.yml GitHub run (WP-12a) (real supabase_vault)"
    ],
    "skills": [
     "security-and-hardening",
@@ -360,7 +391,7 @@
    "verify": [
     "bash harness/run.sh",
     "pg_prove supabase/tests/geospatial_h3.test.sql",
-    "WP-12 GitHub run"
+    "db.yml GitHub run (WP-12a)"
    ],
    "skills": [
     "debugging-and-error-recovery",
@@ -402,10 +433,10 @@
    "backlog_keys": [
     "SCR-0205"
    ],
-   "title": "db.yml: supabase start + pinned CLI + broken-policy fixture + first green run",
+   "title": "db.yml broken-policy fixture + first green run + CI/CD \u00a72 verified state",
    "class": "do-partial",
-   "position_reason": "Blocked by SCR-0201/0208 (WP-08/09). It is the real verification oracle for all DB work and unblocks SCR-0206/0210/0212 and the FORCE sweep.",
-   "scope": "Pin setup-cli to an exact version; run supabase start then db reset; run db:test. Add a workflow_dispatch input or separate job that applies a fixture dropping a policy and asserts failure. Link the green run in the dev notes; update CI/CD \u00a72 to the verified state.",
+   "position_reason": "Needs WP-12a (working db.yml) and WP-08/09/10/11 (clean migrations + pgTAP). It is the green-run gate that unblocks SCR-0206/0210/0212 and the FORCE sweep.",
+   "scope": "Add a workflow_dispatch input or separate job that applies a fixture dropping a policy and asserts failure. Link the green run in the dev notes; update CI/CD \u00a72 to the verified state.",
    "files": [
     ".github/workflows/db.yml",
     "scripts/run-pgtap.sh",

@@ -1,6 +1,6 @@
 # CI/CD
 
-**Status:** Approved · **Version:** 1.0.3 · **Owner:** Platform Engineering
+**Status:** Approved · **Version:** 1.0.5 · **Owner:** Platform Engineering
 
 GitHub Actions for verification, EAS for building and shipping. The pipeline's job is to make the [five rules](../README.md) mechanically enforced rather than culturally enforced, because culture degrades under deadline pressure and a `grep` in CI does not.
 
@@ -38,19 +38,19 @@ flowchart TD
 
 None of these are advisory once built. A PR cannot merge with any *running* check red. **Most are not built yet** — the State column is the truth; [N-07](../07-review/02-development-notes.md#n-07--the-ci-gates-are-described-not-built) tracks the gap. Update the column in the PR that wires a check up.
 
-| Check | Blocks on | State (2026-10-21) |
+| Check | Blocks on | State (2026-10-22) |
 | --- | --- | --- |
 | `lint` | ESLint errors; `src/domain` or `src/api` importing React Native; any file but the seam importing `@supabase/*` or a map renderer — proved by `npm run lint:fixtures` | **Running** — `app.yml` |
 | `typecheck` | Any TS error; `any` in `src/domain` | **Running** — `app.yml` |
 | `unit` | Any failure | **Running** — `app.yml` `npm test` (Jest + RNTL over `src/` and `app/`; [Test Strategy §2](../04-testing/01-test-strategy.md#2-the-pyramid-weighted-for-this-system)) |
-| `migrate` | Migration fails against a production-shaped seed | **Partial** — `db.yml` `supabase db reset`; no production-shaped seed |
+| `migrate` | Migration fails against a production-shaped seed | **Partial** — `db.yml` `supabase start` applies migrations + seed (CLI pinned); **not passing**, it stops at the first migration error until WP-08…WP-11; no production-shaped seed |
 | `migration-safety` | §3 gates | Planned |
-| `pgtap-rls` | Any RLS assertion; negative < positive per table | **Running** — `db.yml` (pgTAP + `ci:assert-negative-ratio`) |
-| `pgtap-geo` | Any geospatial assertion | **Partial** — `db.yml` runs every `supabase/tests/*.test.sql` |
+| `pgtap-rls` | Any RLS assertion; negative < positive per table | **Wired, not passing** — `db.yml` runs pgTAP only after `supabase start` succeeds, which it has not yet; `ci:assert-negative-ratio` runs |
+| `pgtap-geo` | Any geospatial assertion | **Wired, not passing** — `db.yml` runs every `supabase/tests/*.test.sql` once migrations apply |
 | `location-invariants` | **LP-01 … LP-13** | Planned — `npm run location-canary` exists, not wired |
 | `integration` | Any failure | Planned |
 | `concurrency` | Any hazard H1–H8 | Planned |
-| `security-static` | §4 checks | **Partial** — `db.yml` private-grant + definer-allowlist gates |
+| `security-static` | §4 checks | **Partial** — `db.yml` private-grant gate runs; definer-allowlist is a stub |
 | `spec-traceability` | A `MUST` with no linked test | Planned |
 | `doc-gates` | §5.1 gates | **Partial** — `app.yml` runs the schema-graph acyclic half + register sync (SCR-0003); symmetry (SCR-0004) and the other §5.1 gates planned |
 | `secret-scan` | Any secret in source or the built bundle | Planned |
@@ -352,3 +352,5 @@ Production-scoped secrets live in a protected GitHub Environment requiring a nam
 | 2026-10-21 | 1.0.1 | Architecture | §2 gains a State column (running / partial / planned); `pnpm` → `npm run` to match the repo's package manager. Scripts named in §4–§5 that do not exist in `package.json` are planned |
 | 2026-10-21 | 1.0.2 | Engineering | §2 `unit` is Running: `app.yml` runs `npm test` (Jest + React Native Testing Library over `src/` and `app/`), replacing the auth-domain and map `node:test` scripts (SCRUM-64, SCR-0002) |
 | 2026-10-22 | 1.0.3 | Platform Engineering | §4 and §9 link the new Dependency Risk Register (WP-DEPS): in-range lockfile refresh cleared 8 of 12 advisories including the critical; 4 with no in-SDK-57 fix are recorded there pending acceptance |
+| 2026-10-22 | 1.0.4 | Platform Engineering | db.yml now runs `supabase start`; before this every run failed with "supabase start is not running" before any migration (WP-DBCI) |
+| 2026-10-22 | 1.0.5 | Platform Engineering | §2 db.yml rows corrected: pins the Supabase CLI (2.120.0, setup-cli v3.0.1), runs static gates before start, excludes all non-DB services, and writes the first migration error to the job summary; pgtap rows are wired, not passing and is red at the first real migration error (SCRUM-37) |

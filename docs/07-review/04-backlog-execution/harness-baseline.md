@@ -1,5 +1,7 @@
 # Sharecropr local Postgres harness: baseline
 
+> CI note (2026-10-22, WP-DBCI): before this fix `db.yml` never started Supabase, so CI never applied a migration. The failures below come from the local harness, and CI should now reproduce them.
+
 Repo state tested: `/home/claude/sharecropr` (develop HEAD, not modified). Everything lives in this directory.
 
 ## Usage
@@ -80,3 +82,7 @@ Static CI gates (`scripts/ci-assert-*.sh`) were run too: no-private-grants and n
 ## PG16 vs PG15 (production is 15)
 
 No difference was hit in any error above; all four migration errors and the test error would occur on PG15 as well. Things to be aware of: PG16 role-membership grants carry INHERIT/SET options (harness grants use defaults, which allow `SET ROLE`); extension versions here are postgis 3.4.2, h3 4.1.3, pg_cron 1.6, which may differ from the Supabase image; `pg_stat_*` and error-message wording can differ slightly.
+
+## CI reality check (2026-10-22, WP-DBCI f4e5aba + WP-12a)
+
+Until f4e5aba (WP-DBCI), `db.yml` never reached Postgres. Its only DB step was `supabase db reset`, which needs a running stack and exited immediately with "supabase start is not running" on every run (f3a1505 … 539482b, run 39800524285). So the findings above were never reproduced in CI; "db.yml is red because of the migrations" was an inference, not an observation. f4e5aba makes db.yml run `supabase start`; WP-12a pins the CLI (2.120.0) and writes the first error to the job summary, so the first real migration error, and whether `h3` exists in the Supabase image, now shows up in the "Start Supabase" step and its job summary.
