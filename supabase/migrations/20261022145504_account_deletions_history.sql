@@ -1,5 +1,5 @@
 -- SPEC-001 R45/R47, EC-08 (SPEC-001-T50): a cancelled deletion request must not block a later one.
--- 20260828_0009_auth.sql made user_id the primary key, and cancel only stamps cancelled_at, so a
+-- 20260828000009_auth.sql made user_id the primary key, and cancel only stamps cancelled_at, so a
 -- request after a restore failed with a raw duplicate-key error on account_deletions_pkey.
 -- Forward-only (SCRUM-18; Data Model §15): 0009 and 0010 are not edited.
 --

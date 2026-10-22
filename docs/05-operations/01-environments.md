@@ -1,6 +1,6 @@
 # Environments
 
-**Status:** Approved · **Version:** 1.1.1 · **Owner:** Platform Engineering
+**Status:** Approved · **Version:** 1.1.2 · **Owner:** Platform Engineering
 
 ---
 
@@ -109,7 +109,7 @@ Restore is rehearsed quarterly against staging. A restore procedure that has nev
 | Feature flags | Database table, cached client-side | Server-controlled, changeable without a release |
 | Basemap style URL | `app.config.ts` per EAS profile | Points at one explicit dated archive (§11). Public by design — it addresses an unauthenticated public bucket |
 | R2 write credential (tile bucket) | GitHub Actions secrets, tile-build workflow only | Write is CI-only. **No runtime component holds it**, and nothing in the app has any credential for the tile origin at all |
-| `handoff_code_key` (Vault) | Supabase Vault in each project; provisioned by migration `20260822_0006_vault_handoff_key.sql` locally | **Symmetric key for `pgp_sym_encrypt` on `exchange_sessions.handoff_code`.** Readable only by `service_role` and `SECURITY DEFINER` RPCs (`get_handoff_code`, `accept_exchange_request`). **Custody:** Platform Engineering + Security (two-person) for production rotation per [Runbook 14](05-runbooks.md). Local dev uses a documented placeholder — never reuse in staging/production. Client and `authenticated` roles cannot call `vault.get_secret`. |
+| `handoff_code_key` (Vault) | Supabase Vault in each project; provisioned by migration `20260822000006_vault_handoff_key.sql` locally | **Symmetric key for `pgp_sym_encrypt` on `exchange_sessions.handoff_code`.** Readable only by `service_role` and `SECURITY DEFINER` RPCs (`get_handoff_code`, `accept_exchange_request`). **Custody:** Platform Engineering + Security (two-person) for production rotation per [Runbook 14](05-runbooks.md). Local dev uses a documented placeholder — never reuse in staging/production. Client and `authenticated` roles cannot call `vault.get_secret`. |
 
 Rotation: quarterly for service keys, immediately on any suspected exposure, and on any personnel change with access.
 
@@ -252,3 +252,4 @@ Only the production function has the Overpass host on its egress allowlist ([SPE
 | 2026-08-08 | 1.0.0 | Platform Engineering | Initial environments |
 | 2026-08-09 | 1.1.0 | Platform Engineering | §11 added: the basemap tile pipeline (Geofabrik extract → Protomaps build → dated PMTiles archive → R2 → CDN, monthly), which archive each environment serves, and rollback by repointing the style. §11.2 scopes the OSM candidate import per environment. §6 records that **no map API key exists in any environment** ([ADR-0019](../01-architecture/adr/ADR-0019-openstreetmap-maplibre.md), [ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md)) |
 | 2026-10-21 | 1.1.1 | Platform Engineering | §2 corrected: removed `npm run seed:local` (never existed); local setup is `npm run db:start` + `npm run db:reset`, whose seed is the pgTAP fixture set. §7's `packages/seed` is marked planned. (SCR-0001) |
+| 2026-10-22 | 1.1.2 | Platform Engineering | Migration filename updated to 14-digit version (SCR-0201) |
