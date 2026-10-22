@@ -10,6 +10,7 @@ For each package P you are given (worktree /home/claude/wt/P, branch wp/P), in t
 7. Cleanup: `cd /home/claude/sharecropr && git fetch -q origin && git merge -q --ff-only origin/develop && git worktree remove --force /home/claude/wt/P && git branch -q -D wp/P`.
 
 Jira (load with ToolSearch "select:mcp__Atlassian_MCP__addOrEditJiraIssueComment,mcp__Atlassian_MCP__transitionJiraIssue"; cloudId a891ee35-20af-493c-8fd2-2eb42b6fa1ec):
+- Status lifecycle (Corey, 2026-10-21): the orchestrator moves a package's tickets to **In Progress** and into the board's active sprint (board 1; `getJiraBoardSprintData` resolves it) when the executor starts, and to **In Review** when the executor hands back. The integrator finishes the cycle below. Tickets with no sprint don't appear on the board.
 - Fully done tickets: add comment "Done — pushed to develop in <sha>: <one-line summary>." then transitionName "Done".
 - Partial tickets: transitionName "In Progress" + comment "Partial — pushed to develop in <sha>: <done>. Open: <remaining>."
 Use the summaries you are given verbatim, substituting <sha>.
