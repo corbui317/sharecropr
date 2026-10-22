@@ -40,17 +40,18 @@ Skills used: [addyosmani/agent-skills](https://github.com/addyosmani/agent-skill
 | WP-03 RN-import ban fixed + single supabase-js import | 0a49f76 | SCRUM-69 **Done**; SCRUM-15 In Progress — open: AppState (WP-03b) |
 | WP-04 FPS profiler + render milestones | b2f9638 | SCRUM-30 **Done**; SCRUM-26 In Progress — open: device capture (SCRUM-27), R73 rule sign-off |
 
-CI: App workflow green on develop. Database workflow red until WP-08…WP-12 land (expected).
+CI: App workflow green on develop. Database workflow red: until f4e5aba (WP-DBCI) it never started Supabase (`db reset` without `start`), so no migration or pgTAP had ever run in CI; the "red because of migrations" expectation was never observed. Now it is red at the first real migration error, until WP-08…WP-11 land.
 
 ### Planned by Opus, ready for Sonnet (start here)
 
+- **WP-12a** (SCRUM-37, partial): db.yml runs `supabase start` with a pinned CLI so GitHub Actions is the real Postgres verifier for WP-08…WP-11 (no local Docker needed). Lands first. `plans/WP-12a.md`
 - **WP-08** (SCRUM-35) — 14-digit migration versions, forward-only convention doc, break_glass role. **Do first among DB work**; WP-09/WP-10 edit the same migration files after the rename. `plans/WP-08.md`
 - **WP-11** (SCRUM-44) — LP-06 rewritten (display_point is stable per garden; asserts 1,000 reads never converge on exact_point), LP-08/09/10/12 → `skip()` with backlog keys. Validated SQL: `plans/WP-11-files/location_privacy.test.sql`. Independent of WP-08.
 - **WP-06** (SCRUM-24) — label/POI/sprite layers + `ci:validate-map-style`. Validated drafts in `plans/WP-06-files/`. Independent.
 - **WP-02b** (SCRUM-64, SCRUM-11 AC2) — Jest + RNTL adoption, fully prototyped (npm test 28/28 against b2f9638). Exact pins, `jest.config.js`, migrated tests and an exact-match edit script in `plans/WP-02b-files/`. Migrates `test:auth-domain` and `test:map` into Jest; tooling tests (doc-gates, dependency-audit) stay on node:test. **After it lands, run `npm ci`** (new devDependencies). **Do this before WP-05** — WP-05's tests must be written in Jest, not `scripts/map-tests/`.
 
 ### Not yet planned
-Everything else in `queue.json` (`packages`), in order. Next after the above: WP-05 (follow mode — after WP-04, shares MapCanvas), WP-09, WP-10, WP-12 (db.yml green — first real Supabase run, will confirm whether `h3` exists on Supabase), WP-13…WP-21, WP-23 (note: 13 asymmetric "Behaviourally coupled with" edges exist today and must be fixed in the same change), WP-24, WP-26…WP-42, plus WP-01b/03b/05b/12b from the decisions.
+Everything else in `queue.json` (`packages`), in order. Next after the above: WP-05 (follow mode — after WP-04, shares MapCanvas), WP-09, WP-10, WP-12 (broken-policy fixture + first green db.yml run + CI/CD §2 verified state; the first real Supabase run and the h3 answer come from WP-12a), WP-13…WP-21, WP-23 (note: 13 asymmetric "Behaviourally coupled with" edges exist today and must be fixed in the same change), WP-24, WP-26…WP-42, plus WP-01b/03b/05b/12b from the decisions.
 
 ### Needs Corey (hardware / accounts) — `queue.json` → `external`
 SCRUM-14 (EAS), 21 (rollback rehearsal), 22 (R2 tiles), 23/27/29 (device runs + go/no-go), 39 (Vault rotation on staging), 54 (public web deletion — hosting), 59 (leaked-password protection on hosted Supabase). Also: GitHub branch protection, Dependabot settings, merging `develop` → `main` so scheduled workflows activate.
@@ -72,6 +73,6 @@ See `harness-baseline.md`. Migrations as written fail in four places before pgTA
 2. `CREATE EXTENSION h3` lands in `public` but functions use `search_path = pg_catalog, extensions` → WP-10.
 3. `digest()` called without `extensions` on the search_path (0005) → WP-10/WP-09.
 4. `vault.get_secret` doesn't exist in Supabase Vault (0006) → WP-09; `h3_lat_lng_to_cell(geometry,…)` needs `h3_postgis` → WP-10.
-With those patched, 188/188 pgTAP assertions passed (after the LP-06 fix). **Open risk:** Supabase's documented extension list doesn't include `h3`; WP-12's real `supabase start` run decides — if absent, stop and raise an ADR-0005 decision.
+With those patched, 188/188 pgTAP assertions passed (after the LP-06 fix). **Open risk:** Supabase's documented extension list doesn't include `h3`; WP-12a's real `supabase start` run decides — if absent, stop and raise an ADR-0005 decision.
 
 On a Mac with Docker you don't need the stand-in: `npm run db:start && npm run db:reset && npm run db:test`.
