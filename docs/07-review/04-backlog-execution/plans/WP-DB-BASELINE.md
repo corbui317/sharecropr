@@ -1030,7 +1030,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 
 ## 14. Open questions for Corey (privacy-affecting ones are not guessed)
 
-1. **Security review sign-off.** Location Privacy 1.1.0, RLS Design 1.2.0 and ADR-0023 all say "security review required for any change". Recommendation: this is a merge gate.
+1. **Security review sign-off.** **Decided (Corey, 2026-10-22): approved.** Location Privacy 1.1.0, RLS Design 1.2.0 and ADR-0023 all say "security review required for any change". Recommendation: this is a merge gate.
 2. **Tier sizes.** **Decided (Corey, 2026-10-22): confirmed; sizes stand and `fine_cell` stays.** 16 km / 2.5 km / 320 m are the planner's choice: each is at least the H3 area it replaces. The coarse tier is about 20% larger than r7, so surplus targeting gets coarser. Confirm, especially the exposable coarse tier.
 3. **Keep `fine_cell` at all?** **Decided (Corey, 2026-10-22): confirmed; sizes stand and `fine_cell` stays.** It has no consumer, and it is a 320 m P1 box around a home. Dropping it is cheapest now, while D2's window is open. The plan keeps it because D1 says to preserve the ladder.
 4. **SPEC-020 surplus matching.** The H3 disk and r8-parent mechanism is gone. The recommendation is `ST_DWithin(safe_spots.point, centre of center_coarse_cell, radius_km × 1000)` over the closed radius set, which needs a cell-centre helper. The spec is marked pending.

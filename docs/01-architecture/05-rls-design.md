@@ -466,4 +466,4 @@ Every table needs all of these before it can ship. Full matrix in [RLS Test Plan
 | 2026-08-08 | 1.0.0 | Architecture + Security | Initial RLS design |
 | 2026-10-21 | 1.1.0 | Architecture + Security | §3: caller-scoped `is_blocked_with()` / `can_transact()`, two-argument forms made internal, `is_moderator` grant explained. §4 rewritten: revoke-then-grant column privileges, `profiles_select_visible`, `get_my_profile()` ([ADR-0022](adr/ADR-0022-profiles-other-user-reads.md)) |
 | 2026-10-22 | 1.1.1 | Architecture + Security | §2: `break_glass` role exists with no privileges (SCR-0201) |
-| 2026-10-22 | 1.2.0 | Architecture + Security | H3 removed; renamed to location tiers per [ADR-0023](adr/ADR-0023-postgis-location-tiers.md). Cell column names and the coordinate-key CHECK deny-list use `fine_cell`. Security review pending (Corey). |
+| 2026-10-22 | 1.2.0 | Architecture + Security | H3 removed; renamed to location tiers per [ADR-0023](adr/ADR-0023-postgis-location-tiers.md). Cell column names and the coordinate-key CHECK deny-list use `fine_cell`. Security review approved (Corey, 2026-10-22). |
