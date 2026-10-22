@@ -1,0 +1,931 @@
+{
+ "created": [
+  {
+   "jira_key": "SCRUM-5",
+   "summary": "EPIC-00 — Delivery Platform",
+   "issue_type": "Epic",
+   "priority": "Medium",
+   "parent": null,
+   "labels": [
+    "code-review-2026-10-21"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-6",
+   "summary": "EPIC-01 — Map Spike (blocking)",
+   "issue_type": "Epic",
+   "priority": "Medium",
+   "parent": null,
+   "labels": [
+    "code-review-2026-10-21"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-7",
+   "summary": "EPIC-02 — Data Model, RLS & Test Harness",
+   "issue_type": "Epic",
+   "priority": "Medium",
+   "parent": null,
+   "labels": [
+    "code-review-2026-10-21"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-8",
+   "summary": "EPIC-03 — Authentication",
+   "issue_type": "Epic",
+   "priority": "Medium",
+   "parent": null,
+   "labels": [
+    "code-review-2026-10-21"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-9",
+   "summary": "Bugs",
+   "issue_type": "Epic",
+   "priority": "Medium",
+   "parent": null,
+   "labels": [
+    "code-review-2026-10-21"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-10",
+   "summary": "SCR-0001 Clone-to-running-app in <30 min against local Supabase",
+   "issue_type": "Story",
+   "priority": "Highest",
+   "parent": "SCRUM-5",
+   "labels": [
+    "ci",
+    "code-review-2026-10-21",
+    "epic-00",
+    "spec-gap"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-11",
+   "summary": "SCR-0002 Block PR merge on lint, typecheck and unit test failure",
+   "issue_type": "Story",
+   "priority": "Highest",
+   "parent": "SCRUM-5",
+   "labels": [
+    "ci",
+    "code-review-2026-10-21",
+    "epic-00",
+    "spec-gap"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-12",
+   "summary": "SCR-0003 CI fails on a cycle in the spec `Schema depends on` graph",
+   "issue_type": "Story",
+   "priority": "Highest",
+   "parent": "SCRUM-5",
+   "labels": [
+    "ci",
+    "code-review-2026-10-21",
+    "epic-00",
+    "spec-gap",
+    "traceability"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-13",
+   "summary": "SCR-0005 CI fails when a spec MUST has no test ID in §13",
+   "issue_type": "Story",
+   "priority": "Highest",
+   "parent": "SCRUM-5",
+   "labels": [
+    "ci",
+    "code-review-2026-10-21",
+    "epic-00",
+    "spec-gap",
+    "traceability"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-14",
+   "summary": "SCR-0009 Merge to main produces an EAS staging build automatically",
+   "issue_type": "Story",
+   "priority": "Highest",
+   "parent": "SCRUM-5",
+   "labels": [
+    "ci",
+    "code-review-2026-10-21",
+    "epic-00",
+    "release",
+    "spec-gap"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-15",
+   "summary": "SCR-0011 RN-import ban is ineffective for src/domain and absent for src/api",
+   "issue_type": "Task",
+   "priority": "Highest",
+   "parent": "SCRUM-9",
+   "labels": [
+    "architecture",
+    "bug",
+    "ci",
+    "code-review-2026-10-21",
+    "epic-00",
+    "invariant-11",
+    "lint",
+    "spec-gap",
+    "standards"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-16",
+   "summary": "SCR-0004 CI fails on an asymmetric `Behaviourally coupled with` edge",
+   "issue_type": "Story",
+   "priority": "High",
+   "parent": "SCRUM-5",
+   "labels": [
+    "ci",
+    "code-review-2026-10-21",
+    "epic-00",
+    "spec-gap",
+    "traceability"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-17",
+   "summary": "SCR-0006 CI fails on JS bundle >6 MB and reports install size",
+   "issue_type": "Story",
+   "priority": "High",
+   "parent": "SCRUM-5",
+   "labels": [
+    "ci",
+    "code-review-2026-10-21",
+    "epic-00",
+    "spec-gap"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-18",
+   "summary": "SCR-0007 Migrations forward + rollback in CI on a disposable DB; resolve DOWN-migration conflict",
+   "issue_type": "Story",
+   "priority": "High",
+   "parent": "SCRUM-5",
+   "labels": [
+    "ci",
+    "code-review-2026-10-21",
+    "epic-00",
+    "needs-decision",
+    "spec-gap"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-19",
+   "summary": "SCR-0008 Commit EXPLAIN (ANALYZE, BUFFERS) baselines for six hottest queries, diff per migration",
+   "issue_type": "Story",
+   "priority": "High",
+   "parent": "SCRUM-5",
+   "labels": [
+    "ci",
+    "code-review-2026-10-21",
+    "epic-00",
+    "performance",
+    "spec-gap"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-20",
+   "summary": "SCR-0010 Weekly dependency scan opens issues for high/critical CVEs",
+   "issue_type": "Story",
+   "priority": "High",
+   "parent": "SCRUM-5",
+   "labels": [
+    "ci",
+    "code-review-2026-10-21",
+    "epic-00",
+    "security",
+    "spec-gap"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-21",
+   "summary": "SCR-0012 Rehearse JS-only rollback in under 15 minutes",
+   "issue_type": "Story",
+   "priority": "High",
+   "parent": "SCRUM-5",
+   "labels": [
+    "code-review-2026-10-21",
+    "epic-00",
+    "release",
+    "spec-gap"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-22",
+   "summary": "SCR-0106 Build and publish launch-metro PMTiles archive, fonts and sprites to R2",
+   "issue_type": "Story",
+   "priority": "Highest",
+   "parent": "SCRUM-6",
+   "labels": [
+    "code-review-2026-10-21",
+    "epic-01",
+    "infra",
+    "map",
+    "spec-gap"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-23",
+   "summary": "SCR-0101 Render 200 clustered symbols on physical iOS + Android (New Arch)",
+   "issue_type": "Story",
+   "priority": "Highest",
+   "parent": "SCRUM-6",
+   "labels": [
+    "code-review-2026-10-21",
+    "epic-01",
+    "map",
+    "needs-hardware",
+    "spec-gap"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-24",
+   "summary": "EPIC-01: spike style lacks label/POI/sprite layers, so style complexity is untested",
+   "issue_type": "Task",
+   "priority": "Highest",
+   "parent": "SCRUM-6",
+   "labels": [
+    "code-review-2026-10-21",
+    "epic-01",
+    "map",
+    "spec-gap"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-25",
+   "summary": "SCR-0102 Follow mode not cleared until gesture ends; camera fights user mid-pan",
+   "issue_type": "Task",
+   "priority": "Highest",
+   "parent": "SCRUM-9",
+   "labels": [
+    "bug",
+    "code-review-2026-10-21",
+    "epic-01",
+    "map",
+    "needs-hardware",
+    "spec-gap"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-26",
+   "summary": "SCR-0103 FPS profiler records no samples and measures the wrong thread",
+   "issue_type": "Task",
+   "priority": "Highest",
+   "parent": "SCRUM-9",
+   "labels": [
+    "bug",
+    "code-review-2026-10-21",
+    "epic-01",
+    "map",
+    "performance",
+    "spec-gap"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-27",
+   "summary": "SCR-0103 Profile pan/zoom/cluster/label collision on reference Android device",
+   "issue_type": "Story",
+   "priority": "Highest",
+   "parent": "SCRUM-6",
+   "labels": [
+    "code-review-2026-10-21",
+    "epic-01",
+    "map",
+    "needs-hardware",
+    "performance",
+    "spec-gap"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-28",
+   "summary": "SCR-0107 Verify ODbL attribution unobscured in every state and no off-infra tile egress",
+   "issue_type": "Story",
+   "priority": "Highest",
+   "parent": "SCRUM-6",
+   "labels": [
+    "code-review-2026-10-21",
+    "epic-01",
+    "licence",
+    "map",
+    "privacy",
+    "spec-gap"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-29",
+   "summary": "SCR-0104 File map spike go/no-go decision",
+   "issue_type": "Story",
+   "priority": "Highest",
+   "parent": "SCRUM-6",
+   "labels": [
+    "code-review-2026-10-21",
+    "epic-01",
+    "map",
+    "spec-gap"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-30",
+   "summary": "SCR-0103 Time-to-first-tile measures full render, not first painted tile",
+   "issue_type": "Task",
+   "priority": "High",
+   "parent": "SCRUM-9",
+   "labels": [
+    "bug",
+    "code-review-2026-10-21",
+    "epic-01",
+    "map",
+    "spec-gap"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-31",
+   "summary": "SPEC-008 R69: marker features carry properties beyond the permitted five",
+   "issue_type": "Task",
+   "priority": "High",
+   "parent": "SCRUM-9",
+   "labels": [
+    "bug",
+    "code-review-2026-10-21",
+    "epic-01",
+    "map",
+    "needs-decision",
+    "spec-gap"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-32",
+   "summary": "EPIC-01 gate breached: EPIC-02/03 shipped before map go/no-go",
+   "issue_type": "Task",
+   "priority": "High",
+   "parent": "SCRUM-6",
+   "labels": [
+    "code-review-2026-10-21",
+    "epic-01",
+    "map",
+    "process"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-33",
+   "summary": "Remove dead code in map seam (getBasemapConfig, styleUrl, requestPermission)",
+   "issue_type": "Task",
+   "priority": "Low",
+   "parent": "SCRUM-6",
+   "labels": [
+    "cleanup",
+    "code-review-2026-10-21",
+    "epic-01",
+    "map"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-34",
+   "summary": "Consolidate geo domain shapes and remove unused/spike code from src/domain",
+   "issue_type": "Task",
+   "priority": "Low",
+   "parent": "SCRUM-6",
+   "labels": [
+    "code-review-2026-10-21",
+    "epic-01",
+    "map",
+    "refactor",
+    "standards"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-35",
+   "summary": "SCR-0201 Migration filenames collide on version 20260822; define migration convention and roles",
+   "issue_type": "Task",
+   "priority": "Highest",
+   "parent": "SCRUM-9",
+   "labels": [
+    "bug",
+    "ci-blocker",
+    "code-review-2026-10-21",
+    "db",
+    "epic-02",
+    "implemented-wrong",
+    "spec-gap"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-36",
+   "summary": "SCR-0208 Vault migration references nonexistent vault.get_secret and ships dev key to all envs",
+   "issue_type": "Task",
+   "priority": "Highest",
+   "parent": "SCRUM-9",
+   "labels": [
+    "bug",
+    "ci-blocker",
+    "code-review-2026-10-21",
+    "epic-02",
+    "implemented-wrong",
+    "security",
+    "spec-gap",
+    "vault"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-37",
+   "summary": "SCR-0205 db.yml cannot run: no supabase start, unpinned CLI, pgTAP never executed",
+   "issue_type": "Task",
+   "priority": "Highest",
+   "parent": "SCRUM-9",
+   "labels": [
+    "bug",
+    "ci",
+    "ci-blocker",
+    "code-review-2026-10-21",
+    "epic-02",
+    "pgtap",
+    "spec-gap"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-38",
+   "summary": "SCR-0210 Location canary is a scaffold: not continuous, 2 of 8 surfaces, fake pass, no LP-13",
+   "issue_type": "Story",
+   "priority": "Highest",
+   "parent": "SCRUM-7",
+   "labels": [
+    "code-review-2026-10-21",
+    "epic-02",
+    "location-privacy",
+    "security",
+    "spec-gap"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-39",
+   "summary": "SCR-0209 Rehearse Vault key-rotation runbook against seeded staging with live scheduled sessions",
+   "issue_type": "Story",
+   "priority": "Highest",
+   "parent": "SCRUM-7",
+   "labels": [
+    "code-review-2026-10-21",
+    "epic-02",
+    "operations",
+    "spec-gap",
+    "vault"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-40",
+   "summary": "SCR-0205 Structural sweep asserts FORCE RLS for only 3 tables, not every public table (NFR-46)",
+   "issue_type": "Task",
+   "priority": "High",
+   "parent": "SCRUM-9",
+   "labels": [
+    "bug",
+    "ci",
+    "code-review-2026-10-21",
+    "epic-02",
+    "invariant-5",
+    "pgtap",
+    "rls",
+    "spec-gap",
+    "standards"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-41",
+   "summary": "SCR-0203 h3_lat_lng_to_cell(geometry) needs h3_postgis; verify H3; add h3_r9 nightly check",
+   "issue_type": "Task",
+   "priority": "High",
+   "parent": "SCRUM-9",
+   "labels": [
+    "bug",
+    "code-review-2026-10-21",
+    "epic-02",
+    "geospatial",
+    "implemented-wrong",
+    "spec-gap"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-42",
+   "summary": "SCR-0206 Negative-ratio gate is per-file label grep; counts pass() stubs; no generator",
+   "issue_type": "Story",
+   "priority": "High",
+   "parent": "SCRUM-7",
+   "labels": [
+    "ci",
+    "code-review-2026-10-21",
+    "epic-02",
+    "rls",
+    "spec-gap"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-43",
+   "summary": "SCR-0207 Add idempotency_keys size/bloat metric to the observability dashboard",
+   "issue_type": "Story",
+   "priority": "High",
+   "parent": "SCRUM-7",
+   "labels": [
+    "code-review-2026-10-21",
+    "epic-02",
+    "observability",
+    "spec-gap"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-44",
+   "summary": "SCR-0210 LP-06 pgTAP uses MIN(geography) and samples one row 100x; will error and proves nothing",
+   "issue_type": "Task",
+   "priority": "High",
+   "parent": "SCRUM-9",
+   "labels": [
+    "bug",
+    "code-review-2026-10-21",
+    "epic-02",
+    "implemented-wrong",
+    "location-privacy",
+    "pgtap"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-45",
+   "summary": "SCR-0211 Audit trail: guard TRUNCATE, test append-only, audit moderator P1 reads",
+   "issue_type": "Story",
+   "priority": "High",
+   "parent": "SCRUM-7",
+   "labels": [
+    "audit",
+    "code-review-2026-10-21",
+    "epic-02",
+    "security",
+    "spec-gap"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-46",
+   "summary": "SCR-0212 Query timing is single-run on ~15 users; needs p95 at 10x volume and EXPLAIN baselines",
+   "issue_type": "Story",
+   "priority": "High",
+   "parent": "SCRUM-7",
+   "labels": [
+    "code-review-2026-10-21",
+    "epic-02",
+    "performance",
+    "pgtap",
+    "spec-gap"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-47",
+   "summary": "Correct EPIC-02 status overclaims in dev notes, CI/CD §2 and AGENTS.md",
+   "issue_type": "Task",
+   "priority": "Medium",
+   "parent": "SCRUM-7",
+   "labels": [
+    "code-review-2026-10-21",
+    "docs",
+    "epic-02",
+    "spec-gap"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-48",
+   "summary": "SCR-0204 Add app.current_user_id() helper named in story and used by ADR-0016 examples",
+   "issue_type": "Task",
+   "priority": "Low",
+   "parent": "SCRUM-7",
+   "labels": [
+    "code-review-2026-10-21",
+    "epic-02",
+    "rls",
+    "spec-gap"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-49",
+   "summary": "SCR-0308 Email change can never complete: confirm/revoke tokens discarded, no mailer",
+   "issue_type": "Task",
+   "priority": "Highest",
+   "parent": "SCRUM-9",
+   "labels": [
+    "bug",
+    "code-review-2026-10-21",
+    "epic-03",
+    "implemented-wrong",
+    "security",
+    "spec-gap"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-50",
+   "summary": "SCR-0307 Password change lacks current password and AAL2; reset doesn't revoke other sessions",
+   "issue_type": "Task",
+   "priority": "Highest",
+   "parent": "SCRUM-9",
+   "labels": [
+    "bug",
+    "code-review-2026-10-21",
+    "epic-03",
+    "implemented-wrong",
+    "security",
+    "spec-gap"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-51",
+   "summary": "SCR-0307 Password reset deep link is unroutable",
+   "issue_type": "Task",
+   "priority": "Highest",
+   "parent": "SCRUM-9",
+   "labels": [
+    "bug",
+    "code-review-2026-10-21",
+    "deep-link",
+    "epic-03",
+    "spec-gap"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-52",
+   "summary": "SCR-0306 Session hardening: no-token-leak test, processLock, 401 refresh, torn-write detection",
+   "issue_type": "Story",
+   "priority": "Highest",
+   "parent": "SCRUM-8",
+   "labels": [
+    "code-review-2026-10-21",
+    "epic-03",
+    "security",
+    "spec-gap",
+    "test-gap"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-53",
+   "summary": "SCR-0310 Implement account-delete pipeline (currently a stub with no caller)",
+   "issue_type": "Story",
+   "priority": "Highest",
+   "parent": "SCRUM-8",
+   "labels": [
+    "code-review-2026-10-21",
+    "epic-03",
+    "legal",
+    "privacy",
+    "spec-gap"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-54",
+   "summary": "SCR-0311 Public web deletion endpoint sharecropr.app/delete-account",
+   "issue_type": "Story",
+   "priority": "Highest",
+   "parent": "SCRUM-8",
+   "labels": [
+    "code-review-2026-10-21",
+    "epic-03",
+    "spec-gap",
+    "store-compliance"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-55",
+   "summary": "SCR-0309 Deletion request gaps: rate limits, R46 cascade, confirmation UX, AAL2 gating",
+   "issue_type": "Story",
+   "priority": "Highest",
+   "parent": "SCRUM-8",
+   "labels": [
+    "code-review-2026-10-21",
+    "epic-03",
+    "implemented-wrong",
+    "spec-gap"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-56",
+   "summary": "SCR-0305 Email verification link does not return to app; resend cooldown wrong",
+   "issue_type": "Task",
+   "priority": "High",
+   "parent": "SCRUM-9",
+   "labels": [
+    "bug",
+    "code-review-2026-10-21",
+    "deep-link",
+    "epic-03",
+    "spec-gap"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-57",
+   "summary": "SCR-0303 Apple provider config, R05 name-before-callback, native button only",
+   "issue_type": "Task",
+   "priority": "High",
+   "parent": "SCRUM-9",
+   "labels": [
+    "bug",
+    "code-review-2026-10-21",
+    "epic-03",
+    "spec-gap"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-58",
+   "summary": "SCR-0304 Google provider config and PKCE/no-WebView test",
+   "issue_type": "Task",
+   "priority": "High",
+   "parent": "SCRUM-8",
+   "labels": [
+    "code-review-2026-10-21",
+    "epic-03",
+    "spec-gap",
+    "test-gap"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-59",
+   "summary": "SCR-0302 Server-side breached-password enforcement",
+   "issue_type": "Task",
+   "priority": "High",
+   "parent": "SCRUM-8",
+   "labels": [
+    "code-review-2026-10-21",
+    "epic-03",
+    "security",
+    "spec-gap"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-60",
+   "summary": "SCR-0312 Reviewer bypass provisioning, demo credentials doc, expiry alert, T42",
+   "issue_type": "Task",
+   "priority": "High",
+   "parent": "SCRUM-8",
+   "labels": [
+    "code-review-2026-10-21",
+    "epic-03",
+    "spec-gap",
+    "store-compliance",
+    "test-gap"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-61",
+   "summary": "SPEC-001 §11 auth observability events not emitted",
+   "issue_type": "Story",
+   "priority": "High",
+   "parent": "SCRUM-8",
+   "labels": [
+    "code-review-2026-10-21",
+    "epic-03",
+    "observability",
+    "spec-gap"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-62",
+   "summary": "SCR-0306: Remove react-native import from src/api/supabase.ts and reconcile mobile-arch §1 vs §5",
+   "issue_type": "Task",
+   "priority": "High",
+   "parent": "SCRUM-9",
+   "labels": [
+    "auth",
+    "bug",
+    "code-review-2026-10-21",
+    "epic-03",
+    "invariant-11",
+    "standards"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-63",
+   "summary": "Idempotency keys must be stable per user intent, not minted per call",
+   "issue_type": "Task",
+   "priority": "High",
+   "parent": "SCRUM-9",
+   "labels": [
+    "api-contract",
+    "auth",
+    "bug",
+    "code-review-2026-10-21",
+    "epic-03",
+    "standards"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-64",
+   "summary": "Adopt the documented unit/component test stack and resolve Jest vs Vitest doc conflict",
+   "issue_type": "Task",
+   "priority": "High",
+   "parent": "SCRUM-8",
+   "labels": [
+    "code-review-2026-10-21",
+    "epic-03",
+    "standards",
+    "testing"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-65",
+   "summary": "Close SPEC-001 §13 test coverage gaps for EPIC-03 MUSTs",
+   "issue_type": "Task",
+   "priority": "High",
+   "parent": "SCRUM-8",
+   "labels": [
+    "code-review-2026-10-21",
+    "epic-03",
+    "standards",
+    "testing",
+    "traceability"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-66",
+   "summary": "SCR-0301 Handle editable-once RPC and 12-month retired-handle reuse block",
+   "issue_type": "Task",
+   "priority": "Medium",
+   "parent": "SCRUM-8",
+   "labels": [
+    "code-review-2026-10-21",
+    "epic-03",
+    "spec-gap"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-67",
+   "summary": "SPEC-001 §12 accessibility requirements on auth screens",
+   "issue_type": "Story",
+   "priority": "Medium",
+   "parent": "SCRUM-8",
+   "labels": [
+    "accessibility",
+    "code-review-2026-10-21",
+    "epic-03",
+    "spec-gap"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-68",
+   "summary": "Auth §8.3 error copy mapping: rate-limited sign-in shows wrong-credentials text",
+   "issue_type": "Task",
+   "priority": "Medium",
+   "parent": "SCRUM-9",
+   "labels": [
+    "bug",
+    "code-review-2026-10-21",
+    "copy",
+    "epic-03",
+    "implemented-wrong"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-69",
+   "summary": "Make src/api/supabase.ts the only @supabase/supabase-js import (auth-types.ts)",
+   "issue_type": "Task",
+   "priority": "Medium",
+   "parent": "SCRUM-8",
+   "labels": [
+    "code-review-2026-10-21",
+    "epic-03",
+    "lint",
+    "standards"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-70",
+   "summary": "Move auth Supabase calls into typed src/api repositories with generated DB types",
+   "issue_type": "Task",
+   "priority": "Medium",
+   "parent": "SCRUM-8",
+   "labels": [
+    "auth",
+    "code-review-2026-10-21",
+    "epic-03",
+    "refactor",
+    "standards"
+   ]
+  },
+  {
+   "jira_key": "SCRUM-71",
+   "summary": "SCR-0309: Surface deletion-status errors instead of failing open; dedupe fetch and sign-out helpers",
+   "issue_type": "Task",
+   "priority": "Medium",
+   "parent": "SCRUM-9",
+   "labels": [
+    "auth",
+    "bug",
+    "code-review-2026-10-21",
+    "duplication",
+    "epic-03",
+    "standards"
+   ]
+  }
+ ],
+ "failures": [],
+ "links_created": 36,
+ "story_points_field_set": true,
+ "story_points_field": "Story point estimate (customfield_10016)"
+}
