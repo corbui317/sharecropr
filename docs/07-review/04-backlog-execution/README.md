@@ -26,6 +26,8 @@ Skills used: [addyosmani/agent-skills](https://github.com/addyosmani/agent-skill
 | SCRUM-32 | Accept the EPIC-01 gate breach retroactively; keep hardening EPIC-00/02/03; freeze EPIC-04+ until SCR-0104 go/no-go; add a `__DEV__`-only spike route that bypasses auth. (WP-01b) |
 | SCRUM-18 | Forward-only migrations; amend SCR-0007 to "forward apply on a disposable DB + rehearsed roll-forward". (WP-12b) |
 | SCRUM-31 | Amend SPEC-008 R69: point features carry exactly (id, listing_count, category, label, selected); cluster features (id, cluster_id, point_count); category_glyph derived in-style. (WP-05b) |
+| D1 (2026-10-22) | Drop H3; PostGIS only. Named location tiers replace the H3 ladder; [ADR-0023](../../01-architecture/adr/ADR-0023-postgis-location-tiers.md) supersedes ADR-0005. Evidence: db.yml run 39803696654. (WP-DB-BASELINE) |
+| D2 (2026-10-22) | Never-applied migrations are edited in place; forward-only from the first hosted apply (Data Model §15 rules 1, 12). (WP-DB-BASELINE) |
 
 ## Status
 
@@ -44,9 +46,11 @@ CI: App workflow green on develop. Database workflow red: until f4e5aba (WP-DBCI
 
 ### Planned by Opus, ready for Sonnet (start here)
 
+- **WP-DB-BASELINE** (SCRUM-35, 36, 41, 44) absorbs WP-08, WP-09, WP-10 and WP-11: 14-digit migrations, H3 removed for PostGIS location tiers (ADR-0023), `extensions.digest`, the Vault accessor and LP-06. `plans/WP-DB-BASELINE.md`
+
 - **WP-12a** (SCRUM-37, partial): db.yml runs `supabase start` with a pinned CLI so GitHub Actions is the real Postgres verifier for WP-08…WP-11 (no local Docker needed). Lands first. `plans/WP-12a.md`
-- **WP-08** (SCRUM-35) — 14-digit migration versions, forward-only convention doc, break_glass role. **Do first among DB work**; WP-09/WP-10 edit the same migration files after the rename. `plans/WP-08.md`
-- **WP-11** (SCRUM-44) — LP-06 rewritten (display_point is stable per garden; asserts 1,000 reads never converge on exact_point), LP-08/09/10/12 → `skip()` with backlog keys. Validated SQL: `plans/WP-11-files/location_privacy.test.sql`. Independent of WP-08.
+- ~~**WP-08** (SCRUM-35) — 14-digit migration versions, forward-only convention doc, break_glass role. **Do first among DB work**; WP-09/WP-10 edit the same migration files after the rename. `plans/WP-08.md`~~ Absorbed into WP-DB-BASELINE.
+- ~~**WP-11** (SCRUM-44) — LP-06 rewritten (display_point is stable per garden; asserts 1,000 reads never converge on exact_point), LP-08/09/10/12 → `skip()` with backlog keys. Validated SQL: `plans/WP-11-files/location_privacy.test.sql`. Independent of WP-08.~~ Absorbed into WP-DB-BASELINE.
 - **WP-06** (SCRUM-24) — label/POI/sprite layers + `ci:validate-map-style`. Validated drafts in `plans/WP-06-files/`. Independent.
 - **WP-02b** (SCRUM-64, SCRUM-11 AC2) — Jest + RNTL adoption, fully prototyped (npm test 28/28 against b2f9638). Exact pins, `jest.config.js`, migrated tests and an exact-match edit script in `plans/WP-02b-files/`. Migrates `test:auth-domain` and `test:map` into Jest; tooling tests (doc-gates, dependency-audit) stay on node:test. **After it lands, run `npm ci`** (new devDependencies). **Do this before WP-05** — WP-05's tests must be written in Jest, not `scripts/map-tests/`.
 
@@ -58,8 +62,8 @@ SCRUM-14 (EAS), 21 (rollback rehearsal), 22 (R2 tiles), 23/27/29 (device runs + 
 
 ## Open questions for Corey (raised by planners, not resolved)
 
-1. **Forward-only vs. broken early migrations.** Migrations 000003/000005/000006 fail on a fresh DB, so a later corrective migration can never run. WP-09/WP-10 must edit those files in place. Planner recommends a one-time, recorded exception for never-applied migrations (record it in Data Model §15 when approved).
-2. **`digest()` search_path error in 000005** has no owner in WP-09/WP-10 scope — assign it to WP-10.
+1. ~~**Forward-only vs. broken early migrations.** Migrations 000003/000005/000006 fail on a fresh DB, so a later corrective migration can never run. WP-09/WP-10 must edit those files in place. Planner recommends a one-time, recorded exception for never-applied migrations (record it in Data Model §15 when approved).~~ **Decided 2026-10-22 (D2):** never-applied migrations are edited in place; Data Model §15 rule 12.
+2. ~~**`digest()` search_path error in 000005** has no owner in WP-09/WP-10 scope — assign it to WP-10.~~ **Resolved:** WP-DB-BASELINE C3.
 3. **Break-glass provisioning** (access grant, 60-min expiry, two-person approval, audit — Runbooks §6) has no backlog key; allocate one. WP-08 only creates the inert role.
 4. **R73 claim rule** (first-full-frame p95 < 1.0 s) proposed in WP-04 — needs mobile-lead sign-off.
 5. **SPEC-008 R74 vs. reality**: the dated basemap archive lives in app config/env, not the style file, so rollback is a config change + OTA, not a style edit as ADR-0020 implies. Record which is intended (overlaps WP-42).
@@ -74,5 +78,7 @@ See `harness-baseline.md`. Migrations as written fail in four places before pgTA
 3. `digest()` called without `extensions` on the search_path (0005) → WP-10/WP-09.
 4. `vault.get_secret` doesn't exist in Supabase Vault (0006) → WP-09; `h3_lat_lng_to_cell(geometry,…)` needs `h3_postgis` → WP-10.
 With those patched, 188/188 pgTAP assertions passed (after the LP-06 fix). **Open risk:** Supabase's documented extension list doesn't include `h3`; WP-12a's real `supabase start` run decides — if absent, stop and raise an ADR-0005 decision.
+
+2026-10-22: h3 is not in the Supabase image (db.yml run 39803696654); D1 removed H3 (ADR-0023).
 
 On a Mac with Docker you don't need the stand-in: `npm run db:start && npm run db:reset && npm run db:test`.
