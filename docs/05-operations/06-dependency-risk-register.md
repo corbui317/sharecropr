@@ -29,7 +29,7 @@ An entry counts as accepted only once "Accepted by" is filled by the product own
 
 The roughly 55 other audit entries carry no advisory of their own; they are flagged because they depend on DR-01…DR-04. Their `fixAvailable` majors are downgrades. Ignore them.
 
-## 5. Resolved in-range (2026-10-22, WP-DEPS commit `<sha>`)
+## 5. Resolved in-range (2026-10-22, WP-DEPS commit `ab7cb14`)
 
 - shell-quote → 1.12.0 (GHSA-pqg4-j6r4-53mv)
 - source-map-js → 1.2.2 (GHSA-68fv-2mgg-jv7q)
