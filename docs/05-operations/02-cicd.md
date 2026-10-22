@@ -59,7 +59,7 @@ None of these are advisory once built. A PR cannot merge with any *running* chec
 | `map-attribution` | The OSM attribution missing, zero-area, or obscured in any map state — **NFR-99, a licence obligation** (§4.1) | Planned |
 | `map-egress` | Any map-screen request to a non-allowlisted host, or a tile request carrying a credential or a coordinate — NFR-102 (§4.1) | Planned |
 
-Two approvals required, and a **`DB` CODEOWNERS approval** if `supabase/migrations/**` changed. *(Planned: there is no `CODEOWNERS` file or branch protection yet.)*
+Two approvals required, and a **`DB` CODEOWNERS approval** if `supabase/migrations/**` changed. *(Partial: [`.github/CODEOWNERS`](../../.github/CODEOWNERS) names the DB owner for `supabase/migrations/`, and `app.yml`/`db.yml` now run on pushes to `develop` as well as `main`. **Branch protection is not configured**, so nothing yet blocks a merge, and with a single maintainer "Require review from Code Owners" cannot be satisfied — see SCR-0002.)*
 
 ---
 
