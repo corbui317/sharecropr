@@ -18,6 +18,8 @@
     "db:start": "supabase start",
     "db:reset": "supabase db reset",
     "db:test": "bash scripts/run-pgtap.sh",
+    "test:doc-gates": "node --test scripts/doc-gates.test.mjs",
+    "ci:doc-gates": "node scripts/doc-gates.mjs",
     "ci:assert-negative-ratio": "bash scripts/ci-assert-negative-ratio.sh",
     "ci:assert-rls": "bash scripts/ci-assert-rls.sh",
     "ci:assert-no-private-grants": "bash scripts/ci-assert-no-private-grants.sh",

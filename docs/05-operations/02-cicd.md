@@ -52,6 +52,7 @@ None of these are advisory once built. A PR cannot merge with any *running* chec
 | `concurrency` | Any hazard H1–H8 | Planned |
 | `security-static` | §4 checks | **Partial** — `db.yml` private-grant + definer-allowlist gates |
 | `spec-traceability` | A `MUST` with no linked test | Planned |
+| `doc-gates` | §5.1 gates | **Partial** — `app.yml` runs the schema-graph acyclic half + register sync (SCR-0003); symmetry (SCR-0004) and the other §5.1 gates planned |
 | `secret-scan` | Any secret in source or the built bundle | Planned |
 | `e2e-smoke` | Any smoke flow on either platform | Planned |
 | `perf-baseline` | An unreviewed `EXPLAIN` plan change on a hot path | Planned |
@@ -204,7 +205,7 @@ The `MUST`→test gate only sees requirements that were written as requirements.
 
 The pattern is the one already proven by the transition table: put the fact in the database, generate the copy, and let CI fail on drift. Every finding in the review's process section was a fact that lived in two places with nothing comparing them.
 
-> **None of the gates in this section exist yet.** Until `npm run ci:doc-gates` is real, the 2026-08-09 fixes are a snapshot and the doc set will drift back to where it was. Build them in the first sprint, while the reasons are fresh and there are no green builds to break — see [Development Notes N-07](../07-review/02-development-notes.md#n-07--the-ci-gates-are-described-not-built).
+> **Only the schema-graph gate's acyclic half exists** (`npm run ci:doc-gates`, SCR-0003, which also checks the register's `Schema depends on` column against front matter); the rest of this section is planned. Until the rest is real, the 2026-08-09 fixes are a snapshot and the doc set will drift back to where it was. Build them in the first sprint, while the reasons are fresh and there are no green builds to break — see [Development Notes N-07](../07-review/02-development-notes.md#n-07--the-ci-gates-are-described-not-built).
 
 ---
 

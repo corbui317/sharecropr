@@ -31,6 +31,12 @@ jobs:
       - name: Agent memory bridge
         run: ./scripts/agent-memory-bridge.sh check
 
+      - name: Doc gates — self-test (broken fixtures must fail)
+        run: npm run test:doc-gates
+
+      - name: Doc gates — schema graph acyclic + register sync (CI/CD §5.1)
+        run: npm run ci:doc-gates
+
       - name: Install
         run: npm ci
 
