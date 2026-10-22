@@ -1,6 +1,6 @@
 # Glossary
 
-**Status:** Approved · **Version:** 1.0.0 · **Owner:** Product
+**Status:** Approved · **Version:** 1.2.0 · **Owner:** Product
 
 Canonical vocabulary. These terms mean exactly this in specs, code, database columns, and user-facing copy. Where a term has a different meaning to users than to engineers, both are given.
 
@@ -51,8 +51,9 @@ Canonical vocabulary. These terms mean exactly this in specs, code, database col
 | **Display point** | The fuzzed coordinate derived from the exact point — 400–1200 m offset, deterministic. Column: `gardens.display_point`. |
 | **Fuzz seed** | The stable per-garden UUID that makes fuzzing deterministic. **This is what defeats the averaging attack.** Never leaves `private`. |
 | **Averaging attack** | Reading a naively-fuzzed point many times and averaging the noise away to recover the true location. Defeated by the stable fuzz seed. |
-| **H3** | Uber's hexagonal geospatial index. Resolution rules: **r5** for analytics, **r7** may be exposed, **r9 never leaves the server**. |
-| **Cell-boundary recall** | The silent bug where querying one H3 cell instead of a disk makes users near a cell edge see fewer results. |
+| **Location tier** | A named, database-computed cell size ([ADR-0023](../01-architecture/adr/ADR-0023-postgis-location-tiers.md)): **region** (16 km, analytics), **coarse** (2.5 km, may be exposed to the owner and server logic), **fine** (320 m, never leaves the server). Columns: `region_cell`, `coarse_cell`, `fine_cell`. |
+| **H3** | Removed 2026-10-22 ([ADR-0023](../01-architecture/adr/ADR-0023-postgis-location-tiers.md)); formerly the hexagonal cell index. See Location tier. |
+| **Radius recall** | Proximity is answered with `ST_DWithin` on geography, never by comparing cell ids, so a user near a cell edge sees the same results as one at its centre. |
 | **PII class** | P0 (critical: exact location, identity documents), P1 (sensitive: email, meeting times), P2 (personal: display name, ratings), P3 (non-personal). |
 | **Scrubbing** | Removing coordinates, credentials, and message content from telemetry before it leaves the device or server. |
 
@@ -168,3 +169,4 @@ The map substrate is OpenStreetMap, end to end: it renders the basemap and it se
 | --- | --- | --- | --- |
 | 2026-08-08 | 1.0.0 | Product | Initial glossary |
 | 2026-08-09 | 1.1.0 | Product | Maps and OpenStreetMap section added; `MapCanvas` restated for MapLibre; four rows added to the words-we-don't-use table, all of which invite the reader to treat imported data or a tile source as something it is not |
+| 2026-10-22 | 1.2.0 | Product | H3 removed; renamed to location tiers per [ADR-0023](../01-architecture/adr/ADR-0023-postgis-location-tiers.md). Location tier entry added; Cell-boundary recall replaced by Radius recall. |

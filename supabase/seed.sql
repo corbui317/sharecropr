@@ -172,3 +172,9 @@ INSERT INTO tests.fixtures_named (name, id) VALUES
   ('reviewer', '33333333-3333-3333-3333-333333333301'),
   ('mfa', '44444444-4444-4444-4444-444444444401')
 ON CONFLICT DO NOTHING;
+
+-- SCR-0208: local/CI placeholder for the handoff key. Never in a migration: hosted projects get their
+-- key through the custody procedure (Environments §6), and get_handoff_key() fails closed without it.
+SELECT vault.create_secret('local-dev-handoff-key-replace-before-production', 'handoff_code_key',
+       'Symmetric key for pgp_sym_encrypt on exchange_sessions.handoff_code (local/CI placeholder)')
+ WHERE NOT EXISTS (SELECT 1 FROM vault.secrets WHERE name = 'handoff_code_key');

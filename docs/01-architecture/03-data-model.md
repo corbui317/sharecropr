@@ -1,6 +1,6 @@
 # Data Model
 
-**Status:** Review · **Version:** 1.3.0 · **Owner:** Architecture
+**Status:** Review · **Version:** 1.5.0 · **Owner:** Architecture
 
 This document is **authoritative for the schema**. Specs reference it; they never redefine types. Every table listed here has a corresponding migration under `supabase/migrations/`, RLS policies in [RLS Design](05-rls-design.md), and pgTAP tests in [RLS Test Plan](../04-testing/02-rls-test-plan.md).
 
@@ -75,7 +75,7 @@ GRANT USAGE ON SCHEMA app TO authenticated;  -- EXECUTE granted per-function onl
 CREATE EXTENSION IF NOT EXISTS postgis;
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE EXTENSION IF NOT EXISTS pg_cron;
-CREATE EXTENSION IF NOT EXISTS h3;
+-- No h3: PostGIS only (ADR-0023)
 CREATE EXTENSION IF NOT EXISTS pg_trgm;      -- species search
 CREATE EXTENSION IF NOT EXISTS citext;       -- case-insensitive email
 ```
@@ -121,7 +121,7 @@ One row per authenticated user, keyed to `auth.users`. Created by trigger on sig
 | `avatar_path` | `text` | NULL, `length <= 300` | P2 | Storage object path, not a URL |
 | `bio` | `text` | NULL, `length <= 280` | P2 | |
 | `city_label` | `text` | NULL, `length <= 80` | P2 | Coarse, e.g. "Ann Arbor, MI". Derived from garden, never street-level |
-| `home_h3_r7` | `text` | NULL | P1 | ~5 km² cell. Used for matching and analytics. Never a point. |
+| `home_coarse_cell` | `text` | NULL, CHECK `~ '^2500:[0-9]+:[0-9]+$'` | P1 | Coarse-tier cell (2.5 km, [ADR-0023](adr/ADR-0023-postgis-location-tiers.md)). For matching and analytics inside the database. Never a point; returned to no client |
 | `trust_tier` | `trust_tier` | NOT NULL DEFAULT `'unverified'` | P2 | Derived; maintained by trigger |
 | `trust_score` | `numeric(5,2)` | NOT NULL DEFAULT 0, CHECK 0–100 | P1 | **Internal only.** Never selectable by other users. |
 | `rating_avg` | `numeric(3,2)` | NULL, CHECK 1–5 | P2 | Denormalized from `ratings` |
@@ -138,11 +138,11 @@ One row per authenticated user, keyed to `auth.users`. Created by trigger on sig
 
 ```sql
 CREATE UNIQUE INDEX profiles_handle_key ON public.profiles (handle) WHERE deleted_at IS NULL;
-CREATE INDEX profiles_home_h3_r7_idx  ON public.profiles (home_h3_r7) WHERE deleted_at IS NULL;
+CREATE INDEX profiles_home_coarse_cell_idx  ON public.profiles (home_coarse_cell) WHERE deleted_at IS NULL;
 CREATE INDEX profiles_trust_tier_idx  ON public.profiles (trust_tier);
 ```
 
-> **Column-level protection.** Postgres ignores a column-level `REVOKE` while a table-level grant exists, so `profiles` is protected by *revoking the table grant and granting columns*: only card-safe columns are `SELECT`able by `authenticated`, and only presentation columns are `UPDATE`able. Because other users' rows are readable (`profiles_select_visible`), every granted column is visible for every visible user. Owner-only columns are read through `public.get_my_profile()`; `trust_score`, `cancellation_count_90d`, and `home_h3_r7` are returned to no client. See [RLS Design §4](05-rls-design.md) and [ADR-0022](adr/ADR-0022-profiles-other-user-reads.md).
+> **Column-level protection.** Postgres ignores a column-level `REVOKE` while a table-level grant exists, so `profiles` is protected by *revoking the table grant and granting columns*: only card-safe columns are `SELECT`able by `authenticated`, and only presentation columns are `UPDATE`able. Because other users' rows are readable (`profiles_select_visible`), every granted column is visible for every visible user. Owner-only columns are read through `public.get_my_profile()`; `trust_score`, `cancellation_count_90d`, and `home_coarse_cell` are returned to no client. See [RLS Design §4](05-rls-design.md) and [ADR-0022](adr/ADR-0022-profiles-other-user-reads.md).
 
 ### `public.verifications`
 
@@ -201,8 +201,8 @@ This is the heart of the privacy model. Read [Location Privacy](04-location-priv
 | `description` | `text` | NULL, `length <= 500` | P2 | |
 | `status` | `garden_status` | NOT NULL DEFAULT `'draft'` | P2 | |
 | `display_point` | `geography(Point,4326)` | NULL | P2 | **Fuzzed.** Derived by trigger. Never client-writable. |
-| `h3_r7` | `text` | NULL | P2 | ~5 km² cell for coarse matching |
-| `h3_r9` | `text` | NULL | P1 | ~0.1 km² cell for proximity queries. Never returned to clients. |
+| `coarse_cell` | `text` | NULL, CHECK `~ '^2500:[0-9]+:[0-9]+$'` | P2 | Coarse tier (2.5 km). Trigger-derived; owner/moderator-readable; never client-writable |
+| `fine_cell` | `text` | NULL, CHECK `~ '^320:[0-9]+:[0-9]+$'` | P1 | Fine tier (320 m). Internal only: column-revoked, never returned to a client |
 | `grow_zone` | `text` | NULL, `length <= 8` | P3 | USDA hardiness zone |
 | `size_band` | `text` | NULL | P3 | `'containers'`\|`'small'`\|`'medium'`\|`'large'`\|`'allotment'` |
 | `verified_at` | `timestamptz` | NULL | P2 | |
@@ -213,7 +213,6 @@ This is the heart of the privacy model. Read [Location Privacy](04-location-priv
 ```sql
 CREATE INDEX gardens_owner_idx      ON public.gardens (owner_id) WHERE deleted_at IS NULL;
 CREATE INDEX gardens_display_gix    ON public.gardens USING GIST (display_point);
-CREATE INDEX gardens_h3_r9_idx      ON public.gardens (h3_r9);
 CREATE INDEX gardens_status_idx     ON public.gardens (status) WHERE deleted_at IS NULL;
 
 -- MVP: one garden per user
@@ -248,7 +247,7 @@ REVOKE ALL ON private.garden_locations FROM anon, authenticated;
 | `id` | `uuid` PK | — | |
 | `garden_id` | `uuid` NOT NULL FK | — | |
 | `photo_path` | `text` NOT NULL | P1 | Storage path; EXIF stripped before write |
-| `captured_h3_r9` | `text` NOT NULL | P1 | Cell where the photo was taken — compared against the garden's cell |
+| `captured_fine_cell` | `text` NOT NULL | P1 | Fine-tier cell where the photo was taken, compared against the garden's `fine_cell` |
 | `distance_from_garden_m` | `real` | P1 | Computed server-side at submission |
 | `ml_confidence` | `real` | P3 | Garden-likeness score, advisory only |
 | `reviewed_by` | `uuid` NULL | P1 | Moderator |
@@ -391,7 +390,6 @@ The only precise coordinates a client ever receives — because they are public 
 | `category` | `safe_spot_category` NOT NULL | P3 | |
 | `status` | `safe_spot_status` NOT NULL DEFAULT `'proposed'` | P3 | |
 | `point` | `geography(Point,4326)` NOT NULL | P3 | **Exact and public** |
-| `h3_r8` | `text` NOT NULL | P3 | Generated column for cell queries |
 | `address_line` | `text` NOT NULL | P3 | |
 | `locality` / `region` / `postal_code` / `country` | `text` | P3 | |
 | `hours` | `jsonb` NOT NULL DEFAULT `'{}'` | P3 | Weekly schedule + exceptions |
@@ -413,7 +411,6 @@ The only precise coordinates a client ever receives — because they are public 
 
 ```sql
 CREATE INDEX safe_spots_gix    ON public.safe_spots USING GIST (point);
-CREATE INDEX safe_spots_h3_idx ON public.safe_spots (h3_r8) WHERE status = 'active';
 CREATE INDEX safe_spots_cat_idx ON public.safe_spots (category) WHERE status = 'active';
 
 -- One safe spot per OSM element. The refresh diff joins on this.
@@ -776,7 +773,7 @@ These tables ship as **empty migrations in MVP** so that Phase 2 and 3 are addit
 | `reports` + evidence | 3 years from resolution | — |
 | `private.idempotency_keys` | 24 hours | `sweep_idempotency_keys` hourly ([Exchange State Machine §4.1](07-exchange-state-machine.md)) |
 | `audit.events` | 7 years | — |
-| Analytics events | 25 months, H3 r5 max spatial resolution | PostHog retention setting |
+| Analytics events | 25 months, region tier (16 km) max spatial resolution | PostHog retention setting |
 | Deleted accounts | 30-day grace, then hard delete of P0/P1, pseudonymized shell retained for referential integrity | Deletion pipeline |
 
 Full policy and DSAR handling: [Privacy & Data Retention](../02-security/04-privacy-and-data-retention.md).
@@ -785,12 +782,18 @@ Full policy and DSAR handling: [Privacy & Data Retention](../02-security/04-priv
 
 ## 15. Migration rules
 
-1. **Forward-only.** No `DOWN` migrations. A mistake is fixed by a new migration, not by rewinding production.
+1. **Forward-only once applied.** No `DOWN` migrations. Once a migration has applied to any **non-disposable** database (a hosted Supabase project or any shared long-lived database), it is never edited: a mistake is fixed by a new corrective migration ([CI/CD §8](../05-operations/02-cicd.md#8-rollback), [ADR-0004](adr/ADR-0004-supabase.md); SCRUM-18). Databases created by `supabase start` / `db reset` locally or in CI are disposable and do not count. A bad contract migration is recovered by point-in-time restore, which is why contract phases are gated.
 2. **Expand → migrate → contract.** Add the new column, dual-write, backfill, switch reads, then drop — across at least two releases.
 3. **A destructive migration (`DROP`, `ALTER TYPE`, `NOT NULL` on an existing column) fails CI** if more than 2% of DAU are on an app version predating the contract phase. Enforced mechanically from `devices.app_version`.
 4. **Every migration that creates a table must, in the same file,** enable RLS, create policies, and be accompanied by pgTAP tests in the same PR. CI rejects a new table with `rowsecurity = false`.
 5. **No migration may `GRANT` on `private`.** CI greps for it and fails.
 6. Migrations run against a production-shaped seed in CI before they can merge.
+7. **File name: `<version>_<snake_case_name>.sql`, where `<version>` is exactly 14 digits, `YYYYMMDDHHMMSS` in UTC** — what `supabase migration new <name>` produces. The CLI takes everything before the first `_` as the version and records it as the primary key of `supabase_migrations.schema_migrations`, so two files with the same leading digits make `supabase db reset` fail. Versions are unique and strictly increasing; never reuse or renumber one. Check: `ls supabase/migrations | sed 's/_.*//' | sort | uniq -d` prints nothing and every prefix matches `^[0-9]{14}$`.
+8. **Refer to a migration by its full file name.** The ten pre-convention files were renamed on 2026-10-22 (SCR-0201) from `YYYYMMDD_NNNN_name.sql` to `YYYYMMDD00NNNN_name.sql`; their `HHMMSS` is the old ordinal, not a time, so short references such as "0004" in their comments still resolve. Names like `0003_mfa.sql` in specs are placeholders: the real file gets a version when it is written.
+9. **One concern per file.** A migration does one reviewable thing (a table with its RLS and policies, a function family, a role). Unrelated fixes go in separate files so each can be reviewed and, if needed, corrected forward on its own.
+10. **Its test ships in the same PR.** Every migration that changes behaviour or privileges lands with the pgTAP file that asserts it (`supabase/tests/*.test.sql`), with negative assertions outnumbering positive ones (NFR-47).
+11. **Roles are created idempotently and with no privileges.** Roles are cluster-wide, so `CREATE ROLE` is guarded by a `pg_roles` check. A new role starts `NOLOGIN` with no grants; privileges are granted explicitly, in a reviewed migration or (for `break_glass`) only by the provisioning procedure ([Runbooks §6](../05-operations/05-runbooks.md)).
+12. **A migration that has never applied to a non-disposable database may be corrected in place, on the record** (decided 2026-10-22, D2). Stacking corrective migrations behind a file that cannot apply on a fresh database is impossible, and editing it in place is safe while nothing depends on it. Every such edit is named in its commit message. WP-DB-BASELINE used this for every migration up to and including `20261022145504_account_deletions_history.sql`: CI first reached Postgres on 2026-10-22 (db.yml run 39803696654) and stopped at the first file on `extension "h3" is not available`, and no hosted project was linked. **The window closes permanently at the first hosted apply. Record that migration's version here: first hosted apply: — (none yet).**
 
 ---
 
@@ -802,3 +805,5 @@ Full policy and DSAR handling: [Privacy & Data Retention](../02-security/04-priv
 | 2026-08-09 | 1.1.0 | Architecture | Workflow-architect review fixes ([review](../07-review/01-workflow-architect-review.md)). §10: added `listings_reservation_coherent` so `status` and `reserved_request_id` cannot drift apart, and a comment pinning `listings_single_reservation` to its only correct form. §14: retention entry for `private.idempotency_keys` |
 | 2026-08-09 | 1.2.0 | Architecture | `exchange_sessions.handoff_code` is now `bytea`, encrypted at rest ([Exchange State Machine §3.3](07-exchange-state-machine.md)), with `SELECT` revoked from `authenticated`. Added `no_show_contested_by` / `no_show_contested_at` for SPEC-010 R64a |
 | 2026-10-21 | 1.3.0 | Architecture | §5 column-protection note rewritten for revoke-then-grant privileges ([ADR-0022](adr/ADR-0022-profiles-other-user-reads.md)); client grants on `profiles`, `gardens`, `verifications`, `blocks` are explicit column lists |
+| 2026-10-22 | 1.4.0 | Architecture | §15: migration naming convention (14-digit UTC version), forward-only once applied to a non-disposable DB (SCRUM-18), recorded in-place edits for never-applied migrations (D2, rule 12), one concern per file, test in the same PR, idempotent zero-privilege roles. Ten legacy migrations renamed (SCR-0201) |
+| 2026-10-22 | 1.5.0 | Architecture | H3 removed ([ADR-0023](adr/ADR-0023-postgis-location-tiers.md)): location tiers region/coarse/fine replace H3 r5/r7/r9; §3 extension list, §5 `home_coarse_cell`, §6 gardens cell columns and CHECKs, §9 safe-spot cell column and index, §14 retention. `gardens_h3_r9_idx` and `safe_spots_h3_idx` removed |

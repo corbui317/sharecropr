@@ -8,7 +8,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 const FORBIDDEN_KEY =
-  /lat|lng|latitude|longitude|coord|point|geohash|h3_r[89]/i;
+  /lat|lng|latitude|longitude|coord|point|geohash|fine_cell/i;
 
 export type CanaryConfig = {
   url: string;

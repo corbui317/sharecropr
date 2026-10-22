@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | **Status** | Review |
-| **Version** | 1.0.0 |
+| **Version** | 1.1.0 |
 | **Owner** | Backend Engineering + Mobile |
 | **Phase** | MVP |
 | **Security review** | not required |
@@ -71,7 +71,7 @@ Every notification in Sharecropr is two things that are deliberately not the sam
 | R03 | **MUST** | `app.enqueue_notification` MUST insert the `private.notification_outbox` row in the same transaction as the `notifications` row. The intent to notify commits with the state change or not at all — there is no distributed transaction between Postgres and Expo, and no ordering of "send then commit" or "commit then send" that is safe. |
 | R04 | **MUST** | Titles, bodies, and deep links MUST come from rows in `private.notification_templates`, never from string concatenation in PL/pgSQL or in an Edge Function. Templates being data is what makes §6.2 reviewable and what makes "can a notification interpolate a location?" a question about a table. |
 | R05 | **MUST** | `app.render_template` MUST **raise** on a placeholder with no matching payload key. Rendering `{requester_name} wants your {listing_title}` to a user's lock screen is worse than failing loudly, and a missing key is always a bug in a call site. |
-| R06 | **MUST** | `notifications.payload` MUST carry a `CHECK` rejecting the keys `lat`, `lng`, `latitude`, `longitude`, `point`, `coordinates`, `geohash`, `h3_r8`, and `h3_r9`, at any depth ([Data Model §12](../01-architecture/03-data-model.md), LP-11). This is one of the egress controls in [Location Privacy §8](../01-architecture/04-location-privacy.md) and it is asserted by pgTAP on every migration, not by convention. |
+| R06 | **MUST** | `notifications.payload` MUST carry a `CHECK` rejecting the keys `lat`, `lng`, `latitude`, `longitude`, `point`, `coordinates`, `geohash`, and `fine_cell`, at any depth ([Data Model §12](../01-architecture/03-data-model.md), LP-11). This is one of the egress controls in [Location Privacy §8](../01-architecture/04-location-privacy.md) and it is asserted by pgTAP on every migration, not by convention. |
 | R07 | **MUST** | The inbox MUST be readable at `/notifications`, keyset-paginated on `(created_at DESC, id DESC)`, default 30 and max 100 ([API Contract §3.3](../01-architecture/06-api-contract.md)). Offset pagination MUST NOT be used: the inbox changes under the reader constantly, and offset silently skips and duplicates rows. |
 | R08 | **MUST** | `notifications_select_own` MUST be the only read policy (`user_id = (SELECT auth.uid())`), and there MUST be no client `INSERT`, `UPDATE`, or `DELETE` policy. `read_at` is set exclusively by `rpc.mark_notifications_read`. |
 | R09 | **MUST** | The unread count MUST be a `Prefer: count=exact` request with a zero-row range ([API Contract §4.9](../01-architecture/06-api-contract.md)), not a fetch of ids the client then counts. |
@@ -90,7 +90,7 @@ Every notification in Sharecropr is two things that are deliberately not the sam
 | R17 | **MUST NOT** | No push body MUST contain a report's details, a rating's stars or comment, a trust score, `flagged_reason`, or any moderation action name ([SPEC-012 R29, R30, R48](SPEC-012-trust-and-safety.md)). |
 | R18 | **MUST** | `message_received` bodies MUST truncate the preview at **140 characters on a word boundary** with an ellipsis. The full body is in the thread; the preview is a hint, and a mid-word cut on a lock screen reads as corruption. |
 | R19 | **MUST** | Every `deep_link` MUST resolve to exactly one route in [Mobile Architecture §3.1](../01-architecture/02-mobile-architecture.md), and an unmapped kind MUST fall back to `sharecropr://notifications` rather than to the tab root. |
-| R20 | **MUST NOT** | No deep link MUST accept or emit a parameter matching `/lat|lng|latitude|longitude|coord|point|geohash|h3/i`, asserted in CI over the route manifest (API-05). |
+| R20 | **MUST NOT** | No deep link MUST accept or emit a parameter matching `/lat|lng|latitude|longitude|coord|point|geohash|_cell/i`, asserted in CI over the route manifest (API-05). |
 
 ### 5.3 Preferences, quiet hours, and the one that cannot be turned off
 
@@ -183,7 +183,7 @@ CREATE OR REPLACE FUNCTION app.jsonb_has_coord_key(p jsonb) RETURNS boolean
 LANGUAGE sql IMMUTABLE SET search_path = pg_catalog AS $$
   SELECT EXISTS (
     SELECT 1 FROM jsonb_each(p) kv
-     WHERE kv.key ~* '^(lat|lng|latitude|longitude|point|coordinates|geohash|h3_r[89])$'
+     WHERE kv.key ~* '^(lat|lng|latitude|longitude|point|coordinates|geohash|fine_cell)$'
         OR (jsonb_typeof(kv.value) = 'object' AND app.jsonb_has_coord_key(kv.value)));
 $$;
 
@@ -665,3 +665,4 @@ Exact strings.
 | Date | Version | Author | Change |
 | --- | --- | --- | --- |
 | 2026-08-08 | 1.0.0 | Backend Engineering + Mobile | Initial spec |
+| 2026-10-22 | 1.1.0 | Backend Engineering + Mobile | H3 removed; renamed to location tiers per [ADR-0023](../01-architecture/adr/ADR-0023-postgis-location-tiers.md). R06 key list and R20 deep-link regex use `fine_cell` / `_cell`. |

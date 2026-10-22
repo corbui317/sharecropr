@@ -8,6 +8,8 @@
 | **Supersedes** | — |
 | **Superseded by** | — |
 
+> **Note (2026-10-22):** `h3-pg` is not available on Supabase and was removed from the test environment and from the H3 line below; see [ADR-0023](ADR-0023-postgis-location-tiers.md).
+
 ## Context
 
 [ADR-0003](ADR-0003-database-centric-authz.md) makes the database the application tier. That means the majority of Sharecropr's business logic and **all** of its authorization live in Postgres — in RLS policies, `SECURITY DEFINER` functions, triggers, `CHECK` constraints, and partial unique indexes. Whatever we test, we have to be able to test *those*.

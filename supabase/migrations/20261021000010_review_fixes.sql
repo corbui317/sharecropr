@@ -1,4 +1,4 @@
--- Code-review fixes (EPIC-02/03 hardening). Forward-only; 0001-0009 are not edited.
+-- Code-review fixes (EPIC-02/03 hardening), written as a forward migration over 0001-0009.
 --   1. Column-level privileges (REVOKE ALL, then explicit column GRANTs)
 --   2. Caller-scoped app helpers; idempotency helpers no longer client-callable
 --   3. Step-up only when a second factor is enrolled
@@ -25,14 +25,14 @@ GRANT SELECT (id, handle, display_name, avatar_path, bio, city_label, trust_tier
               rating_avg, rating_count, completed_exchanges, created_at)
   ON public.profiles TO authenticated;
 -- handle is NOT updatable (SPEC-001 R11: editable once, via a future RPC). trust_*,
--- rating_*, is_suspended, suspended_until, deleted_at, city_label, home_h3_r7 are
+-- rating_*, is_suspended, suspended_until, deleted_at, city_label, home_coarse_cell are
 -- server-maintained.
 GRANT UPDATE (display_name, avatar_path, bio, locale, timezone, onboarding_completed_at)
   ON public.profiles TO authenticated;
 
--- gardens: h3_r9 is never client-readable. status/verified_at/rejection_reason/deleted_at
+-- gardens: fine_cell is never client-readable. status/verified_at/rejection_reason/deleted_at
 -- and derived location columns change only through RPCs (SPEC-004).
-GRANT SELECT (id, owner_id, name, description, status, display_point, h3_r7, grow_zone,
+GRANT SELECT (id, owner_id, name, description, status, display_point, coarse_cell, grow_zone,
               size_band, verified_at, rejection_reason, deleted_at, created_at, updated_at)
   ON public.gardens TO authenticated;
 GRANT INSERT (owner_id, name, description, grow_zone, size_band)
@@ -141,7 +141,7 @@ SELECT p.id, p.handle, p.display_name, p.avatar_path, p.bio,
 
 -- Owner-only columns, for the caller only. Deliberately NOT returned: trust_score and
 -- cancellation_count_90d (SPEC-012 R48: never returned to any client in any form) and
--- home_h3_r7 (no client need yet). Adding any of them is a recorded decision, not a tweak.
+-- home_coarse_cell (no client need yet). Adding any of them is a recorded decision, not a tweak.
 CREATE OR REPLACE FUNCTION public.get_my_profile()
 RETURNS TABLE (
   id uuid, handle citext, display_name text, avatar_path text, bio text, city_label text,

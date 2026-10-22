@@ -308,6 +308,65 @@
    "remaining_after": "WP-12: broken-policy fixture, first green run, CI/CD \u00a72 verified state."
   },
   {
+   "id": "WP-DB-BASELINE",
+   "jira_keys": [
+    "SCRUM-35",
+    "SCRUM-36",
+    "SCRUM-41",
+    "SCRUM-44"
+   ],
+   "backlog_keys": [
+    "SCR-0201",
+    "SCR-0208",
+    "SCR-0203",
+    "SCR-0210"
+   ],
+   "title": "DB baseline: 14-digit migrations + break_glass, H3 removed for PostGIS location tiers (ADR-0023), digest + Vault accessor, LP-06",
+   "class": "do",
+   "position_reason": "Absorbs WP-08..WP-11 (D1/D2, 2026-10-22). db.yml runs 39803696654/39804036046 stop at 20260822_0001 on extension h3.",
+   "scope": "WP-08: ten migration renames, break_glass role, Data Model \u00a715 convention. D1: H3 removed everywhere; named PostGIS location tiers (region 16 km, coarse 2.5 km, fine 320 m) via app.location_cell(), CHECK-pinned columns, nightly check_location_tiers(), location_tiers pgTAP, ADR-0023. extensions.digest qualification. WP-09: private.get_handoff_key() accessor (fails closed), placeholder key moved to seed.sql, vault_handoff_key pgTAP, doc edits. WP-11: LP-06 rewrite and skip() placeholders. Never-applied migrations are edited in place (D2). Out: db.yml, run-pgtap.sh, config.toml, break-glass provisioning, SPEC-020 matching re-spec, SPEC-004 home_coarse_cell derivation.",
+   "files": [
+    "supabase/migrations/20260822000001\u2026000006 (renamed, edited)",
+    "supabase/migrations/20260822000007\u2026000008 (renamed only)",
+    "supabase/migrations/20260828000009_auth.sql",
+    "supabase/migrations/20261021000010_review_fixes.sql",
+    "supabase/migrations/20261022145504_account_deletions_history.sql (comments)",
+    "supabase/migrations/<TS>_break_glass_role.sql",
+    "supabase/tests/roles_break_glass.test.sql",
+    "supabase/tests/location_tiers.test.sql",
+    "supabase/tests/vault_handoff_key.test.sql",
+    "supabase/tests/{rls_column_privileges,rls_gardens,rls_profiles,location_privacy}.test.sql",
+    "supabase/seed.sql",
+    "packages/location-canary/src/index.ts",
+    "AGENTS.md",
+    "docs/01-architecture/adr/ADR-0023-postgis-location-tiers.md",
+    "docs/01-architecture/adr/{ADR-0004,ADR-0005,ADR-0016,ADR-0018,README}.md",
+    "docs/01-architecture/{01-system-architecture,02-mobile-architecture,03-data-model,04-location-privacy,05-rls-design,06-api-contract,07-exchange-state-machine}.md",
+    "docs/00-foundation/{04-glossary,05-nfr}.md",
+    "docs/02-security/{01-threat-model,04-privacy-and-data-retention}.md",
+    "docs/03-specs/SPEC-{001,004,005,006,007,008,009,010,012,013,020,021,022,023}-*.md",
+    "docs/04-testing/{01-test-strategy,02-rls-test-plan,03-geospatial-test-plan}.md",
+    "docs/05-operations/{01-environments,02-cicd,04-observability,05-runbooks}.md",
+    "docs/06-roadmap/{01-roadmap,02-open-risks,03-delivery-backlog}.md",
+    "docs/07-review/02-development-notes.md",
+    "docs/07-review/04-backlog-execution/{queue.json,README.md,harness-baseline.md}"
+   ],
+   "verify": [
+    "local gates (plan \u00a710)",
+    "draft PR to develop: app + db green"
+   ],
+   "skills": [
+    "deprecation-and-migration",
+    "security-and-hardening",
+    "test-driven-development",
+    "documentation-and-adrs",
+    "ci-cd-and-automation",
+    "debugging-and-error-recovery"
+   ],
+   "risks": "Real supabase_vault privileges (F1); run-pgtap uses `supabase db test` (F2, WP-12 owns it). Location Privacy/RLS Design need security review.",
+   "remaining_after": "WP-12 broken-policy fixture; break-glass provisioning (no key); SPEC-020 matching re-spec; alert routing for location_tier_consistency; LP-02 allowlist (WP-13/19)."
+  },
+  {
    "id": "WP-08",
    "jira_keys": [
     "SCRUM-35"
@@ -316,7 +375,7 @@
     "SCR-0201"
    ],
    "title": "Unique 14-digit migration versions, migration convention doc, break_glass role",
-   "class": "do",
+   "class": "absorbed",
    "position_reason": "Root of the schema chain (SCR-0205/0203 blocked by it); `supabase db reset` can't succeed with the version collision.",
    "scope": "git mv each 20260822_000N_*.sql and the later ones to YYYYMMDDHHMMSS_name.sql, preserving order; update any references (docs, scripts, tests). Document the convention (naming, one concern per file, test file in the same PR; reference CI/CD \u00a78 for forward-only without deciding SCRUM-18). Create role break_glass NOLOGIN with no grants (or record deferral with a backlog key).",
    "files": [
@@ -336,7 +395,8 @@
     "documentation-and-adrs"
    ],
    "risks": "Renaming is safe only because no hosted project has applied them; confirm no remote schema_migrations exists. break_glass must have zero default grants; check that ci-assert-no-private-grants still passes.",
-   "remaining_after": "None."
+   "remaining_after": "None.",
+   "absorbed_into": "WP-DB-BASELINE"
   },
   {
    "id": "WP-09",
@@ -347,7 +407,7 @@
     "SCR-0208"
    ],
    "title": "Vault: private.get_handoff_key() accessor, placeholder key moved to seed, fail closed",
-   "class": "do",
+   "class": "absorbed",
    "position_reason": "Highest ci-blocker; SCR-0205 is blocked by it; the migration fails today.",
    "scope": "Replace COMMENT ON vault.get_secret with a SECURITY DEFINER private.get_handoff_key() reading vault.decrypted_secrets (pinned search_path, revoke from PUBLIC/anon/authenticated) that raises when the key is absent. Move placeholder secret creation to seed.sql. Add pgTAP (anon/authenticated denied; owner round trip). Update SPEC-010, Exchange State Machine \u00a73.3, Runbook 14 and the AGENTS.md \u00a76 N-03 row (link Environments \u00a76).",
    "files": [
@@ -369,7 +429,8 @@
     "api-and-interface-design"
    ],
    "risks": "The stub vault differs from real supabase_vault/pgsodium on PG15, so trust only the GitHub run. Is editing the existing migration in place OK? Yes, nothing has been applied remotely; note it in the commit. The AGENTS \u00a76 edit only reflects the custody Environments \u00a76 already documents; it isn't a new decision.",
-   "remaining_after": "None (rotation rehearsal is SCRUM-39)."
+   "remaining_after": "None (rotation rehearsal is SCRUM-39).",
+   "absorbed_into": "WP-DB-BASELINE"
   },
   {
    "id": "WP-10",
@@ -380,7 +441,7 @@
     "SCR-0203"
    ],
    "title": "h3_postgis in a pinned schema; trigger resolves; nightly h3_r9 consistency job",
-   "class": "do",
+   "class": "absorbed",
    "position_reason": "Blocked only by SCR-0201; the seed fails without it, which breaks every RLS test fixture.",
    "scope": "CREATE EXTENSION h3/h3_postgis WITH SCHEMA extensions; fix search_path in sync_garden_derived_location and k_for_radius; add a pg_cron nightly job writing a failure row/raising for mismatched h3_r9; pgTAP for seeded gardens' h3 columns and k_for_radius.",
    "files": [
@@ -398,7 +459,8 @@
     "test-driven-development"
    ],
    "risks": "If the real Supabase image lacks h3/h3_postgis (unverified per ADR-0016), STOP and surface it to Corey as an ADR-0005 decision. Invariant 1: the consistency check must not log exact_point.",
-   "remaining_after": "Alert routing for the nightly job (observability accounts)."
+   "remaining_after": "Alert routing for the nightly job (observability accounts).",
+   "absorbed_into": "WP-DB-BASELINE"
   },
   {
    "id": "WP-11",
@@ -409,7 +471,7 @@
     "SCR-0210"
    ],
    "title": "LP-06 averaging test fixed; LP-08/09/10/12 use skip() with backlog keys",
-   "class": "do",
+   "class": "absorbed",
    "position_reason": "location_privacy.test.sql errors and fails its plan, so the pgTAP baseline can't be green; this must land before WP-12.",
    "scope": "Rewrite LP-06 to sample display_point through an authenticated PostgREST-equivalent query N times, using the mean vs exact_point (compute in geometry, compare via ST_Distance geography). Replace pass() placeholders with skip('SCR-xxxx').",
    "files": [
@@ -423,7 +485,8 @@
     "security-and-hardening"
    ],
    "risks": "Invariant 1: test output must not print exact coordinates. If display_point is stable per garden (by design), LP-06 must assert the mean equals the stored fuzz, not converges to truth.",
-   "remaining_after": "Spec-size property versions are in WP-19."
+   "remaining_after": "Spec-size property versions are in WP-19.",
+   "absorbed_into": "WP-DB-BASELINE"
   },
   {
    "id": "WP-12",
@@ -435,7 +498,7 @@
    ],
    "title": "db.yml broken-policy fixture + first green run + CI/CD \u00a72 verified state",
    "class": "do-partial",
-   "position_reason": "Needs WP-12a (working db.yml) and WP-08/09/10/11 (clean migrations + pgTAP). It is the green-run gate that unblocks SCR-0206/0210/0212 and the FORCE sweep.",
+   "position_reason": "Needs WP-12a (working db.yml) and WP-DB-BASELINE (clean migrations + pgTAP). It is the green-run gate that unblocks SCR-0206/0210/0212 and the FORCE sweep.",
    "scope": "Add a workflow_dispatch input or separate job that applies a fixture dropping a policy and asserts failure. Link the green run in the dev notes; update CI/CD \u00a72 to the verified state.",
    "files": [
     ".github/workflows/db.yml",
@@ -497,7 +560,7 @@
    ],
    "title": "Per-table negative-ratio gate with generator for the twelve questions",
    "class": "do",
-   "position_reason": "Needs green pgTAP (WP-12) and the skip() cleanup (WP-11).",
+   "position_reason": "Needs green pgTAP (WP-12) and the skip() cleanup (WP-DB-BASELINE).",
    "scope": "Tag assertions with 'table:<name>'; rewrite ci-assert-negative-ratio (node script) to count per table, excluding skip/pass, failing when negatives \u2264 positives or a twelve-question item is missing; a generator emits the per-table question skeleton; relabel the non-negative N9/N14; add 'suspended user cannot write' for gardens; unbalanced fixture.",
    "files": [
     "scripts/ci-assert-negative-ratio.mjs",
@@ -1491,6 +1554,8 @@
   "SCRUM-62": "Move AppState listener out of src/api into an app boot hook calling exported startAutoRefresh/stopAutoRefresh; amend mobile-arch \u00a75 snippet; list sanctioned src/api adapters in \u00a71.",
   "SCRUM-32": "Accept the breach retroactively; keep hardening EPIC-00/02/03; freeze EPIC-04+ until SCR-0104 go/no-go; add a __DEV__-only spike route that bypasses auth; record in backlog + AGENTS.md \u00a75.",
   "SCRUM-18": "Forward-only migrations. Amend SCR-0007 to: forward apply on disposable DB + rehearsed roll-forward corrective migration.",
-  "SCRUM-31": "Amend SPEC-008 R69: point features carry exactly (id, listing_count, category, label, selected); cluster features carry (id, cluster_id, point_count); category_glyph derived in-style via a match expression. T68 asserts per feature kind."
+  "SCRUM-31": "Amend SPEC-008 R69: point features carry exactly (id, listing_count, category, label, selected); cluster features carry (id, cluster_id, point_count); category_glyph derived in-style via a match expression. T68 asserts per feature kind.",
+  "D1-2026-10-22": "Drop H3; PostGIS only; ADR-0023 supersedes ADR-0005 (evidence: db.yml run 39803696654).",
+  "D2-2026-10-22": "Edit never-applied migrations in place; forward-only from the first hosted apply (Data Model \u00a715 rules 1, 12)."
  }
 }

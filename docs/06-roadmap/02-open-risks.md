@@ -1,6 +1,6 @@
 # Open Risks
 
-**Status:** Approved · **Version:** 1.0.0 · **Owner:** CTO
+**Status:** Approved · **Version:** 1.1.1 · **Owner:** CTO
 
 Ranked by expected damage × probability. Risk IDs are `R-##`, permanent, referenced throughout the doc set.
 
@@ -141,7 +141,7 @@ Per-verification cost times a signup funnel we do not control equals an unbounde
 
 `private.garden_locations` is thoroughly hardened. The realistic leak paths are mundane: a Sentry breadcrumb containing a coordinate, a PostHog event with a raw lat/lng, a support screenshot, a moderator with database access, a CSV export for a growth experiment.
 
-**The telemetry scrubber and the H3-r5 analytics rule are one-line policies protecting the crown jewels**, and they are exactly the sort of thing that quietly breaks after a library upgrade.
+**The telemetry scrubber and the region-tier analytics rule are one-line policies protecting the crown jewels**, and they are exactly the sort of thing that quietly breaks after a library upgrade.
 
 **Mitigation:** automated enforcement — a test that fires synthetic events and asserts the scrubber catches coordinates ([LP-08](../04-testing/01-test-strategy.md)); a documented moderator-access audit; the export role having no `private` access; and the response-body sweep across every endpoint.
 
@@ -189,9 +189,11 @@ The App Store submission asserts this process exists. It needs to actually exist
 
 ## R-12 — The dual spatial model will produce a correctness bug
 
+**Status: Retired 2026-10-22** ([ADR-0023](../01-architecture/adr/ADR-0023-postgis-location-tiers.md)): there is one spatial model; proximity never filters by cell.
+
 **Severity: Medium · Likelihood: High**
 
-PostGIS geography plus H3 cells means at least one bug is coming. Most likely: someone queries a single H3 cell instead of `h3_grid_disk`, and users near a cell boundary silently see fewer results. It will not crash, will not error, and will not appear in tests unless the boundary case is written explicitly.
+PostGIS geography plus a hexagonal cell index (ADR-0005, superseded by ADR-0023) meant at least one bug was coming. Most likely: someone queries a single cell instead of a disk, and users near a cell boundary silently see fewer results. It will not crash, will not error, and will not appear in tests unless the boundary case is written explicitly.
 
 **Mitigation:** [TC-GEO-07 and TC-GEO-08](../04-testing/03-geospatial-test-plan.md) test the recall direction specifically, paired against TC-GEO-25 so that fixing recall does not get "optimised" back into a boundary bug.
 
@@ -276,3 +278,4 @@ Adding a risk requires an ID, an owner, a severity, and a **concrete trigger**. 
 | --- | --- | --- | --- |
 | 2026-08-08 | 1.0.0 | CTO | Initial risk register |
 | 2026-08-09 | 1.1.0 | CTO | **OpenStreetMap decision.** R-02 severity reduced — [ADR-0021](../01-architecture/adr/ADR-0021-osm-safe-spot-sourcing.md) automates discovery — but the risk stays open with rubber-stamping as a new failure mode, and the durable win named as the refresh diff rather than the initial import. **R-04 restated and its likelihood raised**: the passing `react-native-maps` spike no longer validates the shipping stack, and MapLibre RN's New Architecture interop is less battle-tested. R-15 (basemap staleness + tile pipeline toil) and R-16 (OSM data quality by market) added. |
+| 2026-10-22 | 1.1.1 | CTO | H3 removed; renamed to location tiers per [ADR-0023](../01-architecture/adr/ADR-0023-postgis-location-tiers.md). R-12 retired. |

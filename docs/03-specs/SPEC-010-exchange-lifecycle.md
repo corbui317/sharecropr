@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | **Status** | Review |
-| **Version** | 1.2.0 |
+| **Version** | 1.2.1 |
 | **Owner** | Backend Engineering |
 | **Phase** | MVP |
 | **Security review** | required |
@@ -355,7 +355,7 @@ CREATE INDEX sessions_request_idx ON public.exchange_sessions (request_id);
 ------------------------------------------------------------------------
 ALTER TABLE public.exchange_sessions
   ALTER COLUMN handoff_code TYPE bytea
-  USING pgp_sym_encrypt(handoff_code::text, vault.get_secret('handoff_code_key'));
+  USING pgp_sym_encrypt(handoff_code::text, private.get_handoff_key());
 
 REVOKE SELECT (handoff_code) ON public.exchange_sessions FROM authenticated;
 
@@ -376,7 +376,7 @@ BEGIN
   VALUES (auth.uid(), 'authenticated', 'exchange.code_read', 'session', p_session_id);
 
   RETURN QUERY SELECT pgp_sym_decrypt(v_s.handoff_code,
-                        vault.get_secret('handoff_code_key'))::text;
+                        private.get_handoff_key())::text;
 END; $$;
 
 REVOKE ALL ON FUNCTION public.get_handoff_code(uuid) FROM PUBLIC, anon;
@@ -533,7 +533,7 @@ BEGIN
   -- R30/R54: decrypt, then compare in constant time. The decrypt runs on every
   -- attempt, right and wrong alike, so it leaks nothing the comparison doesn't.
   IF NOT app.digest_equals(
-       pgp_sym_decrypt(v_s.handoff_code, vault.get_secret('handoff_code_key'))::text,
+       pgp_sym_decrypt(v_s.handoff_code, private.get_handoff_key())::text,
        p_code) THEN
     UPDATE public.exchange_sessions
        SET handoff_attempts          = handoff_attempts + 1,
@@ -1353,7 +1353,7 @@ Exact strings.
 | T73a | Dump the database and grep for a six-digit code | No plaintext code exists anywhere on disk, in a backup, in a PITR snapshot, or on a read replica. Asserted by `pg_dump` of a seeded database with 500 live sessions and a regex sweep for `\b\d{6}\b` in the `exchange_sessions` extract |
 | T73b | Rotate `handoff_code_key` following runbook 14 while 200 sessions are `scheduled` | Every session's code is still readable and unchanged afterwards; zero `get_handoff_code` errors during and after. The naive swap (promote without re-encrypting) is run as a negative case and is asserted to break every live session — the reason the runbook exists |
 | T73c | Call `get_handoff_code` 50 times on one session | Every call writes an `exchange.code_read` audit row with the caller's id; the rate limit engages at 20/hour/session. A read leaves a trace, so "who has seen this code" is answerable |
-| T74 | Capture a full accept → schedule → handoff → complete session in mitmproxy | No `handoff_code` on any realtime frame or push payload; no garden coordinate, `display_point`, `h3_r7`, `h3_r9`, or device position anywhere; the only coordinates are safe-spot public points |
+| T74 | Capture a full accept → schedule → handoff → complete session in mitmproxy | No `handoff_code` on any realtime frame or push payload; no garden coordinate, `display_point`, `coarse_cell`, `fine_cell`, or device position anywhere; the only coordinates are safe-spot public points |
 | T75 | Call `accept_exchange_request` for a request where you are the **requester**, not the owner | `not_authorized` 403 from the function's manual check. A definer function bypasses RLS, so this check is the only thing between an attacker and accepting on someone else's behalf |
 | T76 | Call every RPC in §7 as `anon` with a forged `apikey` | 401/403 at the grant level before any body executes; asserted for all eight |
 | T77 | Accept the same request from two devices with two different idempotency keys | One succeeds, one gets `request_not_pending` 409. Exactly one session, exactly one code, exactly one `request_accepted` notification |
@@ -1418,3 +1418,4 @@ Exact strings.
 | 2026-08-08 | 1.0.0 | Backend Engineering | Initial spec |
 | 2026-08-09 | 1.1.0 | Backend Engineering | Workflow-architect review fixes ([review](../07-review/01-workflow-architect-review.md)). **R49a is the important one**: `confirm_handoff` now returns failures instead of raising them, because a `RAISE` rolled back the very counter the brute-force lockout depends on — the control did not exist at runtime. R67/R68a–d: four edges into `disputed` (a `scheduled` session was unfreezable), two moderator edges out, and a release path so a dispute stops orphaning its listing and inventory item forever. R71: index corrected to `(reserved_request_id)`; the `(id)` form was a no-op. R42a: `confirm_handoff` exempted from the version guard, which silently defeated H4. R30a: rejection sampling — the old generator would not compile and was 6.25% biased. R80/R80a: real key-based idempotency. R26a, R63a–b, R64 buffer, R79a. Tests T24a, T29a, T35a–c, T49a–c, T60a–b added; T24, T30, T31, T35, T49, T54, T55, T59, T60 rewritten to assert the fixed behaviour |
 | 2026-08-09 | 1.2.0 | Backend Engineering | Applied the three deferred review suggestions after a product/security decision. **R30/R45/R54:** the handoff code is encrypted at rest and read only through the audited `rpc.get_handoff_code` — encrypted rather than hashed, because both parties must be able to *read* it at the meeting. **R64a–d:** a no-show marker is now contestable in one tap; attribution clears, the session stays terminal, and the contest itself is a trust signal rather than a hard clear — EC-22's person-with-no-signal finally has an answer. **§5.10 / R87–R91:** Q7 closed in favour of dual confirmation, with `dual_with_fallback` written, tested, and disabled, and the switching threshold committed in advance so it cannot be argued into existence after the data lands. Tests T48a–b, T73a–c |
+| 2026-10-22 | 1.2.1 | Backend Engineering | Handoff key is read through `private.get_handoff_key()` (SCR-0208). |

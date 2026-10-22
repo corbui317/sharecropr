@@ -54,7 +54,7 @@ CREATE OR REPLACE FUNCTION app.jsonb_has_coord_key(p jsonb) RETURNS boolean
 LANGUAGE sql IMMUTABLE SET search_path = pg_catalog AS $$
   SELECT EXISTS (
     SELECT 1 FROM jsonb_each(p) kv
-     WHERE kv.key ~* '^(lat|lng|latitude|longitude|point|coordinates|geohash|h3_r[89])$'
+     WHERE kv.key ~* '^(lat|lng|latitude|longitude|point|coordinates|geohash|fine_cell)$'
         OR (jsonb_typeof(kv.value) = 'object' AND app.jsonb_has_coord_key(kv.value)));
 $$;
 
@@ -75,7 +75,7 @@ SELECT p.id, p.handle, p.display_name, p.avatar_path, p.bio,
 
 GRANT SELECT ON public.profile_cards TO authenticated;
 
-REVOKE SELECT (trust_score, cancellation_count_90d, home_h3_r7, is_suspended)
+REVOKE SELECT (trust_score, cancellation_count_90d, home_coarse_cell, is_suspended)
   ON public.profiles FROM authenticated;
 
 -- ── RLS: profiles ────────────────────────────────────────────────────────────
@@ -132,7 +132,7 @@ CREATE POLICY gardens_insert_own ON public.gardens
   WITH CHECK (
     owner_id = (SELECT auth.uid())
     AND status = 'draft'
-    AND display_point IS NULL AND h3_r7 IS NULL AND h3_r9 IS NULL
+    AND display_point IS NULL AND coarse_cell IS NULL AND fine_cell IS NULL
   );
 
 CREATE POLICY gardens_update_own ON public.gardens

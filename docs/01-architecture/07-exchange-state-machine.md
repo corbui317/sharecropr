@@ -1,6 +1,6 @@
 # Exchange State Machine
 
-**Status:** Review · **Version:** 1.1.0 · **Owner:** Architecture
+**Status:** Review · **Version:** 1.3.0 · **Owner:** Architecture
 
 The exchange is the product. Everything else exists to make this sequence safe and reliable. This document is normative: the states, transitions, guards, and concurrency controls below are the contract that [SPEC-010](../03-specs/SPEC-010-exchange-lifecycle.md) implements and that the client's optimistic UI must mirror exactly.
 
@@ -131,10 +131,10 @@ So the column is encrypted with a reversible symmetric key held in Supabase Vaul
 -- Column type changes from char(6) to bytea. The plaintext never lands on disk.
 ALTER TABLE public.exchange_sessions
   ALTER COLUMN handoff_code TYPE bytea
-  USING pgp_sym_encrypt(handoff_code::text, vault.get_secret('handoff_code_key'));
+  USING pgp_sym_encrypt(handoff_code::text, private.get_handoff_key());
 
 -- Write path (inside accept_exchange_request, §4)
-v_enc := pgp_sym_encrypt(v_code, vault.get_secret('handoff_code_key'));
+v_enc := pgp_sym_encrypt(v_code, private.get_handoff_key());
 
 -- Read path — the ONLY decrypt in the codebase.
 CREATE OR REPLACE FUNCTION public.get_handoff_code(p_session_id uuid)
@@ -155,7 +155,7 @@ BEGIN
   VALUES (auth.uid(), 'authenticated', 'exchange.code_read', 'session', p_session_id);
 
   RETURN QUERY SELECT pgp_sym_decrypt(v_s.handoff_code,
-                        vault.get_secret('handoff_code_key'))::text;
+                        private.get_handoff_key())::text;
 END; $$;
 
 REVOKE ALL ON FUNCTION public.get_handoff_code(uuid) FROM PUBLIC, anon;
@@ -170,7 +170,7 @@ Three consequences worth stating because each is a place this can go wrong:
 - **The comparison moves.** `app.digest_equals` compared two six-digit strings in constant time. It now decrypts first and compares the plaintext in constant time — the timing property is still required (a comparison is still an oracle) and the encryption adds nothing to it either way.
 - **The read is audited.** `get_handoff_code` writes `exchange.code_read`. There is exactly one decrypt path in the system and it leaves a trace, which is what makes "who has seen this code" an answerable question. A spike in `code_read` without a matching handoff attempt is a signal worth an alert.
 - **Key rotation needs a runbook.** The key cannot be rotated by re-encrypting lazily, because a session mid-flight must stay readable. Rotation re-encrypts every non-terminal session's column in one transaction against the new key, and terminal sessions are left alone because nobody will ever read them again. See [Runbook 14](../05-operations/05-runbooks.md).
-- **Vault is now on the critical path of a physical meeting.** If `vault.get_secret` is unavailable, both `get_handoff_code` and `confirm_handoff` fail, and there is deliberately no cached fallback — caching a decrypted code on the client is what R51 exists to prevent. This failure currently surfaces as `server_error`, which is honest and unhelpful for two people standing in a lobby. A distinct code and string are worth adding before launch ([Development Notes N-03](../07-review/02-development-notes.md#n-03--vault-is-now-on-the-critical-path-of-a-physical-meeting)).
+- **Vault is now on the critical path of a physical meeting.** If the Vault key is unavailable, `private.get_handoff_key()` raises `handoff_key_unavailable` (SQLSTATE 55000) and both `get_handoff_code` and `confirm_handoff` fail, and there is deliberately no cached fallback — caching a decrypted code on the client is what R51 exists to prevent. This failure currently surfaces as `server_error`, which is honest and unhelpful for two people standing in a lobby. A distinct code and string are worth adding before launch ([Development Notes N-03](../07-review/02-development-notes.md#n-03--vault-is-now-on-the-critical-path-of-a-physical-meeting)).
 
 ## 4. `accept_exchange_request` — the critical section
 
@@ -302,7 +302,7 @@ BEGIN
   v_code := lpad((v_n % 1000000)::text, 6, '0');
   -- §3.3: encrypted before it touches disk. The plaintext lives only in this
   -- local variable, is never returned, and is discarded when the function ends.
-  v_enc  := pgp_sym_encrypt(v_code, vault.get_secret('handoff_code_key'));
+  v_enc  := pgp_sym_encrypt(v_code, private.get_handoff_key());
 
   UPDATE public.listings
      SET status = 'reserved', reserved_request_id = p_request_id, updated_at = now()
@@ -671,3 +671,4 @@ Errors returned to the client are stable codes, never raw Postgres messages — 
 | 2026-08-08 | 1.0.0 | Architecture | Initial state machine |
 | 2026-08-09 | 1.1.0 | Architecture | Workflow-architect review fixes ([review](../07-review/01-workflow-architect-review.md)). §3: added `scheduling→disputed` and `scheduled→disputed`; a session must be freezable from the state it is in. §3.1: the handoff code is no longer returned at acceptance, and the self-contradicting "shown to both parties" sentence is gone. **§3.2 is new** — `disputed` now has two moderator-only exits, closing a permanent reservation leak. §4: idempotency is key-based, the accept rate limit is in the body, the requester's standing is re-checked, and the code generator uses rejection sampling (the old one would not compile and was 6.25% biased). **§4.1 is new** — shared idempotency helpers. §5: H5 exempts `confirm_handoff`, which H4 required and the strict version check silently defeated; H1's backstop index is pinned to one correct form. §6: transition table is 13 edges, and the assertion count is 49, not 36. §7: `detect_no_shows` gains a 15-minute buffer; three jobs added. §9: taxonomy completed from 11 codes to 18, with the handoff cases split out |
 | 2026-08-09 | 1.2.0 | Architecture | Applied the three deferred review suggestions. **§3.3 is new** — the handoff code is encrypted at rest with a Vault key, read through the single audited `rpc.get_handoff_code`. Encrypted rather than hashed: both parties must be able to *read* the code at the meeting, and a hash makes it displayable once and lost forever. §4 encrypts on write; the plaintext never leaves the function. Key rotation is [Runbook 14](../05-operations/05-runbooks.md) because the naive swap is a silent customer-facing outage |
+| 2026-10-22 | 1.3.0 | Architecture | §3.3 reads the key through `private.get_handoff_key()` (SCR-0208), which raises `handoff_key_unavailable` (55000) and fails closed. |

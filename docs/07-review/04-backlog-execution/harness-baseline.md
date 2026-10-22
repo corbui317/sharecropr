@@ -86,3 +86,12 @@ No difference was hit in any error above; all four migration errors and the test
 ## CI reality check (2026-10-22, WP-DBCI f4e5aba + WP-12a)
 
 Until f4e5aba (WP-DBCI), `db.yml` never reached Postgres. Its only DB step was `supabase db reset`, which needs a running stack and exited immediately with "supabase start is not running" on every run (f3a1505 … 539482b, run 39800524285). So the findings above were never reproduced in CI; "db.yml is red because of the migrations" was an inference, not an observation. f4e5aba makes db.yml run `supabase start`; WP-12a pins the CLI (2.120.0) and writes the first error to the job summary, so the first real migration error, and whether `h3` exists in the Supabase image, now shows up in the "Start Supabase" step and its job summary.
+
+## Superseded (2026-10-22, WP-DB-BASELINE)
+
+- Finding #0 (duplicate CLI versions) is fixed by the 14-digit rename.
+- Findings #1 and #4 (h3 extension placement, `h3_lat_lng_to_cell`) are obsolete: H3 was removed ([ADR-0023](../../01-architecture/adr/ADR-0023-postgis-location-tiers.md)).
+- Finding #2 (`digest()` search_path) is fixed by `extensions.digest`.
+- Finding #3 (`vault.get_secret`) is fixed by `private.get_handoff_key()`.
+- The LP-06 failure is fixed by WP-11 (now part of WP-DB-BASELINE).
+- The harness is no longer the oracle; CI is.
