@@ -1,12 +1,18 @@
 # ADR-0005: Dual geospatial model — PostGIS `geography` plus H3
 
+> ## ⚠️ Superseded by [ADR-0023](ADR-0023-postgis-location-tiers.md)
+>
+> **Sharecropr is PostGIS-only.** On 2026-10-22 the first real CI run against Supabase's own Postgres image failed at the first migration with `ERROR: extension "h3" is not available (SQLSTATE 0A000)` (db.yml run 39803696654). This ADR's own dissent had already argued for PostGIS alone; ADR-0023 adopts it and keeps the privacy ladder as named PostGIS location tiers (r5 → region, r7 → coarse, r9 → fine).
+>
+> **Its decision is no longer in force.** It is retained because its reasoning about a named, auditable resolution ladder is exactly what ADR-0023 preserves.
+
 | Field | Value |
 | --- | --- |
-| **Status** | Accepted |
+| **Status** | **Superseded** |
 | **Date** | 2026-08-08 |
 | **Deciders** | Architecture, Security |
 | **Supersedes** | — |
-| **Superseded by** | — |
+| **Superseded by** | [ADR-0023](ADR-0023-postgis-location-tiers.md) |
 
 ## Context
 

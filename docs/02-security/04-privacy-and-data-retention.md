@@ -1,6 +1,6 @@
 # Privacy & Data Retention
 
-**Status:** Approved · **Version:** 1.0.0 · **Owner:** Security + Legal
+**Status:** Approved · **Version:** 1.1.1 · **Owner:** Security + Legal
 
 The operational privacy policy: what we hold, why we're allowed to hold it, how long, and how it goes away. The architectural enforcement is in [Location Privacy](../01-architecture/04-location-privacy.md); this is the governance layer.
 
@@ -8,7 +8,7 @@ The operational privacy policy: what we hold, why we're allowed to hold it, how 
 
 ## 1. Principles
 
-1. **Don't collect it.** The cheapest way to protect data is to not have it. This is why we hold a pass/fail instead of an ID image, an over-18 boolean instead of a birth date, and an H3 cell instead of a coordinate wherever a cell will do.
+1. **Don't collect it.** The cheapest way to protect data is to not have it. This is why we hold a pass/fail instead of an ID image, an over-18 boolean instead of a birth date, and a coarse-tier cell instead of a coordinate wherever a cell will do.
 2. **Privacy by architecture, not by policy.** A `REVOKE` is a guarantee; a promise in a privacy policy is a hope. Every control below should have a structural counterpart in the schema.
 3. **Deletion is real deletion.** Not a flag. Not "removed from search." Gone, with a documented exception list.
 4. **The user can see what we have.** An export they can actually read, not a JSON dump.
@@ -35,7 +35,7 @@ Classification per [Data Model §1](../01-architecture/03-data-model.md). "Basis
 | Email | `auth.users` | Auth, security notices | Contract | Life of account | Hard delete at +30 d |
 | `verifications` row | `public` | Gate transacting | Contract | 24 months, then re-verify | Hard delete at +30 d |
 | `verification_vendor_refs` | `private` | **Fraud and ban-evasion defence** | Legitimate interest | **7 years, pseudonymized** | Retained past account deletion — disclosed |
-| `gardens.h3_r9` | `public` (column-revoked) | Internal proximity bucketing | Contract | Life of garden | Cascade |
+| `gardens.fine_cell` | `public` (column-revoked) | Internal proximity bucketing | Contract | Life of garden | Cascade |
 | `scheduled_start` + `safe_spot_id` | `exchange_sessions` | Coordinate the meeting | Contract | **Anonymized 90 d after completion** | Participants and times nulled; aggregates kept |
 | `messages.body` | `public` | Coordinate the exchange | Contract | 90 d after thread close | Hard delete; exempt if under an open report |
 | Device push tokens | `devices` | Notifications | Contract | Until rotated or 90 d idle | Hard delete |
@@ -54,7 +54,7 @@ Classification per [Data Model §1](../01-architecture/03-data-model.md). "Basis
 
 ### P3 — Non-personal
 
-Crop taxonomy, safe spots, aggregate counts, H3 r5 analytics. Retained indefinitely; nothing to protect.
+Crop taxonomy, safe spots, aggregate counts, region-tier analytics. Retained indefinitely; nothing to protect.
 
 ---
 
@@ -76,7 +76,7 @@ Authoritative. Supersedes any looser statement elsewhere.
 | `audit.events` | **7 years, immutable** | No `UPDATE`/`DELETE` grant exists |
 | Application logs | 30 days | Platform retention |
 | IP addresses in logs | 30 days | Platform retention |
-| Analytics events | 25 months, H3 r5 maximum resolution | PostHog retention setting |
+| Analytics events | 25 months, region tier (16 km) maximum resolution | PostHog retention setting |
 | Crash reports | 90 days | Sentry retention |
 | Deleted accounts | 30-day grace, then hard delete of P0/P1 | Deletion pipeline |
 | Backups | 35 days (PITR window) | Deletion propagates as backups age out — disclosed |
@@ -116,7 +116,7 @@ Email and auth record; password hash; `verifications` row; **`private.garden_loc
 | `audit.events` | Legal and integrity obligation; the table is immutable by construction | Actor id retained |
 | `private.verification_vendor_refs` | Ban-evasion defence ([THR-17](01-threat-model.md)) | Pseudonymized, 7 years |
 | Reports **about** the user | Safety record; deleting your account should not erase a harassment history | 3 years |
-| Aggregate counts | Non-personal | H3 r5 or coarser |
+| Aggregate counts | Non-personal | region tier (16 km) or coarser |
 
 Every one of these is stated in the privacy policy in plain language. "We delete everything" would be a lie, and users notice lies of that shape.
 
@@ -169,7 +169,7 @@ Identity for a DSAR is established by an authenticated in-app session. Email-onl
 | Expo | Push delivery | Device tokens, notification titles and bodies | US |
 | Apple / Google | APNs / FCM transport | Same | Global |
 | Sentry | Crash and performance | Scrubbed diagnostics; no PII, no coordinates | US |
-| PostHog | Product analytics | Pseudonymous ids, H3 r5 max | US |
+| PostHog | Product analytics | Pseudonymous ids, region tier max | US |
 | Cloudflare R2 | Media storage | EXIF-stripped images | US |
 | **Cloudflare R2 + CDN** | **Basemap tile serving** | Tile requests: a `z/x/y` address, a byte range, and an IP. **No user identifier, no device identifier, no session token, no credential of any kind** — a tile request is not attributable to a user, including by us ([API Contract §6a](../01-architecture/06-api-contract.md)) | US / global edge |
 
@@ -211,11 +211,11 @@ The most likely privacy failure is not a breach — it is a coordinate in a Sent
 
 | Rule | Applies to |
 | --- | --- |
-| Drop any key matching `/lat\|lng\|latitude\|longitude\|coord\|point\|geohash\|h3_r[89]/i` at any nesting depth | Sentry, PostHog, logs |
+| Drop any key matching `/lat\|lng\|latitude\|longitude\|coord\|point\|geohash\|fine_cell/i` at any nesting depth | Sentry, PostHog, logs |
 | Drop any key matching `/password\|token\|secret\|authorization\|api[_-]?key/i` | All |
 | Drop `body`, `message`, `text` on messaging events | All |
 | Redact email addresses to `***@domain.tld` | All |
-| Cap spatial properties at H3 r5 | PostHog |
+| Cap spatial properties at the region tier | PostHog |
 | Never log RPC parameters for `safe_spots_near` | Supabase statement logging |
 
 Each rule has a test that fires a synthetic event containing the forbidden value and asserts its absence from the outgoing payload. Untested scrubbing is a scrubber that will quietly stop working after a library upgrade.
@@ -257,3 +257,4 @@ Any feature touching personal data answers these before its spec reaches `Approv
 | --- | --- | --- | --- |
 | 2026-08-08 | 1.0.0 | Security + Legal | Initial privacy and retention policy |
 | 2026-08-09 | 1.1.0 | Security + Legal | §7 sub-processor register updated for the OpenStreetMap decision ([ADR-0019](../01-architecture/adr/ADR-0019-openstreetmap-maplibre.md), [ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md), [ADR-0021](../01-architecture/adr/ADR-0021-osm-safe-spot-sourcing.md)). **Apple and Google no longer receive viewport data** — they appear only as APNs/FCM transport. Cloudflare R2 + CDN added for tile serving, receiving tile requests with no user identifier. New §7.1 records that Overpass is queried server-side only and is not a sub-processor because no user data reaches it |
+| 2026-10-22 | 1.1.1 | Security + Legal | H3 removed; renamed to location tiers per [ADR-0023](../01-architecture/adr/ADR-0023-postgis-location-tiers.md). Analytics cap is the region tier (16 km). |

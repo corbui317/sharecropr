@@ -3,14 +3,16 @@
 | Field | Value |
 | --- | --- |
 | **Status** | Review |
-| **Version** | 1.0.0 |
+| **Version** | 1.1.0 |
 | **Owner** | Product + Backend Engineering |
 | **Phase** | Phase 2 |
 | **Security review** | not required |
 | **Schema depends on** | [SPEC-005](SPEC-005-crop-taxonomy.md), [SPEC-006](SPEC-006-crop-inventory.md) |
 | **Behaviourally coupled with** | SPEC-013 (surplus alerts) |
-| **Related ADRs** | [ADR-0005](../01-architecture/adr/ADR-0005-geospatial-model.md), [ADR-0009](../01-architecture/adr/ADR-0009-safe-spots-only.md), [ADR-0011](../01-architecture/adr/ADR-0011-state-management.md) |
+| **Related ADRs** | [ADR-0023](../01-architecture/adr/ADR-0023-postgis-location-tiers.md), [ADR-0009](../01-architecture/adr/ADR-0009-safe-spots-only.md), [ADR-0011](../01-architecture/adr/ADR-0011-state-management.md) |
 | **Last updated** | 2026-08-08 |
+
+> ⚠ **Pending re-specification (2026-10-22).** [ADR-0023](../01-architecture/adr/ADR-0023-postgis-location-tiers.md) removed H3. Columns below are renamed to location tiers, but the candidate-set mechanism (`cell_set`, formerly a hexagonal disk) must be re-specified before build. Open question in ADR-0023.
 
 > **Not built.** This spec is Approved and specified; no code exists. It describes Phase 2 behaviour and the empty table stubs shipped in MVP ([Data Model §13](../01-architecture/03-data-model.md#13-future-feature-stubs)).
 
@@ -18,7 +20,7 @@
 
 ## 1. Summary
 
-Harvest planning lets a gardener record what is actually in the ground — species, variety, sow date, plant count, bed label — and turns that into a coarse, honestly-hedged forecast of when each planting is likely to produce, so that the app is useful in April rather than only in the ten days a year someone has too many courgettes. Surplus alerts are the demand side of the same loop: a standing subscription that says "tell me when {crop} appears at a safe spot near me", targeted by **H3 r7 cell and never by point**, delivered through the existing notification outbox under a hard per-user daily cap. Together they are the retention engine — they solve the cold-start answer to "I have nothing to trade today" and give the product a reason to be opened between exchanges.
+Harvest planning lets a gardener record what is actually in the ground — species, variety, sow date, plant count, bed label — and turns that into a coarse, honestly-hedged forecast of when each planting is likely to produce, so that the app is useful in April rather than only in the ten days a year someone has too many courgettes. Surplus alerts are the demand side of the same loop: a standing subscription that says "tell me when {crop} appears at a safe spot near me", targeted by **coarse-tier cell and never by point**, delivered through the existing notification outbox under a hard per-user daily cap. Together they are the retention engine — they solve the cold-start answer to "I have nothing to trade today" and give the product a reason to be opened between exchanges.
 
 ## 2. Goals
 
@@ -37,7 +39,7 @@ Harvest planning lets a gardener record what is actually in the ground — speci
 - **Sharing plantings with other users.** A planting is private to its owner, forever, with no visibility control to configure. A browsable list of who is growing what, near where, is a shopping list for a burglar and a de-anonymization vector for a stalker ([Location Privacy §1](../01-architecture/04-location-privacy.md)). If Phase 3 wants social planting, it starts from a blank page and a security review.
 - **A calendar that syncs to the OS calendar.** An EventKit / Calendar Provider integration is a permission prompt, a store-review justification, and a two-way sync bug surface, in exchange for putting an admittedly-unreliable date range into a system the user trusts.
 - **Alerts on a person.** There is no "notify me when {user} lists something". That is a following feature, and following is a stalking primitive in a product that introduces strangers.
-- **Alerts by drawn area, address, or arbitrary radius.** Radius is a small closed set of values snapped to H3 disk rings (R37). A free-form radius plus a movable origin is a probing tool.
+- **Alerts by drawn area, address, or arbitrary radius.** Radius is a small closed set of values drawn from a closed set (R37). A free-form radius plus a movable origin is a probing tool.
 - **Cross-hemisphere seasonality.** `crop_species.season_months` remains a Northern-hemisphere default ([SPEC-005 §3](SPEC-005-crop-taxonomy.md)). The zone model in R17 is USDA and therefore North American. Both are wrong outside that, and this spec does not fix it — see [Q5](#15-open-questions).
 - **Machine learning.** The forecast is arithmetic with a median correction. There is no model to train, serve, or version beyond `model_version` as an audit string. Crop ID ML is [SPEC-023](SPEC-023-crop-id-and-food-safety.md).
 - **Backfilling forecasts for past seasons.** A forecast for a window that has already closed has no consumer.
@@ -116,10 +118,10 @@ Harvest planning lets a gardener record what is actually in the ground — speci
 | ID | Req | Statement |
 | --- | --- | --- |
 | R34 | **MUST** | A `surplus_alert_subscriptions` row **MUST** specify exactly one of `species_id` or `category_id`, enforced by a `CHECK`. "Everything within 25 km" is a firehose, not a subscription. |
-| R35 | **MUST** | The subscription's origin **MUST** be an H3 **r7** cell (`center_h3_r7`), derived **server-side** from either `profiles.home_h3_r7` or the r7 parent of a safe spot the user selects. `rpc.set_surplus_subscription` **MUST NOT** accept a latitude, longitude, geohash, or any cell finer than r7. |
-| R36 | **MUST NOT** | `center_h3_r7` and `cell_set` **MUST NOT** be client-writable, and **MUST** be column-`REVOKE`d from `authenticated`, with the client reading its own subscriptions through the `public.surplus_subscription_cards` view (§6). r7 is P1 ([Data Model §5](../01-architecture/03-data-model.md#5-identity--profiles)) and stays that way even when it is the caller's own. |
-| R37 | **MUST** | `radius_km` **MUST** be drawn from the closed set `{2, 5, 8, 15, 25}`, and `cell_set` **MUST** be generated as `h3_grid_disk(center_h3_r7, k)` with `k` fixed per radius by a curated mapping. Arbitrary radii turn a subscription into a ruler. |
-| R38 | **MUST** | Matching **MUST** be `listing_safe_spots.safe_spot_id → safe_spots.h3_r8 → r7 parent ∈ subscription.cell_set`. **The matched cell belongs to a public building, never to a garden or a person.** Matching on a lister's `gardens.h3_r7` was considered and rejected: it would make another user's home region the join key of a standing query, which is precisely the capability [Location Privacy §2](../01-architecture/04-location-privacy.md) exists to deny. |
+| R35 | **MUST** | The subscription's origin **MUST** be a **coarse**-tier cell (`center_coarse_cell`), derived **server-side** from either `profiles.home_coarse_cell` or the coarse cell of a safe spot the user selects (`app.location_cell(point,'coarse')`). `rpc.set_surplus_subscription` **MUST NOT** accept a latitude, longitude, geohash, or any cell finer than the coarse tier. |
+| R36 | **MUST NOT** | `center_coarse_cell` and `cell_set` **MUST NOT** be client-writable, and **MUST** be column-`REVOKE`d from `authenticated`, with the client reading its own subscriptions through the `public.surplus_subscription_cards` view (§6). The coarse cell is P1 ([Data Model §5](../01-architecture/03-data-model.md#5-identity--profiles)) and stays that way even when it is the caller's own. |
+| R37 | **MUST** | `radius_km` **MUST** be drawn from the closed set `{2, 5, 8, 15, 25}`, and `cell_set` **MUST** be the set of coarse cells within `radius_km` of the centre cell (mechanism pending, see banner). Arbitrary radii turn a subscription into a ruler. |
+| R38 | **MUST** | Matching **MUST** be `listing_safe_spots.safe_spot_id → app.location_cell(safe_spots.point,'coarse') ∈ subscription.cell_set`. **The matched cell belongs to a public building, never to a garden or a person.** Matching on a lister's `gardens.coarse_cell` was considered and rejected: it would make another user's home region the join key of a standing query, which is precisely the capability [Location Privacy §2](../01-architecture/04-location-privacy.md) exists to deny. |
 | R39 | **MUST** | Matching **MUST** apply the same visibility rules as `listings_select_discoverable` — active, unexpired, owner not suspended or deleted, and `NOT app.is_blocked_either_way(subscriber, owner)` — re-implemented explicitly inside the definer matcher, because a `SECURITY DEFINER` function inherits no policy ([RLS Design §7](../01-architecture/05-rls-design.md)). |
 | R40 | **MUST** | A subscriber **MUST NOT** be alerted about their own listing. |
 | R41 | **MUST** | A user **MUST** hold at most **10** subscriptions, enforced server-side with `quota_exceeded`. |
@@ -128,7 +130,7 @@ Harvest planning lets a gardener record what is actually in the ground — speci
 | R44 | **MUST** | The **daily cap MUST be 3 `surplus_alert` notifications per user per rolling 24 hours**, enforced in the matcher against `public.notifications` and not in the drain, so that a suppressed alert also costs no inbox row. This is the one place in the product where suppression removes the record rather than only the buzz, and it is deliberate: an inbox of forty "tomatoes nearby" rows is the same spam by a quieter route. |
 | R45 | **MUST** | The matcher **MUST NOT** re-alert on a `(subscription_id, listing_id)` pair already alerted, enforced by a unique index on `private.surplus_alert_sends`. A listing that stays active for three weeks is announced once. |
 | R46 | **MUST** | `surplus_alert` **MUST** remain **off by default** in `notification_preferences` ([SPEC-013 R29](SPEC-013-notifications.md)) and **MUST** remain quiet-hours suppressible ([Realtime & Notifications §5](../01-architecture/08-realtime-and-notifications.md)). Nothing about surplus is urgent. |
-| R47 | **MUST** | Creating a subscription **MUST** be possible without granting device location: the origin falls back to `profiles.home_h3_r7`, and where that is null the user picks a safe spot from a list. Location denial is a first-class state ([Location Privacy §9](../01-architecture/04-location-privacy.md)). |
+| R47 | **MUST** | Creating a subscription **MUST** be possible without granting device location: the origin falls back to `profiles.home_coarse_cell`, and where that is null the user picks a safe spot from a list. Location denial is a first-class state ([Location Privacy §9](../01-architecture/04-location-privacy.md)). |
 | R48 | **SHOULD** | The matcher **SHOULD** run every 15 minutes. Faster buys nothing — a courgette is not a limit order — and multiplies the cap-checking read volume. |
 
 ### 5.5 The retention loop, and how it degrades
@@ -149,17 +151,17 @@ Harvest planning lets a gardener record what is actually in the ground — speci
 | --- | --- | --- |
 | [`public.plantings`](../01-architecture/03-data-model.md#13-future-feature-stubs) | read/write (owner) | Stub filled in by this spec |
 | `public.harvest_forecasts` | read (owner) | Written only by definer functions |
-| `public.surplus_alert_subscriptions` | read via view / write via RPC | `center_h3_r7`, `cell_set` column-REVOKE'd |
+| `public.surplus_alert_subscriptions` | read via view / write via RPC | `center_coarse_cell`, `cell_set` column-REVOKE'd |
 | `public.grow_zone_offsets` | read (`anon`, `authenticated`) | **New.** Curated reference data, Pattern B |
 | `public.crop_species` | read | `season_months`, plus new `days_to_maturity` columns |
 | `public.crop_varieties` | read | New `days_to_maturity` override |
-| `public.gardens` | read | `grow_zone`, `h3_r7` (server-side only) |
+| `public.gardens` | read | `grow_zone`, `coarse_cell` (server-side only) |
 | `public.inventory_items` | insert via `record_harvest`; read for R21 | New `planting_id` column |
 | `public.listings` / `public.listing_safe_spots` | read (definer, in matcher) | Match source |
-| `public.safe_spots` | read | `h3_r8` → r7 parent is the match key (R38) |
+| `public.safe_spots` | read | `app.location_cell(point,'coarse')` is the match key (R38) |
 | `public.notifications` / `private.notification_outbox` | insert via `app.enqueue_notification` | R42, R44 |
 | `private.surplus_alert_sends` | insert (service only) | Dedupe ledger, R45 |
-| `public.profiles` | read (definer) | `home_h3_r7`, `timezone` |
+| `public.profiles` | read (definer) | `home_coarse_cell`, `timezone` |
 
 **New schema objects introduced by this spec:** migration `20261102_0090_harvest_planning.sql`
 
@@ -240,7 +242,7 @@ CREATE TABLE public.surplus_alert_subscriptions (
   user_id        uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   species_id     integer REFERENCES public.crop_species(id),
   category_id    smallint REFERENCES public.crop_categories(id),
-  center_h3_r7   text NOT NULL,
+  center_coarse_cell   text NOT NULL,
   origin_kind    text NOT NULL CHECK (origin_kind IN ('home','safe_spot')),
   origin_spot_id uuid REFERENCES public.safe_spots(id),
   radius_km      smallint NOT NULL CHECK (radius_km IN (2,5,8,15,25)),
@@ -256,10 +258,10 @@ CREATE INDEX sas_user_idx  ON public.surplus_alert_subscriptions (user_id);
 CREATE INDEX sas_cells_gin ON public.surplus_alert_subscriptions USING GIN (cell_set)
   WHERE is_paused = false;
 CREATE UNIQUE INDEX sas_no_duplicates ON public.surplus_alert_subscriptions
-  (user_id, COALESCE(species_id, -1), COALESCE(category_id, -1), center_h3_r7, radius_km);
+  (user_id, COALESCE(species_id, -1), COALESCE(category_id, -1), center_coarse_cell, radius_km);
 
--- r7 is P1 even when it is your own (R36).
-REVOKE SELECT (center_h3_r7, cell_set) ON public.surplus_alert_subscriptions FROM authenticated;
+-- The coarse cell is P1 even when it is your own (R36).
+REVOKE SELECT (center_coarse_cell, cell_set) ON public.surplus_alert_subscriptions FROM authenticated;
 
 CREATE VIEW public.surplus_subscription_cards WITH (security_invoker = on) AS
 SELECT s.id, s.species_id, s.category_id, s.radius_km, s.is_paused,
@@ -326,7 +328,7 @@ CREATE POLICY sas_update_pause ON public.surplus_alert_subscriptions
 
 Also introduced: `app.forecast_harvest_window(uuid)`, `app.personal_residual(uuid, integer)`, `app.subscription_cells(text, smallint)`, `app.recompute_harvest_forecasts()`, `app.match_surplus_alerts()`, the `guard_subscription_columns` BEFORE UPDATE trigger, the `trg_planting_touch_forecast` trigger implementing R24's immediate recompute, and two `pg_cron` jobs.
 
-**PII touched:** `plantings.*` is **P2** — a private notebook, owner-only, never rendered to another user. `surplus_alert_subscriptions.center_h3_r7` and `cell_set` are **P1** (a ~5 km² cell around the user's home) and are column-`REVOKE`d (R36). `harvest_forecasts.inputs` is P2 and carries a coordinate-key `CHECK`. `inventory_items.harvested_on` is already P2 ([Data Model §8](../01-architecture/03-data-model.md#8-inventory)). Nothing in this spec introduces a P0 column, and no function here reads `private.garden_locations`.
+**PII touched:** `plantings.*` is **P2** — a private notebook, owner-only, never rendered to another user. `surplus_alert_subscriptions.center_coarse_cell` and `cell_set` are **P1** (a ~5 km² cell around the user's home) and are column-`REVOKE`d (R36). `harvest_forecasts.inputs` is P2 and carries a coordinate-key `CHECK`. `inventory_items.harvested_on` is already P2 ([Data Model §8](../01-architecture/03-data-model.md#8-inventory)). Nothing in this spec introduces a P0 column, and no function here reads `private.garden_locations`.
 
 ## 7. API
 
@@ -410,7 +412,7 @@ The range is capped server-side at 18 months. The return type has no coordinate 
 | Error code | HTTP | When |
 | --- | --- | --- |
 | `validation_failed` | 400 | Both or neither of species/category; `p_radius_km` outside the closed set; `p_origin_kind = 'safe_spot'` with an inactive or unknown spot; **any latitude/longitude parameter present** |
-| `precondition_failed` | 409 | `p_origin_kind = 'home'` and `profiles.home_h3_r7` is null — the client must offer the safe-spot origin instead (R47) |
+| `precondition_failed` | 409 | `p_origin_kind = 'home'` and `profiles.home_coarse_cell` is null — the client must offer the safe-spot origin instead (R47) |
 | `quota_exceeded` | 422 | 10 subscriptions already (R41) |
 | `conflict` | 409 | Identical subscription exists; returns the existing id as a success |
 | `rate_limited` | 429 | Bucket empty |
@@ -434,7 +436,7 @@ FOR each subscription WHERE NOT is_paused
   candidate listings :=
       active, unexpired, owner not suspended/deleted/blocked, owner <> subscriber
       AND species/category matches
-      AND EXISTS (safe spot of that listing whose h3_r8 r7-parent ∈ cell_set)
+      AND EXISTS (safe spot of that listing whose coarse cell ∈ cell_set)
       AND NOT EXISTS (private.surplus_alert_sends row)
 GROUP BY subscriber
   IF count(notifications WHERE kind='surplus_alert' AND created_at > now()-'24h') >= 3 → skip (R44)
@@ -449,7 +451,7 @@ The `sends` insert and the `enqueue_notification` call are in one transaction, s
 | Not exposed | Why |
 | --- | --- |
 | Any endpoint returning another user's planting | §3. There is no visibility flag to get wrong. |
-| A "gardeners near me growing X" aggregate | Even at r7, a count of growers per cell per species is a spatial dataset about people's homes, and it is exactly the kind of harmless-looking aggregate [Location Privacy §12.4](../01-architecture/04-location-privacy.md) warns about. |
+| A "gardeners near me growing X" aggregate | Even at the coarse tier, a count of growers per cell per species is a spatial dataset about people's homes, and it is exactly the kind of harmless-looking aggregate [Location Privacy §12.4](../01-architecture/04-location-privacy.md) warns about. |
 | The subscription's `cell_set` | R36 |
 | A realtime channel for forecasts | A value that changes once a night does not need a socket ([Realtime & Notifications §8](../01-architecture/08-realtime-and-notifications.md)). |
 | An "alert me about this specific user" endpoint | §3 |
@@ -599,10 +601,10 @@ Exact strings.
 
 | Question | Answer |
 | --- | --- |
-| **What is the worst thing an attacker could do with this feature?** | **Turn a standing subscription into a spatial probe.** The theoretical attack is to create many subscriptions with different origins and radii, observe which ones fire, and intersect the results to narrow where a particular listing — and therefore, indirectly, its owner's travel pattern — sits. Four things bound it. First, the match key is `safe_spots.h3_r8` rolled up to r7, so every cell that can ever appear in a match belongs to a **public building whose coordinate we already publish**; the probe learns nothing that `safe_spots_near` does not already return ([Location Privacy §6](../01-architecture/04-location-privacy.md)). Second, the origin is not attacker-chosen in any fine sense: `origin_kind = 'home'` resolves to `profiles.home_h3_r7`, and `'safe_spot'` resolves to a public building, so a subscription cannot be centred on an arbitrary point. Third, radius is a five-value closed set snapped to disk rings (R37), so the intersection lattice is coarse by construction. Fourth, 10 subscriptions per user and 20 writes per day cap the sampling rate. The residual is the one already accepted in [Location Privacy §12.4](../01-architecture/04-location-privacy.md) — safe-spot choice narrows a lister's plausible region — and this feature does not widen it. The second-worst outcome is **notification fatigue as self-inflicted denial of service**: an uncapped matcher trains the entire user base to disable push, which would silently break `exchange_reminder` and degrade `safety_alert` reach. R44's hard cap of 3/24 h is a safety control wearing a product hat. |
-| **Which RLS policies enforce access?** | `plantings_select_own`, `plantings_insert_own`, `plantings_update_own` (Pattern A, no DELETE policy — R12's soft delete is an UPDATE); `forecasts_select_own` with **no write policy of any kind**, which is the enforcement of R13; `sas_select_own` and `sas_update_pause`, narrowed to `is_paused` by `guard_subscription_columns`, with **no INSERT policy** so that R35's server-derived origin cannot be bypassed. Reads of a user's own subscriptions go through `public.surplus_subscription_cards` (`security_invoker = on`) because the base table's `center_h3_r7` and `cell_set` are column-`REVOKE`d. Definer functions: `app.forecast_harvest_window`, `app.personal_residual`, `app.subscription_cells`, `app.recompute_harvest_forecasts`, `app.match_surplus_alerts`, `app.enqueue_notification`, `app.should_deliver`, `app.jsonb_has_coord_key`, `app.is_blocked_either_way`, `app.consume_token`, plus `public.upsert_planting`, `public.record_harvest`, `public.harvest_calendar`, `public.set_surplus_subscription`, `public.delete_surplus_subscription`. Every one runs as owner, bypasses RLS, and re-checks authorization as its first statement; `match_surplus_alerts` in particular re-implements the whole of `listings_select_discoverable` in its `WHERE` (R39). |
-| **Can any response path expose an exact coordinate or PII?** | No. **How this feature preserves the location invariant:** (1) no function in this spec reads `private.garden_locations`, and none is added to the [LP-02](../01-architecture/04-location-privacy.md) definer allowlist; (2) no return type declared here has a `geography`, `geometry`, `lat`, `lng`, `h3_r9`, or `display_point` column — `harvest_calendar` returns dates and names, `set_surplus_subscription` returns a count and a label; (3) the only spatial value the feature stores about a user is `center_h3_r7`, which is r7 (~5 km², the resolution [Location Privacy §7](../01-architecture/04-location-privacy.md) explicitly permits) and is column-`REVOKE`d anyway; (4) the matching join key is a **safe spot's** cell, not a garden's (R38); (5) `harvest_forecasts.inputs` carries the same `app.jsonb_has_coord_key` `CHECK` used on `notifications.payload` and `audit.events.metadata`, so a future contributor cannot quietly stash a point in the audit blob; (6) the surplus notification template is a row in `private.notification_templates` and names a radius and a species, never a place. `plantings` is P2 and owner-only; a planting is never rendered to another user by any path. |
-| **What is logged, and is it scrubbed?** | Forecast computations log `planting_id`, `species_id`, `method`, `confidence`, and the residual in days — no dates of the user's own harvests beyond the residual, and no bed labels, which are free text and could contain anything. Matcher runs log counts and durations, never a subscriber id alongside a cell. `bed_label` and `plantings.notes` are on the telemetry scrubber's drop list alongside `body` and `message`. Analytics spatial resolution stays capped at H3 r5 ([Location Privacy §8](../01-architecture/04-location-privacy.md)); r7 never leaves the database. |
+| **What is the worst thing an attacker could do with this feature?** | **Turn a standing subscription into a spatial probe.** The theoretical attack is to create many subscriptions with different origins and radii, observe which ones fire, and intersect the results to narrow where a particular listing — and therefore, indirectly, its owner's travel pattern — sits. Four things bound it. First, the match key is the coarse cell of `safe_spots.point`, so every cell that can ever appear in a match belongs to a **public building whose coordinate we already publish**; the probe learns nothing that `safe_spots_near` does not already return ([Location Privacy §6](../01-architecture/04-location-privacy.md)). Second, the origin is not attacker-chosen in any fine sense: `origin_kind = 'home'` resolves to `profiles.home_coarse_cell`, and `'safe_spot'` resolves to a public building, so a subscription cannot be centred on an arbitrary point. Third, radius is a five-value closed set a closed set (R37), so the intersection lattice is coarse by construction. Fourth, 10 subscriptions per user and 20 writes per day cap the sampling rate. The residual is the one already accepted in [Location Privacy §12.4](../01-architecture/04-location-privacy.md) — safe-spot choice narrows a lister's plausible region — and this feature does not widen it. The second-worst outcome is **notification fatigue as self-inflicted denial of service**: an uncapped matcher trains the entire user base to disable push, which would silently break `exchange_reminder` and degrade `safety_alert` reach. R44's hard cap of 3/24 h is a safety control wearing a product hat. |
+| **Which RLS policies enforce access?** | `plantings_select_own`, `plantings_insert_own`, `plantings_update_own` (Pattern A, no DELETE policy — R12's soft delete is an UPDATE); `forecasts_select_own` with **no write policy of any kind**, which is the enforcement of R13; `sas_select_own` and `sas_update_pause`, narrowed to `is_paused` by `guard_subscription_columns`, with **no INSERT policy** so that R35's server-derived origin cannot be bypassed. Reads of a user's own subscriptions go through `public.surplus_subscription_cards` (`security_invoker = on`) because the base table's `center_coarse_cell` and `cell_set` are column-`REVOKE`d. Definer functions: `app.forecast_harvest_window`, `app.personal_residual`, `app.subscription_cells`, `app.recompute_harvest_forecasts`, `app.match_surplus_alerts`, `app.enqueue_notification`, `app.should_deliver`, `app.jsonb_has_coord_key`, `app.is_blocked_either_way`, `app.consume_token`, plus `public.upsert_planting`, `public.record_harvest`, `public.harvest_calendar`, `public.set_surplus_subscription`, `public.delete_surplus_subscription`. Every one runs as owner, bypasses RLS, and re-checks authorization as its first statement; `match_surplus_alerts` in particular re-implements the whole of `listings_select_discoverable` in its `WHERE` (R39). |
+| **Can any response path expose an exact coordinate or PII?** | No. **How this feature preserves the location invariant:** (1) no function in this spec reads `private.garden_locations`, and none is added to the [LP-02](../01-architecture/04-location-privacy.md) definer allowlist; (2) no return type declared here has a `geography`, `geometry`, `lat`, `lng`, `fine_cell`, or `display_point` column — `harvest_calendar` returns dates and names, `set_surplus_subscription` returns a count and a label; (3) the only spatial value the feature stores about a user is `center_coarse_cell`, which is coarse-tier (2.5 km, the resolution [Location Privacy §7](../01-architecture/04-location-privacy.md) explicitly permits) and is column-`REVOKE`d anyway; (4) the matching join key is a **safe spot's** cell, not a garden's (R38); (5) `harvest_forecasts.inputs` carries the same `app.jsonb_has_coord_key` `CHECK` used on `notifications.payload` and `audit.events.metadata`, so a future contributor cannot quietly stash a point in the audit blob; (6) the surplus notification template is a row in `private.notification_templates` and names a radius and a species, never a place. `plantings` is P2 and owner-only; a planting is never rendered to another user by any path. |
+| **What is logged, and is it scrubbed?** | Forecast computations log `planting_id`, `species_id`, `method`, `confidence`, and the residual in days — no dates of the user's own harvests beyond the residual, and no bed labels, which are free text and could contain anything. Matcher runs log counts and durations, never a subscriber id alongside a cell. `bed_label` and `plantings.notes` are on the telemetry scrubber's drop list alongside `body` and `message`. Analytics spatial resolution stays capped at the region tier ([Location Privacy §8](../01-architecture/04-location-privacy.md)); the coarse cell never leaves the database. |
 | **Does this need step-up authentication?** | No. Nothing here is an account-security operation, and requiring a TOTP code to log a row of carrots would be friction with no matching threat ([API Contract §2.4](../01-architecture/06-api-contract.md)). |
 | **Abuse / rate-limit controls** | `upsert_planting` 60/h, `record_harvest` 60/h, `harvest_calendar` 120/h, `set_surplus_subscription` 20/day, 200 plantings per garden (R08), 10 subscriptions per user (R41), 3 surplus notifications per 24 h (R44), one alert per `(subscription, listing)` ever (R45), matcher cadence 15 min (R48). All are Postgres token buckets via `app.consume_token`, consistent with [API Contract §6](../01-architecture/06-api-contract.md). |
 
@@ -659,7 +661,7 @@ Exact strings.
 
 > `harvest.forecast_residual` and `harvest.window_hit_rate` exist to make R55 enforceable. If a full season's data shows `medium` windows hitting at 45%, the honest response is to widen the bands or delete them — not to add a fourth input and hope. That decision is scheduled, not aspirational: the first end-of-season review is a dated item in [the roadmap](../06-roadmap/01-roadmap.md).
 
-**Never emitted:** a bed label, a planting note, a subscriber id alongside a cell id, any H3 resolution finer than r5, or a user's harvest dates as a series.
+**Never emitted:** a bed label, a planting note, a subscriber id alongside a cell id, any location tier finer than the region tier, or a user's harvest dates as a series.
 
 ## 12. Accessibility
 
@@ -711,10 +713,10 @@ Exact strings.
 | T29 | e2e | R32 | The prompt appears once when the window opens and not again for 14 days |
 | T30 | e2e | R33 | A harvest 30 days outside the band produces the neutral copy and no error, banner, or apology |
 | T31 | integration | R34 | Both-null and both-set targets are rejected by the `CHECK` |
-| T32 | integration | R35 | `set_surplus_subscription` has no lat/lng parameter; the origin cell equals `profiles.home_h3_r7` or the spot's r7 parent |
-| T33 | rls | R36 | `SELECT center_h3_r7` and `SELECT cell_set` as `authenticated` raise 42501; the columns are absent from `surplus_subscription_cards` |
+| T32 | integration | R35 | `set_surplus_subscription` has no lat/lng parameter; the origin cell equals `profiles.home_coarse_cell` or the coarse cell of the spot |
+| T33 | rls | R36 | `SELECT center_coarse_cell` and `SELECT cell_set` as `authenticated` raise 42501; the columns are absent from `surplus_subscription_cards` |
 | T34 | unit | R37 | Each of the five radii maps to its fixed `k`; a sixth value is rejected |
-| T35 | integration | R38 | A listing matches only through its safe spots' r7 parents; a listing whose owner's garden cell is inside `cell_set` but whose spots are not does **not** match |
+| T35 | integration | R38 | A listing matches only through its safe spots' coarse cells; a listing whose owner's garden cell is inside `cell_set` but whose spots are not does **not** match |
 | T36 | integration | R39 | Suspended owner, expired listing, blocked pair, and deleted owner each produce zero matches |
 | T37 | integration | R40 | The subscriber's own listing never matches |
 | T38 | integration | R41 | 11th subscription returns `quota_exceeded` 422 |
@@ -723,7 +725,7 @@ Exact strings.
 | T41 | integration | R44 | 4th alert in 24 h is not sent and **no** inbox row is written; the 25th hour allows one again |
 | T42 | integration | R45 | A listing active across 20 matcher runs is alerted exactly once per subscription |
 | T43 | integration | R46 | A user with no preferences row receives no surplus push; quiet hours suppress it |
-| T44 | e2e | R47 | With location permission denied and `home_h3_r7` null, a subscription is created via the safe-spot origin |
+| T44 | e2e | R47 | With location permission denied and `home_coarse_cell` null, a subscription is created via the safe-spot origin |
 | T45 | e2e | R49, R50 | Plan tab reachable in one tap; airplane mode renders the cached calendar with "as of" labels |
 | T46 | e2e | R51 | A brand-new, unverified, garden-unverified account creates a planting and sees a forecast |
 | T47 | integration | R52 | Forcing `last_success` 49 hours back renders the staleness banner |
@@ -739,9 +741,9 @@ Exact strings.
 | T52 | `GET /rest/v1/plantings?id=eq.<real id>` belonging to another user | Empty set, indistinguishable from a random UUID |
 | T53 | `PATCH /rest/v1/harvest_forecasts` widening a window, as its owner | 403 — no UPDATE policy on the table at all (R13) |
 | T54 | `POST /rest/v1/harvest_forecasts` fabricating a forecast | 403 — no INSERT policy |
-| T55 | `POST /rest/v1/surplus_alert_subscriptions` directly, supplying `center_h3_r7` and `cell_set` | 403 — no INSERT policy; origin derivation is RPC-only (R35) |
-| T56 | `PATCH` a subscription's `center_h3_r7`, `cell_set`, or `radius_km` | `guard_subscription_columns` raises 42501; only `is_paused` is writable |
-| T57 | `SELECT center_h3_r7 FROM surplus_alert_subscriptions WHERE user_id = auth.uid()` | 42501 from the column `REVOKE`, even for one's own row (R36) |
+| T55 | `POST /rest/v1/surplus_alert_subscriptions` directly, supplying `center_coarse_cell` and `cell_set` | 403 — no INSERT policy; origin derivation is RPC-only (R35) |
+| T56 | `PATCH` a subscription's `center_coarse_cell`, `cell_set`, or `radius_km` | `guard_subscription_columns` raises 42501; only `is_paused` is writable |
+| T57 | `SELECT center_coarse_cell FROM surplus_alert_subscriptions WHERE user_id = auth.uid()` | 42501 from the column `REVOKE`, even for one's own row (R36) |
 | T58 | Call `set_surplus_subscription` with extra `p_lat` / `p_lng` / `p_geohash` arguments | Function signature does not accept them; PostgREST returns `404 function not found`. Asserted so that adding one later is a visible signature change |
 | T59 | Create 10 subscriptions with 5 radii around 2 origins and diff the match sets to localize a listing | Every matched cell resolves to an `active` safe spot present in `safe_spots_near`'s public output; no cell traces to a garden. The test asserts the *set of distinguishable outcomes* equals the set of public safe spots in range |
 | T60 | Contract sweep for coordinate columns across `plantings`, `harvest_forecasts`, `surplus_alert_subscriptions`, `surplus_subscription_cards`, `grow_zone_offsets`, and all five RPC return types | Zero hits (API-04, [API Contract §9.1](../01-architecture/06-api-contract.md)); nothing added to the two-entry allowlist |
@@ -765,7 +767,7 @@ Exact strings.
 - [ ] Force 4 alerts in 24 hours; confirm the 4th produces neither a push nor an inbox row.
 - [ ] Read the low-confidence copy aloud to someone who has not seen the feature and ask them what the app is promising. If they say a date, the copy has failed.
 - [ ] VoiceOver and TalkBack over the calendar, the window-opened prompt, and the radius radio group at 200% type.
-- [ ] Confirm in a network trace that no request in this feature carries a latitude, longitude, or an H3 cell finer than r7.
+- [ ] Confirm in a network trace that no request in this feature carries a latitude, longitude, or a cell finer than the coarse tier.
 - [ ] Turn `harvest.forecasts_enabled` off on a populated account and confirm nothing else breaks.
 
 ## 14. Rollout
@@ -797,3 +799,4 @@ Exact strings.
 | Date | Version | Author | Change |
 | --- | --- | --- | --- |
 | 2026-08-08 | 1.0.0 | Product + Backend Engineering | Initial spec |
+| 2026-10-22 | 1.1.0 | Architecture | H3 removed; renamed to location tiers per [ADR-0023](../01-architecture/adr/ADR-0023-postgis-location-tiers.md). Banner added: the `cell_set` candidate mechanism must be re-specified before build. R35, R37, R38, §7.7 and the telemetry lines updated |

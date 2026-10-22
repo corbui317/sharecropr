@@ -35,7 +35,7 @@ Full index: [docs/README.md](docs/README.md).
 
 ## 3. Invariants — do not violate, do not "temporarily" work around
 
-1. **No exact garden coordinate** in any response, log, telemetry event, push payload, export, or moderator view. Only derived/fuzzed location is persisted. (NFR-45, LP-01…LP-13, continuously asserted by the location canary.)
+1. **No exact garden coordinate** in any response, log, telemetry event, push payload, export, or moderator view. Only derived/fuzzed location is persisted. (NFR-45, LP-01…LP-13, continuously asserted by the location canary.) Location is PostGIS-only with named tiers ([ADR-0023](docs/01-architecture/adr/ADR-0023-postgis-location-tiers.md)); `fine_cell` never leaves the database.
 2. **No payments of any kind.** [ADR-0002](docs/01-architecture/adr/ADR-0002-barter-only.md). Reconsidering requires a new ADR and legal review.
 3. **No home-address meetings.** No code path may produce one.
 4. **No background location.**
@@ -53,7 +53,7 @@ Full index: [docs/README.md](docs/README.md).
 ## 4. Working agreements
 
 - **Traceability is required.** Every spec `MUST` maps to a test ID in that spec's §13, and the test source echoes the namespaced ID (`// SPEC-001-T34`, never a bare `T34`). The CI gate that would enforce this (`ci:spec-traceability`) **is not built yet** ([N-07](docs/07-review/02-development-notes.md#n-07--the-ci-gates-are-described-not-built)) — until it is, check it yourself.
-- **CI today is three workflows:** `app.yml` (bridge check, doc-gates schema-graph/register check + its fixture self-test, lint incl. the import seams, `lint:fixtures`, typecheck, Jest unit + component tests via `npm test`, dependency-audit script tests), `db.yml` (`supabase start` applies migrations + seed, then pgTAP; RLS negative-ratio, private-grant and definer-allowlist gates; **not green yet**, it stops at the first migration error until WP-08…WP-11 land), and `dependency-audit.yml` (weekly + manual `npm audit`; opens/updates one `security` issue per GHSA, never blocks a PR). Every other check in [CI/CD §2](docs/05-operations/02-cicd.md) is planned, not running — do not assume it will catch you.
+- **CI today is three workflows:** `app.yml` (bridge check, doc-gates schema-graph/register check + its fixture self-test, lint incl. the import seams, `lint:fixtures`, typecheck, Jest unit + component tests via `npm test`, dependency-audit script tests), `db.yml` (`supabase start` applies migrations + seed, then pgTAP; RLS negative-ratio, private-grant and definer-allowlist gates; its first real runs (2026-10-22) stopped at the `h3` extension, removed in WP-DB-BASELINE (ADR-0023)), and `dependency-audit.yml` (weekly + manual `npm audit`; opens/updates one `security` issue per GHSA, never blocks a PR). Every other check in [CI/CD §2](docs/05-operations/02-cicd.md) is planned, not running — do not assume it will catch you.
 - **Two dependency relations, and only one orders work.** `Schema depends on` must be a DAG and is the only thing that constrains build order. `Behaviourally coupled with` may cycle freely and must be symmetric. Conflating them makes the plan look unbuildable. See [Spec Register](docs/03-specs/README.md#build-order).
 - **Spec numbers are permanent and never reused.** Claim one in a small PR before writing.
 - **Backlog keys (`SCR-EENN`) are permanent and never reused.**
@@ -88,6 +88,7 @@ If your work runs into one of these, **stop and surface it**. Picking a side in 
 | Does the alternate trust path exist at MVP? | [R-03](docs/06-roadmap/02-open-risks.md), [Identity §6.1](docs/02-security/03-identity-verification.md) |
 | SPEC-022's security-review classification | [Spec Register](docs/03-specs/README.md), SPEC-022 §15 Q1 |
 | ~~`composted` exists in two vocabularies~~ | **Resolved 2026-10-21** — `inventory_status` only; dropped from `archive_reason`. [SPEC-006 Q3](docs/03-specs/SPEC-006-crop-inventory.md#15-open-questions) |
+| ~~H3 vs PostGIS-only~~ | **Resolved 2026-10-22**: PostGIS only, named location tiers, [ADR-0023](docs/01-architecture/adr/ADR-0023-postgis-location-tiers.md) (supersedes ADR-0005) |
 | Who can read `handoff_code_key` | [N-03](docs/07-review/02-development-notes.md) — belongs in Environments, currently unstated |
 
 ---
@@ -135,6 +136,7 @@ Both Claude Code and Cursor read this file. Neither can see the other's chat his
 
 **Session-scoped notes go in `docs/07-review/`, not here.** This file is loaded into every agent session in both tools; it earns its size back only if everything in it is durable.
 
+- `[2026-10-22] [claude] H3 is gone: Supabase's Postgres image has no h3 extension (db.yml run 39803696654). ADR-0023 supersedes ADR-0005: PostGIS geography only; proximity is ST_DWithin + GiST, never a cell filter. Tiers come from app.location_cell(): region 16 km (analytics), coarse 2.5 km (gardens.coarse_cell, profiles.home_coarse_cell), fine 320 m (gardens.fine_cell, never client-reachable); each column CHECK-pins its tier prefix. Migrations up to 20261022145504 were edited in place because none had applied anywhere (Data Model §15 rule 12); forward-only from the first hosted apply.`
 - `[2026-10-22] [claude] db.yml is the real-Supabase oracle when there is no local Docker. On a fresh runner `supabase start` itself applies migrations and the [db.seed] files; `supabase db reset` alone needs a running stack and exits at once ("supabase start is not running"), which is why no migration or pgTAP ran in CI before f4e5aba. The CLI version is pinned in db.yml: bump it deliberately, never `latest` — [CI/CD §2](docs/05-operations/02-cicd.md).`
 - `[2026-10-22] [claude] Never put tests or helpers under app/: expo-router makes every .ts(x) there a route (node_modules/expo-router/_ctx-shared.js), so route logic lives in src/features/*/screens and app/ files only re-export. auth-js signOut() returns early WITHOUT clearing storage when the session needs a refresh it cannot do (offline + expired token), and scope 'local' takes the same path: sign out through signOutWithLocalFallback in src/api/supabase.ts (SPEC-001-T19).`
 - `[2026-10-22] [claude] Migration versions are 14-digit YYYYMMDDHHMMSS (UTC, `supabase migration new`); the CLI keys schema_migrations on the leading digits, so duplicates break db reset. The ten legacy files were renamed to YYYYMMDD00NNNN_* (HHMMSS = old ordinal). Forward-only once applied to a non-disposable DB, no DOWN files (SCRUM-18); break_glass exists NOLOGIN with zero grants, grants come only from the (unbuilt) provisioning procedure — [Data Model §15](docs/01-architecture/03-data-model.md#15-migration-rules) rules 1, 12.`

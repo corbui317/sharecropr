@@ -1,6 +1,6 @@
 # Location Privacy Architecture
 
-**Status:** Review · **Version:** 1.0.0 · **Owner:** Architecture + Security
+**Status:** Review · **Version:** 1.1.0 · **Owner:** Architecture + Security
 **Security review:** required for any change to this document.
 
 > **Read this before writing any code that touches location.** Sharecropr stores the home addresses of thousands of people and introduces them to strangers. This document describes the one mechanism that makes that acceptable. Every other privacy control in the system is secondary to this one.
@@ -32,9 +32,9 @@ This is not enforced by remembering to filter. It is enforced structurally, in f
 | Layer | Control | What it stops |
 | --- | --- | --- |
 | **1. Storage** | Exact points live in `private.garden_locations`. `REVOKE ALL ON SCHEMA private FROM anon, authenticated`. The schema is not in PostgREST's exposed schema list. | Any direct query, including a crafted PostgREST request |
-| **2. Derivation** | A `BEFORE INSERT OR UPDATE` trigger computes the fuzzed `display_point` and H3 cells. There is no code path that writes a garden without fuzzing, because the trigger cannot be skipped. | A developer forgetting to fuzz |
+| **2. Derivation** | A `BEFORE INSERT OR UPDATE` trigger computes the fuzzed `display_point` and the location-tier cells (`coarse_cell`, `fine_cell`; [ADR-0023](adr/ADR-0023-postgis-location-tiers.md)). There is no code path that writes a garden without fuzzing, because the trigger cannot be skipped. | A developer forgetting to fuzz |
 | **3. Access** | Only an allowlisted set of `SECURITY DEFINER` functions may read `private`. Their **return types have no coordinate column** for user gardens. | A function accidentally returning a point |
-| **4. Egress** | Telemetry scrubbers, a `jsonb` CHECK on notification payloads and audit metadata, and analytics capped at H3 r5. | Leaks through the side doors, which is how this usually happens |
+| **4. Egress** | Telemetry scrubbers, a `jsonb` CHECK on notification payloads and audit metadata, and analytics capped at the region tier (16 km cells). | Leaks through the side doors, which is how this usually happens |
 
 ---
 
@@ -62,11 +62,11 @@ The client-reachable `public.gardens` row carries only derived values:
 ```sql
 ALTER TABLE public.gardens
   ADD COLUMN display_point geography(Point,4326),  -- fuzzed, ~800 m offset
-  ADD COLUMN h3_r7 text,                            -- ~5 km²  — safe to expose
-  ADD COLUMN h3_r9 text;                            -- ~0.1 km² — NEVER exposed
+  ADD COLUMN coarse_cell text,  -- coarse tier, 2.5 km cell — safe to expose to the owner
+  ADD COLUMN fine_cell text;    -- fine tier, 320 m cell — NEVER exposed
 ```
 
-> `h3_r9` exists because proximity matching needs finer resolution than we can safely show. It is used *inside* `SECURITY DEFINER` functions and is stripped from every client-facing view. It is listed in the forbidden-column CI check.
+> `fine_cell` is the internal tier. Proximity matching does not need it: `ST_DWithin` on `exact_point` inside definer functions does that exactly. It exists for bucketing inside `SECURITY DEFINER` functions and is never returned to a client: it is column-revoked, absent from every client-facing view and return type, and named in the forbidden-column sweep (`supabase/tests/location_tiers.test.sql`, N5).
 
 ---
 
@@ -117,13 +117,13 @@ REVOKE ALL ON FUNCTION app.derive_display_point(geography, uuid) FROM anon, auth
 CREATE OR REPLACE FUNCTION private.sync_garden_derived_location()
 RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER
-SET search_path = pg_catalog, public, private
+SET search_path = pg_catalog, public, private, extensions
 AS $$
 BEGIN
   UPDATE public.gardens g
      SET display_point = app.derive_display_point(NEW.exact_point, NEW.fuzz_seed),
-         h3_r7         = h3_lat_lng_to_cell(NEW.exact_point::geometry, 7)::text,
-         h3_r9         = h3_lat_lng_to_cell(NEW.exact_point::geometry, 9)::text,
+         coarse_cell   = app.location_cell(NEW.exact_point, 'coarse'),
+         fine_cell     = app.location_cell(NEW.exact_point, 'fine'),
          updated_at    = now()
    WHERE g.id = NEW.garden_id;
   RETURN NEW;
@@ -143,8 +143,8 @@ RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   IF current_setting('role', true) = 'authenticated' THEN
     IF NEW.display_point IS DISTINCT FROM OLD.display_point
-       OR NEW.h3_r7 IS DISTINCT FROM OLD.h3_r7
-       OR NEW.h3_r9 IS DISTINCT FROM OLD.h3_r9 THEN
+       OR NEW.coarse_cell IS DISTINCT FROM OLD.coarse_cell
+       OR NEW.fine_cell IS DISTINCT FROM OLD.fine_cell THEN
       RAISE EXCEPTION 'derived location columns are not client-writable'
         USING ERRCODE = '42501';
     END IF;
@@ -167,7 +167,7 @@ FOR EACH ROW EXECUTE FUNCTION public.reject_client_location_write();
 | **The garden's owner** | Their own exact point, via `rpc.get_my_garden_location()`. They already know where they live. |
 | **Any other user** | **Nothing.** Gardens are not rendered on the map at all. Listings attach to safe spots, not to gardens. |
 | **The map** | Only `safe_spots.point` — precise, and public because it is a public building. |
-| **Aggregate/analytics** | H3 r5 cells (~250 km²) and above. Nothing finer, ever. |
+| **Aggregate/analytics** | Region-tier cells (16 km, 256 km²) and coarser. Nothing finer, ever. |
 | **Moderator** | `display_point` and `city_label` only. Exact point requires a break-glass procedure that writes to `audit.events` and pages the security owner. |
 | **Support** | Never. Support has no path to any location data. |
 
@@ -250,18 +250,18 @@ The client sends its own lat/lng to this RPC. That is unavoidable — proximity 
 
 ---
 
-## 7. H3 usage rules
+## 7. Location tiers
 
-We use two spatial systems and it is important to know which is for what.
+Geography is the only spatial representation ([ADR-0023](adr/ADR-0023-postgis-location-tiers.md), which supersedes ADR-0005). The tiers are named PostGIS-derived cells computed by `app.location_cell()`; it is important to know which is for what.
 
-| System | Used for | Exposed? |
+| Tier | Used for | Exposed? |
 | --- | --- | --- |
-| **PostGIS `geography`** | Exact distance maths inside `SECURITY DEFINER` functions; safe-spot distance | Only safe-spot points |
-| **H3 r7** (~5 km²) | Coarse matching, surplus-alert targeting, `profiles.home_h3_r7` | Yes, to the owner and to server logic |
-| **H3 r9** (~0.1 km²) | Internal proximity bucketing | **Never** |
-| **H3 r5** (~250 km²) | Analytics, heatmaps | Yes |
+| **PostGIS `geography`** | Exact distance, all proximity (`ST_DWithin` + GiST), safe-spot distance | Only safe-spot points |
+| **coarse** (2.5 km, 6.25 km²) | `gardens.coarse_cell`, `profiles.home_coarse_cell`, surplus-alert origin | Yes, to the owner and to server logic |
+| **fine** (320 m, 0.10 km²) | Internal bucketing | **Never** |
+| **region** (16 km, 256 km²) | Analytics and heatmaps (`region_cell`) | Yes |
 
-**The recall trap.** Querying a single H3 cell silently misses everything just over the boundary. Always use `h3_grid_disk(cell, k)` with a `k` sized to the search radius, then filter precisely with `ST_DWithin`. A user near a cell edge who sees fewer results than a user in a cell centre is a bug that will not crash, will not error, and will not appear in tests unless the boundary case is written explicitly. It is [TC-GEO-07](../04-testing/03-geospatial-test-plan.md).
+**No cell is a proximity filter.** "What is near X" is answered with `ST_DWithin` on geography, never by comparing cell ids, because a cell lookup silently misses everything just over an edge. This removes the boundary-recall trap rather than testing around it. LP-12 / [TC-GEO-07](../04-testing/03-geospatial-test-plan.md) remain as the regression guard against anyone reintroducing a cell pre-filter.
 
 ---
 
@@ -272,13 +272,13 @@ The database is the well-defended part. Real-world location leaks come from the 
 | Vector | Control |
 | --- | --- |
 | **Photo EXIF** | Stripped server-side in an Edge Function on Storage upload. `media_assets.exif_stripped_at IS NULL` makes the asset unreadable through every RLS policy, so an unprocessed image can never be served. |
-| **Sentry breadcrumbs** | `beforeSend` scrubber deletes any key matching `/lat|lng|latitude|longitude|coord|point|geohash|h3_r[89]/i` at any depth, and redacts emails and tokens. Tested by firing a synthetic event containing a coordinate and asserting it is absent from the payload. |
-| **PostHog events** | Wrapper rejects any property that parses as a coordinate. Spatial properties are capped at H3 r5. |
+| **Sentry breadcrumbs** | `beforeSend` scrubber deletes any key matching `/lat|lng|latitude|longitude|coord|point|geohash|fine_cell/i` at any depth, and redacts emails and tokens. Tested by firing a synthetic event containing a coordinate and asserting it is absent from the payload. |
+| **PostHog events** | Wrapper rejects any property that parses as a coordinate. Spatial properties are capped at the region tier: only `region_cell` is accepted. |
 | **Notification payloads** | `CHECK` constraint on `notifications.payload` forbidding `lat`/`lng`/`point`/`coordinates` keys. |
 | **Audit metadata** | Same `CHECK` on `audit.events.metadata`. |
 | **Push notification body** | Notification copy is templated; templates are reviewed and cannot interpolate a location. |
 | **Support screenshots** | Moderation console never renders exact points; screenshots are therefore safe by construction. |
-| **CSV / analytics export** | Export tooling runs as a role with no `private` access. Growth experiments get H3 r5. |
+| **CSV / analytics export** | Export tooling runs as a role with no `private` access. Growth experiments get the region tier. |
 | **Deep links** | No route accepts or emits a coordinate parameter. |
 | **Error messages** | Postgres exception messages are mapped to codes before reaching the client; raw messages could contain row data. |
 
@@ -330,7 +330,7 @@ Documented in full in [Runbooks §6](../05-operations/05-runbooks.md).
 | LP-09 | EXIF is absent from every stored asset, verified on a real geotagged JPEG | Integration |
 | LP-10 | Scheduled production canary: synthetic user A cannot read user B's garden by any means | Cron, alerts on failure |
 | LP-11 | `notifications.payload` and `audit.events.metadata` reject coordinate keys | pgTAP |
-| LP-12 | Cell-boundary recall: a point 10 m inside a cell edge returns spots in the adjacent cell | pgTAP |
+| LP-12 | Radius recall: a safe spot 10 m beyond a coarse-cell edge is still returned by `safe_spots_near` (no cell pre-filter) | pgTAP |
 
 **LP-10 is the important one.** Every other check verifies the system we intended to build. LP-10 verifies the system we actually deployed, continuously, in production.
 
@@ -352,3 +352,4 @@ Stated honestly:
 | Date | Version | Author | Change |
 | --- | --- | --- | --- |
 | 2026-08-08 | 1.0.0 | Architecture + Security | Initial location privacy architecture |
+| 2026-10-22 | 1.1.0 | Architecture + Security | H3 removed ([ADR-0023](adr/ADR-0023-postgis-location-tiers.md)): location tiers region/coarse/fine replace H3 r5/r7/r9; §2, §3, §4.3, §5, §7, §8 and LP-12 updated. Security review pending (Corey) |

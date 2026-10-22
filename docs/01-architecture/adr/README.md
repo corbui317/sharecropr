@@ -23,7 +23,7 @@ Write a new ADR when a change touches the schema shape, the API surface, a secur
 | [0002](ADR-0002-barter-only.md) | Barter only, no money | Accepted | 2026-08-08 | No currency, no payments infrastructure, no fees — in the product or in the schema |
 | [0003](ADR-0003-database-centric-authz.md) | Database-centric authorization | Accepted | 2026-08-08 | Authorization and business logic live in Postgres (RLS + `SECURITY DEFINER` RPCs), not in an application tier |
 | [0004](ADR-0004-supabase.md) | Supabase as backend platform | Accepted | 2026-08-08 | Managed Supabase over custom NestJS+Postgres or Firebase, with a documented exit cost |
-| [0005](ADR-0005-geospatial-model.md) | Dual geospatial model | Accepted | 2026-08-08 | PostGIS `geography` for distance, H3 for bucketing; r5 analytics / r7 exposed / r9 internal-only |
+| [0005](ADR-0005-geospatial-model.md) | Dual geospatial model | **Superseded** by [0023](ADR-0023-postgis-location-tiers.md) | 2026-08-08 | ~~PostGIS `geography` for distance, H3 for bucketing; r5 analytics / r7 exposed / r9 internal-only~~ — the named-tier ladder survives as PostGIS location tiers |
 | [0006](ADR-0006-auth-providers.md) | Auth providers at MVP | Accepted | 2026-08-08 | Email+password, Apple, Google at MVP; Facebook and X deferred to Phase 2; Apple Sign-In mandatory under Guideline 4.8 |
 | [0007](ADR-0007-token-storage.md) | Token storage | Accepted | 2026-08-08 | `expo-secure-store` with a chunked adapter for >2 KB JWTs, PKCE flow, AppState-driven refresh |
 | [0008](ADR-0008-edge-functions.md) | Edge Function boundary | Accepted | 2026-08-08 | Deno Edge Functions only for webhooks, push fanout, image processing, and cron — everything else stays in Postgres |
@@ -41,9 +41,11 @@ Write a new ADR when a change touches the schema shape, the API surface, a secur
 | [0020](ADR-0020-pmtiles-self-hosting.md) | **PMTiles self-hosting** | Accepted | 2026-08-09 | OSM basemap as a Protomaps PMTiles archive on Cloudflare R2 + CDN; no tile vendor, no per-load billing, offline-capable |
 | [0021](ADR-0021-osm-safe-spot-sourcing.md) | **OSM safe-spot sourcing** | Accepted | 2026-08-09 | Overpass imports civic POIs as *candidates*; humans verify before any spot goes live. `opening_hours` is a hint, never truth |
 | [0022](ADR-0022-profiles-other-user-reads.md) | **Other-user profile reads** | Accepted | 2026-10-21 | `profiles` gets a visible-rows SELECT policy plus card-safe column grants; owner-only columns via `get_my_profile()`; `profile_cards` stays `security_invoker` |
+| [0023](ADR-0023-postgis-location-tiers.md) | **PostGIS location tiers** | Accepted | 2026-10-22 | PostGIS geography only; ST_DWithin + GiST for proximity; named tiers region 16 km / coarse 2.5 km / fine 320 m (never exposed); supersedes [0005](ADR-0005-geospatial-model.md) |
 
 ---
 
 ## Superseded
 
-None. This is the initial decision set.
+- [ADR-0005](ADR-0005-geospatial-model.md) — superseded by [ADR-0023](ADR-0023-postgis-location-tiers.md) (2026-10-22).
+- [ADR-0013](ADR-0013-map-library.md) — superseded by [ADR-0019](ADR-0019-openstreetmap-maplibre.md).

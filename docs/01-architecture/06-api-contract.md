@@ -1,6 +1,6 @@
 # API Contract
 
-**Status:** Review · **Version:** 1.0.0 · **Owner:** Architecture
+**Status:** Review · **Version:** 1.1.1 · **Owner:** Architecture
 
 This document is **authoritative for the client-server contract**. Specs describe *why* an endpoint exists; this describes exactly what it accepts, what it returns, and how it fails. A client change that assumes a shape not written here is a bug in the client. A server change that breaks a shape written here is a breaking change and follows §4.
 
@@ -41,7 +41,7 @@ Restating the things that are deliberately *absent*, because their absence is th
 
 - **`exchange_requests` and `exchange_sessions` have no client UPDATE policy at all.** Every status change goes through an RPC. If a client could `PATCH /rest/v1/exchange_requests?id=eq.X` with `{"status":"accepted"}`, every concurrency guarantee in [Exchange State Machine §5](07-exchange-state-machine.md) would be void. See [RLS Design §5 Pattern C](05-rls-design.md).
 - **`listings` UPDATE is restricted to `status IN ('draft','active')`.** A reserved listing is owned by the state machine, not by its owner.
-- **`gardens.display_point`, `h3_r7`, `h3_r9` are not client-writable**, enforced by a trigger that raises `42501`, not by an omitted column in a repository function ([Location Privacy §4.3](04-location-privacy.md)).
+- **`gardens.display_point`, `coarse_cell`, `fine_cell` are not client-writable**, enforced by a trigger that raises `42501`, not by an omitted column in a repository function ([Location Privacy §4.3](04-location-privacy.md)).
 - **The `private` schema is not in PostgREST's `db-schemas` setting**, and no role has any grant on it. There is no request that reaches it.
 - **`safe_spots` has no client write path.** Staff-only in MVP ([PRD C7](../00-foundation/02-prd.md)).
 - **`private.osm_spot_candidates` is not reachable at all.** It is in `private` for the same reason `garden_locations` is: "an unreviewed candidate is never discoverable" is then a property of where the row sits, not of a status filter somebody has to remember in every query ([ADR-0021](adr/ADR-0021-osm-safe-spot-sourcing.md), [SPEC-007-R44](../03-specs/SPEC-007-safe-spots.md)). `GET /rest/v1/osm_spot_candidates` 404s at the API layer before it reaches Postgres.
@@ -344,7 +344,7 @@ GET /rest/v1/profile_cards?id=eq.<uuid>&select=*
 }
 ```
 
-**Never present:** `trust_score`, `cancellation_count_90d`, `home_h3_r7`, `is_suspended`, `email`. These are column-`REVOKE`d from `authenticated` on the base table and absent from the view.
+**Never present:** `trust_score`, `cancellation_count_90d`, `home_coarse_cell`, `is_suspended`, `email`. These are column-`REVOKE`d from `authenticated` on the base table and absent from the view.
 
 Errors: `unauthenticated` 401. A blocked or suspended subject returns an **empty array**, not 404 — the caller learns nothing.
 
@@ -712,7 +712,7 @@ Note the deliberate asymmetry on `confirm_handoff`'s limit: it is **per session*
 
 Notes:
 
-- **`submit_garden_verification` receives a coordinate but never returns one.** The captured lat/lng is compared against `private.garden_locations.exact_point` inside the function, converted to `captured_h3_r9` and `distance_from_garden_m`, and the raw point is discarded. The parameters are excluded from statement logging alongside `safe_spots_near` ([Location Privacy §6.1](04-location-privacy.md)). This is the one inbound coordinate in the API and it is a write-only funnel.
+- **`submit_garden_verification` receives a coordinate but never returns one.** The captured lat/lng is compared against `private.garden_locations.exact_point` inside the function, converted to `captured_fine_cell` and `distance_from_garden_m`, and the raw point is discarded. The parameters are excluded from statement logging alongside `safe_spots_near` ([Location Privacy §6.1](04-location-privacy.md)). This is the one inbound coordinate in the API and it is a write-only funnel.
 - **`register_device` reassigns a token rather than erroring.** Expo push tokens are per-install; a shared device that two people sign into produces the same token for two users. Delivering A's notifications to B is a privacy incident, so the token is moved to the newest user and the old row deleted. Idempotent on `(user_id, expo_push_token)`.
 - **`request_account_deletion` starts a 30-day grace period** and is reversible by signing in during it ([PRD C1](../00-foundation/02-prd.md), Apple Guideline 5.1.1(v)). The actual erasure is the `account-delete` Edge Function, driven by cron.
 
@@ -1026,7 +1026,7 @@ A dropped websocket loses events with no gap detection. So: **on every reconnect
 | Exception | Direction | Control |
 | --- | --- | --- |
 | `get_my_garden_location` | **Out**, to the owner only | Hard-filtered on `auth.uid() = gardens.owner_id`. No parameter names a garden. The caller already knows where they live. |
-| `submit_garden_verification` | **In**, from the owner only | Converted to `captured_h3_r9` + `distance_from_garden_m` inside the function; the raw point is discarded. Write-only funnel, never echoed. |
+| `submit_garden_verification` | **In**, from the owner only | Converted to `captured_fine_cell` + `distance_from_garden_m` inside the function; the raw point is discarded. Write-only funnel, never echoed. |
 
 Additionally, `safe_spots_near` and `search_listings` accept the caller's *device* position — unavoidable for a proximity search — quantized client-side to ~100 m, never persisted, excluded from statement logging and from telemetry ([Location Privacy §6.1](04-location-privacy.md)).
 
@@ -1039,7 +1039,7 @@ Every other endpoint has **no column, parameter, or payload key** capable of car
 | API-01 | No function returning a client-reachable type has a `geography`/`geometry` column sourced from `private` | Static analysis over `supabase/migrations/**` (LP-03) | Yes |
 | API-02 | Every `SECURITY DEFINER` function reading `private` is on the reviewed allowlist in `supabase/policy/private-readers.txt` | CI diff against the allowlist; adding a name requires a security reviewer via CODEOWNERS (LP-02) | Yes |
 | API-03 | No client role holds any privilege on schema `private` | pgTAP, every migration (LP-01) | Yes |
-| API-04 | **Contract sweep:** every table, view, and RPC return type reachable by `anon` or `authenticated` is introspected from `information_schema`; any column named `/lat|lng|latitude|longitude|coord|point|geog|geom|h3_r[89]/i` fails unless it is on a two-line allowlist (`safe_spots.point`, `safe_spots_near.lat/lng`). **This is the check that catches a new endpoint**, because it runs against the live schema rather than against a diff. | pgTAP + a Node introspection script | Yes |
+| API-04 | **Contract sweep:** every table, view, and RPC return type reachable by `anon` or `authenticated` is introspected from `information_schema`; any column named `/lat|lng|latitude|longitude|coord|point|geog|geom|fine_cell/i` fails unless it is on a two-line allowlist (`safe_spots.point`, `safe_spots_near.lat/lng`). **This is the check that catches a new endpoint**, because it runs against the live schema rather than against a diff. | pgTAP + a Node introspection script | Yes |
 | API-05 | No Expo Router route accepts a param matching the coordinate regex | Static check over the route manifest | Yes |
 | API-06 | `notifications.payload` and `audit.events.metadata` reject coordinate keys | pgTAP (LP-11) | Yes |
 | API-07 | Telemetry scrubber removes coordinates from a synthetic Sentry event and a synthetic PostHog event | Jest (LP-08) | Yes |
@@ -1069,3 +1069,4 @@ API-04 and API-10 are the two that matter. Every other check verifies the system
 | --- | --- | --- | --- |
 | 2026-08-08 | 1.0.0 | Architecture | Initial API contract |
 | 2026-08-09 | 1.1.0 | Architecture | §6a added: basemap tiles are unauthenticated, unidentified, cacheable range `GET`s to our own CDN and sit outside the PostgREST/RPC surface entirely ([ADR-0020](adr/ADR-0020-pmtiles-self-hosting.md)). §6.8 `osm-import` added — scheduled, server-side only, writes candidates and cannot publish a spot ([ADR-0021](adr/ADR-0021-osm-safe-spot-sourcing.md)). `private.osm_spot_candidates` added to §1.3. New CI check API-11 |
+| 2026-10-22 | 1.1.1 | Architecture | H3 removed; renamed to location tiers per [ADR-0023](adr/ADR-0023-postgis-location-tiers.md). Forbidden-column names updated to `fine_cell`. |

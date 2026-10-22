@@ -1,7 +1,7 @@
 -- Column/table privilege matrix for client roles (ADR-0022, RLS Design §4).
 -- Postgres ignores a column-level REVOKE while a table-level grant exists, so these assert
 -- the EFFECTIVE privilege (has_column_privilege includes table-level grants).
--- Tags: SPEC-001-N08, SPEC-004-T23, SPEC-001-T09, SPEC-001-R11.
+-- Tags: SPEC-001-N08, SPEC-004-T23, ADR-0023, SPEC-001-T09, SPEC-001-R11.
 BEGIN;
 SELECT plan(22);
 
@@ -17,13 +17,13 @@ SELECT ok(has_column_privilege('authenticated', 'public.gardens', 'display_point
 
 -- profiles: owner-only / server-maintained columns are not selectable (visible rows include
 -- other users', so any granted column is visible to everyone who can see the row).
-SELECT is((SELECT count(*) FROM unnest(ARRAY['trust_score','cancellation_count_90d','home_h3_r7',
+SELECT is((SELECT count(*) FROM unnest(ARRAY['trust_score','cancellation_count_90d','home_coarse_cell',
     'is_suspended','suspended_until','deleted_at','locale','timezone','onboarding_completed_at','updated_at']) c
     WHERE has_column_privilege('authenticated', 'public.profiles', c, 'SELECT'))::int, 0,
   'N1: no owner-only profiles column is selectable by authenticated');
 SELECT is((SELECT count(*) FROM unnest(ARRAY['id','handle','trust_tier','trust_score','rating_avg',
     'rating_count','completed_exchanges','cancellation_count_90d','is_suspended','suspended_until',
-    'deleted_at','city_label','home_h3_r7','created_at','updated_at']) c
+    'deleted_at','city_label','home_coarse_cell','created_at','updated_at']) c
     WHERE has_column_privilege('authenticated', 'public.profiles', c, 'UPDATE'))::int, 0,
   'N2: no server-maintained or immutable profiles column is updatable (incl. handle, R11)');
 SELECT ok(NOT has_table_privilege('authenticated', 'public.profiles', 'INSERT'),
@@ -35,13 +35,13 @@ SELECT ok(NOT has_column_privilege('authenticated', 'public.profiles', 'trust_sc
   'N5: trust_score hidden from authenticated; anon sees nothing');
 
 -- gardens
-SELECT ok(NOT has_column_privilege('authenticated', 'public.gardens', 'h3_r9', 'SELECT'),
-  'N6: gardens.h3_r9 is not selectable (T23)');
-SELECT is((SELECT count(*) FROM unnest(ARRAY['owner_id','status','display_point','h3_r7','h3_r9',
+SELECT ok(NOT has_column_privilege('authenticated', 'public.gardens', 'fine_cell', 'SELECT'),
+  'N6: gardens.fine_cell is not selectable (SPEC-004-T23)');
+SELECT is((SELECT count(*) FROM unnest(ARRAY['owner_id','status','display_point','coarse_cell','fine_cell',
     'verified_at','rejection_reason','deleted_at','created_at','updated_at','id']) c
     WHERE has_column_privilege('authenticated', 'public.gardens', c, 'UPDATE'))::int, 0,
   'N7: garden status and derived/review columns are RPC-only (not updatable)');
-SELECT is((SELECT count(*) FROM unnest(ARRAY['status','display_point','h3_r7','h3_r9','verified_at',
+SELECT is((SELECT count(*) FROM unnest(ARRAY['status','display_point','coarse_cell','fine_cell','verified_at',
     'rejection_reason','deleted_at']) c
     WHERE has_column_privilege('authenticated', 'public.gardens', c, 'INSERT'))::int, 0,
   'N8: garden status and derived columns cannot be chosen at INSERT');

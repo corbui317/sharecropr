@@ -1,4 +1,6 @@
 -- SCR-0203: Gardens, private.garden_locations, location derivation (Location Privacy §4)
+-- Location tiers are PostGIS-only (ADR-0023, supersedes ADR-0005). Edited in place before first
+-- apply (Data Model §15 rule 12): the H3 columns and helpers never existed in any database.
 
 CREATE TABLE public.gardens (
   id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -7,8 +9,10 @@ CREATE TABLE public.gardens (
   description      text CHECK (description IS NULL OR length(description) <= 500),
   status           public.garden_status NOT NULL DEFAULT 'draft',
   display_point    geography(Point, 4326),
-  h3_r7            text,
-  h3_r9            text,
+  coarse_cell      text CONSTRAINT gardens_coarse_cell_tier
+                     CHECK (coarse_cell IS NULL OR coarse_cell ~ '^2500:[0-9]+:[0-9]+$'),
+  fine_cell        text CONSTRAINT gardens_fine_cell_tier
+                     CHECK (fine_cell IS NULL OR fine_cell ~ '^320:[0-9]+:[0-9]+$'),
   grow_zone        text CHECK (grow_zone IS NULL OR length(grow_zone) <= 8),
   size_band        text CHECK (size_band IS NULL OR size_band IN (
     'containers', 'small', 'medium', 'large', 'allotment'
@@ -22,7 +26,6 @@ CREATE TABLE public.gardens (
 
 CREATE INDEX gardens_owner_idx ON public.gardens (owner_id) WHERE deleted_at IS NULL;
 CREATE INDEX gardens_display_gix ON public.gardens USING GIST (display_point);
-CREATE INDEX gardens_h3_r9_idx ON public.gardens (h3_r9);
 CREATE INDEX gardens_status_idx ON public.gardens (status) WHERE deleted_at IS NULL;
 CREATE UNIQUE INDEX gardens_one_per_owner ON public.gardens (owner_id)
   WHERE deleted_at IS NULL AND status <> 'archived';
@@ -42,6 +45,56 @@ CREATE TABLE private.garden_locations (
 
 CREATE INDEX garden_locations_gix ON private.garden_locations USING GIST (exact_point);
 REVOKE ALL ON private.garden_locations FROM anon, authenticated, PUBLIC;
+
+-- ── Location tiers (ADR-0023) ───────────────────────────────────────────────
+-- The ONLY place tier sizes live. Every stored tier column CHECK-pins its id prefix, so changing
+-- a size also requires changing those constraints: a resolution change is a reviewed schema change.
+CREATE OR REPLACE FUNCTION app.location_tier_side_m(p_tier text)
+RETURNS integer
+LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
+SET search_path = pg_catalog
+AS $$
+  SELECT CASE p_tier
+           WHEN 'region' THEN 16000  -- analytics ceiling, 256 km²   (H3 r5 was ~253 km²)
+           WHEN 'coarse' THEN 2500   -- owner/server only, 6.25 km² (H3 r7 was ~5.2 km²)
+           WHEN 'fine'   THEN 320    -- internal only, 0.10 km²     (H3 r9 was ~0.105 km²)
+         END;
+$$;
+
+-- Banded equal-area square grid on the mean-radius sphere (ADR-0023 §The grid). Rows have constant
+-- height; each ROW's column width comes from the row's centre latitude (not the point's), so the
+-- grid is a true partition and cells are ~side x side on the ground at any latitude.
+-- Id '<side_m>:<row>:<col>' with row, col >= 0. Pure arithmetic: no spatial_ref_sys, no PROJ.
+CREATE OR REPLACE FUNCTION app.location_cell(p_point geography, p_tier text)
+RETURNS text
+LANGUAGE plpgsql IMMUTABLE STRICT PARALLEL SAFE
+SET search_path = pg_catalog, extensions
+AS $$
+DECLARE
+  m_per_deg constant double precision := pi() * 6371008.8 / 180.0;  -- metres per degree of latitude
+  v_side    integer := app.location_tier_side_m(p_tier);
+  v_lat     double precision;
+  v_lng     double precision;
+  v_row_h   double precision;
+  v_row     bigint;
+  v_col_w   double precision;
+  v_col     bigint;
+BEGIN
+  IF v_side IS NULL THEN
+    RAISE EXCEPTION 'unknown location tier' USING ERRCODE = '22023';
+  END IF;
+  v_lat   := ST_Y(p_point::geometry);
+  v_lng   := ST_X(p_point::geometry);
+  v_row_h := v_side / m_per_deg;
+  v_row   := floor((v_lat + 90.0) / v_row_h)::bigint;
+  v_col_w := v_side / (m_per_deg * GREATEST(cos(radians(-90.0 + (v_row + 0.5) * v_row_h)), 1e-9));
+  v_col   := floor((v_lng + 180.0) / v_col_w)::bigint;
+  RETURN format('%s:%s:%s', v_side, v_row, v_col);
+END;
+$$;
+
+REVOKE ALL ON FUNCTION app.location_tier_side_m(text) FROM anon, authenticated, PUBLIC;
+REVOKE ALL ON FUNCTION app.location_cell(geography, text) FROM anon, authenticated, PUBLIC;
 
 -- ── Fuzzing (Location Privacy §4.2) ─────────────────────────────────────────
 CREATE OR REPLACE FUNCTION app.derive_display_point(
@@ -76,8 +129,8 @@ AS $$
 BEGIN
   UPDATE public.gardens g
      SET display_point = app.derive_display_point(NEW.exact_point, NEW.fuzz_seed),
-         h3_r7         = h3_lat_lng_to_cell(NEW.exact_point::geometry, 7)::text,
-         h3_r9         = h3_lat_lng_to_cell(NEW.exact_point::geometry, 9)::text,
+         coarse_cell   = app.location_cell(NEW.exact_point, 'coarse'),
+         fine_cell     = app.location_cell(NEW.exact_point, 'fine'),
          updated_at    = now()
    WHERE g.id = NEW.garden_id;
   RETURN NEW;
@@ -96,8 +149,8 @@ AS $$
 BEGIN
   IF current_setting('role', true) = 'authenticated' THEN
     IF NEW.display_point IS DISTINCT FROM OLD.display_point
-       OR NEW.h3_r7 IS DISTINCT FROM OLD.h3_r7
-       OR NEW.h3_r9 IS DISTINCT FROM OLD.h3_r9 THEN
+       OR NEW.coarse_cell IS DISTINCT FROM OLD.coarse_cell
+       OR NEW.fine_cell IS DISTINCT FROM OLD.fine_cell THEN
       RAISE EXCEPTION 'derived location columns are not client-writable'
         USING ERRCODE = '42501';
     END IF;
@@ -110,17 +163,7 @@ CREATE TRIGGER trg_reject_client_location_write
   BEFORE UPDATE ON public.gardens
   FOR EACH ROW EXECUTE FUNCTION public.reject_client_location_write();
 
--- ── H3 / geohash helpers (ADR-0005) ─────────────────────────────────────────
-CREATE OR REPLACE FUNCTION app.k_for_radius(p_resolution int, p_radius_m double precision)
-RETURNS int
-LANGUAGE sql IMMUTABLE
-SET search_path = pg_catalog, extensions
-AS $$
-  SELECT GREATEST(1, CEIL(
-    p_radius_m / NULLIF(h3_get_hexagon_edge_length_avg(p_resolution, 'm'), 0)
-  ))::int;
-$$;
-
+-- ── Quantization helpers (Location Privacy §6.1) ────────────────────────────
 CREATE OR REPLACE FUNCTION app.quantize_lat_lng(
   p_lat double precision,
   p_lng double precision,
@@ -151,14 +194,13 @@ AS $$
   SELECT ST_GeoHash(ST_SetSRID(ST_MakePoint(p_lng, p_lat), 4326), p_precision);
 $$;
 
-REVOKE ALL ON FUNCTION app.k_for_radius(int, double precision) FROM anon, authenticated, PUBLIC;
 REVOKE ALL ON FUNCTION app.quantize_lat_lng(double precision, double precision, double precision)
   FROM anon, authenticated, PUBLIC;
 REVOKE ALL ON FUNCTION app.geohash_encode(double precision, double precision, int)
   FROM anon, authenticated, PUBLIC;
 
--- Column-level protection for h3_r9
-REVOKE SELECT (h3_r9) ON public.gardens FROM authenticated;
+-- fine_cell is never client-readable (0010 also leaves it out of the column grants).
+REVOKE SELECT (fine_cell) ON public.gardens FROM authenticated;
 
 -- Owner reads own exact point (Location Privacy §5)
 CREATE OR REPLACE FUNCTION public.get_my_garden_location(p_garden_id uuid DEFAULT NULL)
@@ -196,3 +238,35 @@ $$;
 
 REVOKE ALL ON FUNCTION public.get_my_garden_location(uuid) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.get_my_garden_location(uuid) TO authenticated;
+
+-- ── Tier consistency (ADR-0023 §Enforcement 7) ──────────────────────────────
+-- Raises on any garden whose stored cells disagree with its exact_point. Reports a COUNT only:
+-- never a garden id, cell or coordinate (Invariant 1). Failures land in cron.job_run_details.
+CREATE OR REPLACE FUNCTION private.check_location_tiers()
+RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, public, private, extensions
+AS $$
+DECLARE v_drift bigint;
+BEGIN
+  SELECT count(*) INTO v_drift
+    FROM private.garden_locations l
+    JOIN public.gardens g ON g.id = l.garden_id
+   WHERE g.coarse_cell IS DISTINCT FROM app.location_cell(l.exact_point, 'coarse')
+      OR g.fine_cell   IS DISTINCT FROM app.location_cell(l.exact_point, 'fine');
+  IF v_drift > 0 THEN
+    RAISE EXCEPTION 'location tier drift: % garden(s)', v_drift USING ERRCODE = 'P0001';
+  END IF;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION private.check_location_tiers() FROM PUBLIC, anon, authenticated;
+
+DO $cron$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
+    PERFORM cron.schedule('location_tier_consistency', '45 3 * * *',
+                          $$SELECT private.check_location_tiers();$$);
+  END IF;
+END;
+$cron$;

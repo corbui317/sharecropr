@@ -1,6 +1,6 @@
 # Threat Model
 
-**Status:** Review · **Version:** 1.1.0 · **Owner:** Security
+**Status:** Review · **Version:** 1.3.1 · **Owner:** Security
 
 > **Identifier change (2026-08-09):** threat IDs are now `THR-##`, renamed from `T-##` throughout this document and every citation of it. `T-26` (a threat) and `T30` (a SPEC-010 test) differed by one hyphen and were both cited across documents; a reader resolving one as the other would have followed a mitigation to a concurrency test. IDs are otherwise stable and the numbers are unchanged.
 
@@ -29,7 +29,7 @@ STRIDE for the system, plus attacker-narrative abuse cases for the things STRIDE
 | `private.garden_locations.exact_point` | **P0** | Home address of a named, photographed person | Catastrophic. Physical danger to a specific individual; existential for the company. |
 | `exchange_sessions.scheduled_start` + `safe_spot_id` | **P1** | A named person will be at a known place at a known time — and *not at home* | Severe. Enables both interception and burglary. The sleeper asset in this system. |
 | `private.garden_locations` in bulk | **P0** | A saleable dataset of home addresses tied to identities | Catastrophic and unrecoverable |
-| `gardens.h3_r9` | P1 | ~0.1 km² box around a home | High. Not a point, but small enough to walk. |
+| `gardens.fine_cell` | P1 | ~0.1 km² box around a home | High. Not a point, but small enough to walk. |
 | Verification records + `private.verification_vendor_refs` | P1 | Confirms a real identity behind a display name | High. We hold pointers, not documents — deliberately. |
 | `messages.body` | P1 | Conversation content; users volunteer addresses and phone numbers here | Moderate–high |
 | Email, `profiles.timezone`, device tokens | P1 | Contact, correlation, targeting | Moderate |
@@ -114,8 +114,8 @@ flowchart TB
 | **THR-02** | **Averaging attack** — read a fuzzed point N times, average away the noise, recover the true location to within metres | P0 | Motivated individual | M | Catastrophic | Stable per-garden `fuzz_seed` makes the offset deterministic: 1,000 reads return byte-identical output. [LP-05](../01-architecture/04-location-privacy.md), [LP-06](../01-architecture/04-location-privacy.md) | Very low |
 | **THR-03** | A new `SECURITY DEFINER` function accidentally returns a coordinate | P0 | Us, under deadline pressure | **M** | Catastrophic | Return types have no coordinate column; CI static check LP-03; definer-function allowlist; `CODEOWNERS` on `supabase/migrations/**` | **Low but real — this is the most likely way we leak** |
 | **THR-04** | EXIF GPS in a crop or garden photo | P0 | Passive | H if unmitigated | Catastrophic | Server-side strip in `media-process`; `exif_stripped_at IS NULL` makes the asset unreadable through every RLS policy | Very low |
-| **THR-05** | Coordinate reaches Sentry or PostHog in a breadcrumb or event property | P0 | Us | **M** | High | `beforeSend` scrubber; analytics capped at H3 r5; synthetic-event test | **Low — but this class of leak is how it usually happens in the wild** |
-| **THR-06** | `gardens.h3_r9` selectable by its owner over PostgREST | P1 | Curious user; scraper with many accounts | M | Moderate | Column-level `REVOKE`; API contract sweep regex includes `h3_r[89]` | Low |
+| **THR-05** | Coordinate reaches Sentry or PostHog in a breadcrumb or event property | P0 | Us | **M** | High | `beforeSend` scrubber; analytics capped at the region tier; synthetic-event test | **Low — but this class of leak is how it usually happens in the wild** |
+| **THR-06** | `gardens.fine_cell` selectable by its owner over PostgREST | P1 | Curious user; scraper with many accounts | M | Moderate | Column-level `REVOKE`; API contract sweep regex includes `fine_cell` | Low |
 | **THR-07** | Coordinate in a notification payload or audit metadata | P0 | Us | L | High | `CHECK` constraints forbidding `lat`/`lng`/`point` keys on both `jsonb` columns | Very low |
 | **THR-08** | **Timing / count side channel on `safe_spots_near`** — query repeatedly from varying origins while a target's listing is active, intersect the safe-spot sets | P1 | Determined individual | M | High | 200-row cap; 40 km radius cap; per-user rate limit; listings attach to up to 3 spots | **Moderate. Narrows a target to a few km², not eliminated.** |
 | **THR-09** | Mass scraping of the listing/safe-spot graph to build a dataset | P1 | Commercial scraper | M | High | Per-user rate limits; verification required to see full listing detail; 200-row cap; anomaly alerting on request volume | Moderate |
@@ -143,7 +143,7 @@ flowchart TB
 
 | ID | Threat | Asset | L | I | Mitigations | Residual |
 | --- | --- | --- | --- | --- | --- | --- |
-| **THR-21** | Client writes `display_point` / `h3_*` directly to fake a location | P0 integrity | M | High | `reject_client_location_write` trigger; derived columns are trigger-computed only | Very low |
+| **THR-21** | Client writes `display_point` / `*_cell` directly to fake a location | P0 integrity | M | High | `reject_client_location_write` trigger; derived columns are trigger-computed only | Very low |
 | **THR-22** | Client submits a spoofed GPS coordinate at garden registration | P1 | M | Moderate | Distance check against photo capture cell; human review; App Attest / Play Integrity deferred to Phase 2 | **Moderate — a mock-location app defeats the automated check today** |
 | **THR-23** | Replayed Persona webhook flips a `failed` to `passed` | Verification | L | High | HMAC signature, replay window, unique `webhook_idempotency_key` | Low |
 | **THR-24** | Direct PostgREST manipulation bypassing all client-side validation | Everything | H (assumed) | Varies | **The client is assumed hostile.** Every constraint is a database CHECK or policy; state transitions have no UPDATE policy at all and go through definer RPCs only | Low |
@@ -224,7 +224,7 @@ flowchart TB
 **Not stopped:** a different real person's ID, or a household member's. THR-17 residual.
 
 **AC-06 — The engineer under deadline pressure.**
-*"I need listing owner distance for a sort. I'll just add `owner_h3_r9` to the response and filter it client-side. I'll clean it up after launch."*
+*"I need listing owner distance for a sort. I'll just add `owner_fine_cell` to the response and filter it client-side. I'll clean it up after launch."*
 **Stopped by:** the CI static check on forbidden columns, the definer-function allowlist, the `CODEOWNERS` requirement for a second reviewer on migrations, and the production canary [LP-10](../01-architecture/04-location-privacy.md).
 **This is THR-03, and honestly it is the most likely breach in this document.** The attacker is us.
 
@@ -295,3 +295,4 @@ Ranked. Where a control is detection rather than prevention, it says so.
 | 2026-08-09 | 1.1.0 | Security | Workflow-architect review fixes ([review](../07-review/01-workflow-architect-review.md)). Threat IDs renamed `T-##` → `THR-##` to end the collision with SPEC test IDs. THR-26's mitigation corrected — the index form SPEC-010 carried was a no-op. THR-27a added for handoff-code brute force, whose stated mitigation was rolled back by its own exception and therefore did not exist |
 | 2026-08-09 | 1.2.0 | Security | THR-27b added: handoff codes readable from a dump, backup, or replica — now mitigated by at-rest encryption. Stale "Threat IDs are T-##" line corrected |
 | 2026-08-09 | 1.3.0 | Security | OpenStreetMap adoption ([ADR-0019](../01-architecture/adr/ADR-0019-openstreetmap-maplibre.md), [ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md), [ADR-0021](../01-architecture/adr/ADR-0021-osm-safe-spot-sourcing.md)). Boundary 6 added for untrusted upstream data. THR-46 tile viewport side channel — closed by self-hosting, and explicitly recorded as a *secondary* concern rather than the justification. THR-47 poisoned or vandalised OSM POI data reaching a safe spot. THR-48 tile archive / style JSON substitution. THR-49 rubber-stamping the candidate queue — the failure mode the pipeline itself creates. Traceability and residual risk updated |
+| 2026-10-22 | 1.3.1 | Security | H3 removed; renamed to location tiers per [ADR-0023](../01-architecture/adr/ADR-0023-postgis-location-tiers.md). Analytics cap and `fine_cell` references updated. |

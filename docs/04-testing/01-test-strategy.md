@@ -1,6 +1,6 @@
 # Test Strategy
 
-**Status:** Approved · **Version:** 1.1.0 · **Owner:** Engineering
+**Status:** Approved · **Version:** 1.1.1 · **Owner:** Engineering
 
 ---
 
@@ -51,7 +51,7 @@ Not Jest, deliberately: E2E is Maestro ([ADR-0015](../01-architecture/adr/ADR-00
 
 ## 3. Unit tests
 
-Scope: everything in `src/domain` — the state machine mirror, validation, formatting, unit conversion, taxonomy search ranking, distance and H3 helpers.
+Scope: everything in `src/domain` — the state machine mirror, validation, formatting, unit conversion, taxonomy search ranking, distance and location-tier helpers.
 
 `src/domain` has an eslint rule forbidding React Native imports, which is what makes it testable in plain Node with no simulator — the Jest `domain` project runs it with no React Native preset, so an RN import there fails the test run as well as lint. That constraint exists for testability first and web-client reuse second.
 
@@ -264,3 +264,4 @@ Details in [CI/CD](../05-operations/02-cicd.md).
 | --- | --- | --- | --- |
 | 2026-08-08 | 1.0.0 | Engineering | Initial test strategy |
 | 2026-10-21 | 1.1.0 | Engineering | Unit/integration runner is Jest (`jest-expo`) + React Native Testing Library, matching mobile architecture §1/§4.1, ADR-0015 and Location Privacy LP-08 (SCRUM-64). §2 names the one runner and what deliberately is not Jest; §7 LP-08 runner corrected |
+| 2026-10-22 | 1.1.1 | Engineering | H3 removed; renamed to location tiers per [ADR-0023](../01-architecture/adr/ADR-0023-postgis-location-tiers.md). |

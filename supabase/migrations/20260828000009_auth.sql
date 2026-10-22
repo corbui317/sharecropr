@@ -272,7 +272,7 @@ BEGIN
          bio = NULL,
          avatar_path = NULL,
          city_label = NULL,
-         home_h3_r7 = NULL,
+         home_coarse_cell = NULL,
          deleted_at = COALESCE(deleted_at, now()),
          updated_at = now()
    WHERE id = p_user_id;

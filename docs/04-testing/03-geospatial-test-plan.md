@@ -1,6 +1,6 @@
 # Geospatial Test Plan
 
-**Status:** Approved · **Version:** 1.0.0 · **Owner:** Backend + Security
+**Status:** Approved · **Version:** 1.2.0 · **Owner:** Backend + Security
 
 Geospatial bugs in this system fail in two directions, and both are silent:
 
@@ -13,7 +13,7 @@ The privacy direction is catastrophic. The recall direction quietly makes the pr
 
 ## 1. Environment
 
-Real PostGIS 3.4 and `h3-pg` in the Supabase CLI stack. No mocks — spherical geometry is exactly the sort of thing a mock gets subtly wrong.
+Real PostGIS 3.4 in the Supabase CLI stack. No mocks — spherical geometry is exactly the sort of thing a mock gets subtly wrong.
 
 Test data spans latitudes deliberately: **0°, 25°, 42°, 60°, 71°**. Anything relying on a flat-earth approximation passes at 42° and fails at 71°, so the northern cases are not optional.
 
@@ -86,16 +86,16 @@ Updating `exact_point` recomputes `display_point`; updating any other garden col
 
 ---
 
-## 3. Cell-boundary recall
+## 3. Radius recall
 
-The bug this section exists to prevent: a user 10 m from an H3 cell edge sees fewer nearby safe spots than a user in the middle of a cell, forever, silently.
+The bug this section exists to prevent: a user 10 m from a coarse-cell edge sees fewer nearby safe spots than a user in the middle of a cell, forever, silently.
 
 ### TC-GEO-07 — Boundary recall
 
 For each of 500 points placed 10 m inside a cell boundary, `safe_spots_near` returns **every** spot within the radius, including those in the adjacent cell.
 
 ```sql
--- The failure mode this catches: querying one cell instead of a disk.
+-- The failure mode this catches: any cell pre-filter ahead of ST_DWithin.
 SELECT is(
   (SELECT count(*) FROM tests.boundary_points bp
     WHERE (SELECT count(*) FROM public.safe_spots_near(bp.lat, bp.lng, 5000))
@@ -106,7 +106,7 @@ SELECT is(
 
 ### TC-GEO-08 — Disk sizing
 
-`h3_grid_disk(cell, k)` is called with a `k` large enough for the requested radius at that resolution. Asserted for radii 2, 8, 20, and 40 km. An under-sized `k` produces exactly the silent under-fetch GEO-07 detects; this test names the cause.
+**Retired 2026-10-22** ([ADR-0023](../01-architecture/adr/ADR-0023-postgis-location-tiers.md)): there is no cell disk; proximity is `ST_DWithin`.
 
 ### TC-GEO-09 — Antimeridian and poles
 
@@ -114,9 +114,9 @@ Queries at ±179.99° longitude and above 80° latitude return correct results. 
 
 ### TC-GEO-10 — Resolution discipline
 
-- `h3_r7` may appear in client-facing output.
-- **`h3_r9` may not**, in any view, function return type, or API response.
-- Analytics events carry no cell finer than r5.
+- `coarse_cell` may appear in client-facing output.
+- **`fine_cell` may not**, in any view, function return type, or API response.
+- Analytics events carry only `region_cell`, never a cell finer than the region tier.
 
 Enforced by a catalogue sweep plus a response-body regex over every endpoint in the [API contract](../01-architecture/06-api-contract.md).
 
@@ -175,7 +175,7 @@ TC-GEO-20 is the belt-and-braces test: it does not care how a coordinate got int
 | --- | --- | --- | --- |
 | TC-GEO-21 | `safe_spots_near`, 8 km | p95 < 400 ms | 500k listings, 2k safe spots, 200 concurrent |
 | TC-GEO-22 | `safe_spots_near`, 40 km max radius | p95 < 900 ms | Same |
-| TC-GEO-23 | H3 cell lookup | p95 < 5 ms | — |
+| TC-GEO-23 | `location_cell` derivation | p95 < 5 ms | — |
 | TC-GEO-24 | Fuzz derivation on garden write | p95 < 10 ms | It is on the registration path |
 | TC-GEO-25 | Boundary-heavy workload | No worse than p95 + 20% | 500 boundary origins |
 
@@ -189,7 +189,7 @@ TC-GEO-25 exists because the fix for GEO-07 — querying a disk instead of a cel
 | --- | --- |
 | TC-GEO-26 | Every active safe spot has a valid point on land in a supported country |
 | TC-GEO-27 | No two active safe spots are within 50 m of each other (duplicate detection) |
-| TC-GEO-28 | Every safe spot's `h3_r8` generated column matches its point |
+| TC-GEO-28 | Retired 2026-10-22 (ADR-0023): safe spots carry no cell column |
 | TC-GEO-29 | `hours_verified_at` older than 90 days raises a data-quality alert |
 | TC-GEO-30 | Every launch metro has ≥ 40 active safe spots — a [release gate](../00-foundation/02-prd.md) |
 
@@ -255,7 +255,7 @@ We own the basemap and we seed the safe-spot queue from OpenStreetMap ([ADR-0019
 | TC-GEO-52 | **A `private.osm_spot_candidates` row is never returned by `safe_spots_near`.** Seed a viewport dense with `pending` candidates and assert zero candidate-derived rows — plus that `anon` and `authenticated` receive permission-denied on the table via PostgREST, direct SQL, and any view. Same structural argument as `private.garden_locations`: the row is unreachable, not filtered | rls, blocking |
 | TC-GEO-53 | An end-to-end import run against a fixture metro produces **zero** rows in `public.safe_spots` in any status. The import path has no privilege the manual path lacks | integration |
 | TC-GEO-54 | Upstream changes to a linked live spot — `name`, `addr:*`, `opening_hours`, a move over 50 m, deletion of the element — each raise a review flag and leave `name`, address columns, `point`, `hours`, `hours_verified_at`, and the 90-day staleness clock **unchanged**. An OSM edit is not a verification, and must not be able to reset our clock or move our pin | integration |
-| TC-GEO-55 | A promoted OSM-derived spot satisfies TC-GEO-26 (valid point on land), TC-GEO-27 (no two active spots within 50 m — the dedupe path), and TC-GEO-28 (`h3_r8` matches its point) exactly as a hand-curated one does. **Provenance changes nothing about the data-quality bar** | nightly |
+| TC-GEO-55 | A promoted OSM-derived spot satisfies TC-GEO-26 (valid point on land), TC-GEO-27 (no two active spots within 50 m — the dedupe path), and TC-GEO-28 (retired, ADR-0023) exactly as a hand-curated one does. **Provenance changes nothing about the data-quality bar** | nightly |
 
 > TC-GEO-51 and TC-GEO-52 are the two in this section that are worth the most. Stale hours are the largest generator of no-shows, and a no-show is a wasted trip for a real person who drove somewhere; an unreviewed candidate surfacing to a user is worse still. Both failures are silent — the map looks fine, the spot looks fine, and the person is standing outside a locked door.
 
@@ -289,3 +289,4 @@ The 10,000-garden property tests use a fixed seed so failures are reproducible. 
 | --- | --- | --- | --- |
 | 2026-08-08 | 1.0.0 | Backend + Security | Initial geospatial test plan |
 | 2026-08-09 | 1.1.0 | Backend + Security | §8a added for the OpenStreetMap basemap and OSM safe-spot sourcing ([ADR-0019](../01-architecture/adr/ADR-0019-openstreetmap-maplibre.md), [ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md), [ADR-0021](../01-architecture/adr/ADR-0021-osm-safe-spot-sourcing.md)): TC-GEO-37…40 ODbL attribution, 41…45 tile egress and failure degradation, 46…50 archive integrity and coverage, 51…55 candidate isolation and imported-hours containment |
+| 2026-10-22 | 1.2.0 | Backend + Security | H3 removed; renamed to location tiers per [ADR-0023](../01-architecture/adr/ADR-0023-postgis-location-tiers.md). §3 is radius recall, TC-GEO-08 and TC-GEO-28 retired, TC-GEO-10 names `fine_cell`/`region_cell`, TC-GEO-23 times `location_cell`. Header version corrected (it lagged the 1.1.0 row) |

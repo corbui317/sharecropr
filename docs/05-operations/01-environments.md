@@ -1,6 +1,6 @@
 # Environments
 
-**Status:** Approved · **Version:** 1.1.2 · **Owner:** Platform Engineering
+**Status:** Approved · **Version:** 1.1.3 · **Owner:** Platform Engineering
 
 ---
 
@@ -26,7 +26,7 @@ The only exception is the [break-glass procedure](../01-architecture/04-location
 ## 2. Local
 
 ```bash
-npm run db:start                  # supabase start: Postgres + PostGIS + h3 + GoTrue + Storage + Realtime
+npm run db:start                  # supabase start: Postgres + PostGIS + GoTrue + Storage + Realtime
 npm run db:reset                  # supabase db reset: migrations, then seed_harness.sql + seed.sql
 npm run ios / npm run android     # Expo Dev Client (expo run:ios / expo run:android)
 ```
@@ -253,3 +253,4 @@ Only the production function has the Overpass host on its egress allowlist ([SPE
 | 2026-08-09 | 1.1.0 | Platform Engineering | §11 added: the basemap tile pipeline (Geofabrik extract → Protomaps build → dated PMTiles archive → R2 → CDN, monthly), which archive each environment serves, and rollback by repointing the style. §11.2 scopes the OSM candidate import per environment. §6 records that **no map API key exists in any environment** ([ADR-0019](../01-architecture/adr/ADR-0019-openstreetmap-maplibre.md), [ADR-0020](../01-architecture/adr/ADR-0020-pmtiles-self-hosting.md)) |
 | 2026-10-21 | 1.1.1 | Platform Engineering | §2 corrected: removed `npm run seed:local` (never existed); local setup is `npm run db:start` + `npm run db:reset`, whose seed is the pgTAP fixture set. §7's `packages/seed` is marked planned. (SCR-0001) |
 | 2026-10-22 | 1.1.2 | Platform Engineering | Migration filename updated to 14-digit version (SCR-0201) |
+| 2026-10-22 | 1.1.3 | Platform Engineering | H3 removed; renamed to location tiers per [ADR-0023](../01-architecture/adr/ADR-0023-postgis-location-tiers.md). Local stack no longer lists h3. |

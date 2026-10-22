@@ -1,6 +1,6 @@
 # RLS Test Plan
 
-**Status:** Approved · **Version:** 1.0.0 · **Owner:** Backend + Security
+**Status:** Approved · **Version:** 1.0.1 · **Owner:** Backend + Security
 
 RLS is the entire authorization layer ([ADR-0003](../01-architecture/adr/ADR-0003-database-centric-authz.md)). A wrong policy does not crash — it returns data. This plan defines how every policy is proven, with a deliberate emphasis on proving **refusal**.
 
@@ -88,7 +88,7 @@ Test file: `supabase/tests/rls_<table>.test.sql`. `P` = positive, **`N`** = nega
 | --- | --- | --- | --- | --- |
 | `profiles` | 22 | 8 | **11** | Column revoke on `trust_score`; `profile_cards` is `security_invoker`; blocked user invisible |
 | `verifications` | 14 | 4 | **8** | Only self and moderator; client cannot write `status` |
-| `gardens` | 26 | 8 | **15** | `display_point` not client-writable; `h3_r9` column-revoked; one garden per owner |
+| `gardens` | 26 | 8 | **15** | `display_point` not client-writable; `fine_cell` column-revoked; one garden per owner |
 | `garden_verification_submissions` | 16 | 5 | **9** | Moderator read; submitter read; nobody else |
 | `crop_kingdoms` / `categories` / `species` | 10 each | 4 | **4** | `anon` may read active rows only; nobody but staff writes |
 | `crop_varieties` | 14 | 5 | **7** | Unapproved variety visible **only** to its submitter |
@@ -310,3 +310,4 @@ SELECT tests.assert_query_under_ms(
 | Date | Version | Author | Change |
 | --- | --- | --- | --- |
 | 2026-08-08 | 1.0.0 | Backend + Security | Initial RLS test plan |
+| 2026-10-22 | 1.0.1 | Backend + Security | H3 removed; renamed to location tiers per [ADR-0023](../01-architecture/adr/ADR-0023-postgis-location-tiers.md). |

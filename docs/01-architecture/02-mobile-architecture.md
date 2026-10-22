@@ -1,6 +1,6 @@
 # Mobile Architecture
 
-**Status:** Review · **Version:** 1.0.0 · **Owner:** Architecture
+**Status:** Review · **Version:** 1.1.4 · **Owner:** Architecture
 
 The backend is where authorization and invariants live ([System Architecture §1](01-system-architecture.md)). The client is therefore **a rendering and caching layer with a state machine mirror** — it is not allowed to be the place a rule is enforced, and any rule that exists only here is a bug. What the client *is* responsible for: being fast, being usable offline, being usable with a screen reader, and never holding a secret it shouldn't.
 
@@ -509,7 +509,7 @@ Scheme `sharecropr://`, plus universal links on `https://sharecropr.app/l/*`. Ev
 
 Rules:
 
-- **No route accepts a coordinate parameter.** This is one of the egress controls in [Location Privacy §8](04-location-privacy.md), and it is asserted in CI by a static check over the route manifest for any param matching `/lat|lng|latitude|longitude|coord|point|geohash|h3/i`.
+- **No route accepts a coordinate parameter.** This is one of the egress controls in [Location Privacy §8](04-location-privacy.md), and it is asserted in CI by a static check over the route manifest for any param matching `/lat|lng|latitude|longitude|coord|point|geohash|_cell/i`.
 - A deep link to a resource the user can no longer read (blocked, deleted, expired) lands on the tab root with a toast, never on a broken screen. The router resolves the target *after* a `fetchQuery`, not before.
 - Cold-start deep links are held until the session and guards resolve. `expo-router`'s initial URL is read in the boot router, stashed in Zustand, and replayed after redirect.
 
@@ -1153,3 +1153,4 @@ Stated plainly so they can be argued with.
 | 2026-10-21 | 1.1.1 | Architecture | §1.1 excerpt replaced with the one-entry-per-glob structure (the old excerpt's overlapping blocks overrode each other — SCR-0011); new §1.1a records the sanctioned `src/api` native adapters and the SCRUM-62 `AppState` exemption; `src/api/auth-types.ts` removed, `Session`/`User` types come from `src/api/supabase.ts` |
 | 2026-10-21 | 1.1.2 | Architecture | SCRUM-62: the `AppState` refresh listener moves out of `src/api/supabase.ts` into the `useAuthAutoRefresh` boot hook (`src/features/auth/hooks/`), which calls the newly exported `startAutoRefresh`/`stopAutoRefresh`. §5.3 snippet amended; §1 and §1.1a now list exactly three sanctioned `src/api` adapters and no `react-native` exception; the `supabase.ts` lint exemption is removed |
 | 2026-10-22 | 1.1.3 | Architecture | §3: the reset deep link is sharecropr://reset-password with a PKCE ?code= query, not a fragment token; the root route's logic lives in src/features/auth/screens/BootGateScreen.tsx because every file under app/ is a route (WP-AUTH-FIX) |
+| 2026-10-22 | 1.1.4 | Architecture | H3 removed; renamed to location tiers per [ADR-0023](adr/ADR-0023-postgis-location-tiers.md). Route-param regex now rejects `_cell`. |

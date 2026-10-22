@@ -1,6 +1,6 @@
 # Row-Level Security Design
 
-**Status:** Review · **Version:** 1.1.1 · **Owner:** Architecture + Security
+**Status:** Review · **Version:** 1.2.0 · **Owner:** Architecture + Security
 **Security review:** required for any change.
 
 RLS *is* the authorization layer in Sharecropr. There is no service tier that could enforce access control instead, which means a missing or wrong policy is a data breach with no error, no crash, and no alert. This document defines the patterns, the helper functions, the performance traps, and the proof obligations.
@@ -161,7 +161,7 @@ CREATE POLICY profiles_select_visible ON public.profiles
 
 **Every column granted `SELECT` is visible for every other visible user's row** — through `profiles` and through `profile_cards` alike. Adding a column to that grant is a privacy decision.
 
-Owner-only columns (`locale`, `timezone`, `onboarding_completed_at`, `deleted_at`, `is_suspended`, `suspended_until`) are read through a no-argument definer RPC, `public.get_my_profile()`. `trust_score`, `cancellation_count_90d`, and `home_h3_r7` are returned to no client ([SPEC-012-R48](../03-specs/SPEC-012-trust-and-safety.md)).
+Owner-only columns (`locale`, `timezone`, `onboarding_completed_at`, `deleted_at`, `is_suspended`, `suspended_until`) are read through a no-argument definer RPC, `public.get_my_profile()`. `trust_score`, `cancellation_count_90d`, and `home_coarse_cell` are returned to no client ([SPEC-012-R48](../03-specs/SPEC-012-trust-and-safety.md)).
 
 `public.profile_cards` remains a `security_invoker` projection:
 
@@ -180,7 +180,7 @@ GRANT SELECT ON public.profile_cards TO authenticated;
 
 > `security_invoker = on` is essential. Without it the view runs as its owner and **bypasses RLS on `profiles` entirely**. It is checked by a pgTAP assertion on every view in `public`. Because an invoker view needs `SELECT` on every column it references, it cannot reference `is_suspended` or `deleted_at`; those filters live in `profiles_select_visible`.
 
-Clients must name their columns: `SELECT *` on `profiles` or `gardens` fails with `42501` because some columns are not granted. The same revoke-then-grant pattern applies to `gardens` (`h3_r9` unreadable; `status` and derived columns RPC-only), `verifications` (read-only), and `blocks` (select + insert).
+Clients must name their columns: `SELECT *` on `profiles` or `gardens` fails with `42501` because some columns are not granted. The same revoke-then-grant pattern applies to `gardens` (`fine_cell` unreadable; `status` and derived columns RPC-only), `verifications` (read-only), and `blocks` (select + insert).
 
 ---
 
@@ -466,3 +466,4 @@ Every table needs all of these before it can ship. Full matrix in [RLS Test Plan
 | 2026-08-08 | 1.0.0 | Architecture + Security | Initial RLS design |
 | 2026-10-21 | 1.1.0 | Architecture + Security | §3: caller-scoped `is_blocked_with()` / `can_transact()`, two-argument forms made internal, `is_moderator` grant explained. §4 rewritten: revoke-then-grant column privileges, `profiles_select_visible`, `get_my_profile()` ([ADR-0022](adr/ADR-0022-profiles-other-user-reads.md)) |
 | 2026-10-22 | 1.1.1 | Architecture + Security | §2: `break_glass` role exists with no privileges (SCR-0201) |
+| 2026-10-22 | 1.2.0 | Architecture + Security | H3 removed; renamed to location tiers per [ADR-0023](adr/ADR-0023-postgis-location-tiers.md). Cell column names and the coordinate-key CHECK deny-list use `fine_cell`. Security review pending (Corey). |

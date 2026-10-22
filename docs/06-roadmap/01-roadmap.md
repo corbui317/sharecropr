@@ -1,6 +1,6 @@
 # Roadmap
 
-**Status:** Approved · **Version:** 1.0.0 · **Owner:** Product + CTO
+**Status:** Approved · **Version:** 1.0.1 · **Owner:** Product + CTO
 
 > This document says *what* ships and *why*. The [Delivery Backlog](03-delivery-backlog.md) is the executable layer beneath it — epics, stories, estimates, dependencies, and a sprint schedule. **The two disagree on duration**, deliberately and in writing: see [Capacity reality check](03-delivery-backlog.md#capacity-reality-check).
 
@@ -101,7 +101,7 @@ gantt
 | **Community groups & garden clubs** | [SPEC-021](../03-specs/SPEC-021-community-groups.md) | Liquidity multiplier — clubs bring pre-existing trust networks and pre-existing meeting places. Also unlocks the partner-admin safe-spot flow. |
 | **Alternate trust path** | [Identity §6.1](../02-security/03-identity-verification.md) | Fixes the equity problem and lifts transaction conversion. Needs an explicit recorded decision first ([R-03](02-open-risks.md#r-03--physical-safety-is-irreducible-and-one-incident-is-existential)). |
 | **User-proposed safe spots** | SPEC-007 v2 | Coverage scales without our headcount. Proposals never appear in discovery until approved. |
-| Coarse H3 heatmap | — | **Only if the empty-map problem is measured**, not assumed |
+| Coarse region-tier heatmap | — | **Only if the empty-map problem is measured**, not assumed |
 | Partial-quantity reservations | SPEC-010 v2 | Only once multi-party splitting demand is real |
 | Facebook + X OAuth, multi-garden, iPad, Spanish | — | Straightforward; deferred purely for MVP focus |
 | App Attest / Play Integrity on garden verification | SPEC-004 v2 | Raises the cost of fake-garden farming once it's worth farming |
@@ -168,3 +168,4 @@ Stated so the question stops being reopened:
 | Date | Version | Author | Change |
 | --- | --- | --- | --- |
 | 2026-08-08 | 1.0.0 | Product + CTO | Initial roadmap |
+| 2026-10-22 | 1.0.1 | Product + CTO | H3 removed; renamed to location tiers per [ADR-0023](../01-architecture/adr/ADR-0023-postgis-location-tiers.md). |
