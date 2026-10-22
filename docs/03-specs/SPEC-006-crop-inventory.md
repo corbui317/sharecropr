@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | **Status** | Review |
-| **Version** | 1.1.0 |
+| **Version** | 1.1.1 |
 | **Owner** | Mobile Engineering |
 | **Phase** | MVP |
 | **Security review** | not required |
@@ -696,7 +696,7 @@ Exact strings.
 | --- | --- | --- | --- |
 | Q1 | Should there be a per-user item cap? None exists today (T58). A cap prevents a runaway client from filling a table, but a real August allotment can legitimately hold 150 rows and a cap that bites a real user at harvest time is worse than a bot we can suspend. | Architecture | Post-launch, first season |
 | Q2 | Is freezing all eight fields on `listed` too strict? A user who miscounted and wants to change 4 lb to 3 lb currently has to withdraw and republish, losing their position and any pending requests. A "reduce quantity only" exception is defensible and is also exactly the shape of a bait-and-switch. | Product | Post-launch, first season |
-| Q3 | ~~Should `composted` be a status at all, given `archive_reason` already carries `composted`?~~ **Resolved 2026-10-21:** `composted` stays an `inventory_status` value — it is a lifecycle end state, and the baseline migration (`20260822_0001_baseline.sql`) already ships it. It is removed from the `archive_reason` vocabulary (§6, §6.2) so the concept has exactly one home. Closes [N-15](../07-review/02-development-notes.md#n-15--composted-exists-twice-and-the-fix-gets-more-expensive-monthly). | Architecture | Resolved |
+| Q3 | ~~Should `composted` be a status at all, given `archive_reason` already carries `composted`?~~ **Resolved 2026-10-21:** `composted` stays an `inventory_status` value — it is a lifecycle end state, and the baseline migration (`20260822000001_baseline.sql`) already ships it. It is removed from the `archive_reason` vocabulary (§6, §6.2) so the concept has exactly one home. Closes [N-15](../07-review/02-development-notes.md#n-15--composted-exists-twice-and-the-fix-gets-more-expensive-monthly). | Architecture | Resolved |
 | Q4 | Do we need image moderation to be synchronous before a photo is visible to a counterparty? Today `moderation_state` starts `pending` and the asset is visible once EXIF is stripped, so there is a window where an unreviewed image is on a listing ([Mobile Architecture §12.6](../01-architecture/02-mobile-architecture.md)). Synchronous review is a latency and cost decision, not a technical one. | Trust & Safety + Product | Before launch |
 | Q5 | Should the private note be included in a DSAR export as a separate category, given it is the one field a user may reasonably have forgotten exists? | Legal + Platform | Before first DSAR |
 | Q6 | Is 21 days the right staleness prompt (R48)? Too eager and it nags; too slow and the map fills with produce that rotted a fortnight ago, which is the single most damaging thing to trust in a barter product. | Product | Post-launch data |
@@ -707,3 +707,4 @@ Exact strings.
 | --- | --- | --- | --- |
 | 2026-08-08 | 1.0.0 | Mobile Engineering | Initial spec |
 | 2026-10-21 | 1.1.0 | Architecture | Q3 resolved: `composted` is an `inventory_status` value only; removed from the `archive_reason` vocabulary. Closes N-15 |
+| 2026-10-22 | 1.1.1 | Architecture | Migration filename updated to 14-digit version; SCR-0201. No behavioural change |

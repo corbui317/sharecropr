@@ -272,7 +272,7 @@ It also requires the background-location entitlement that is **deliberately abse
 
 | Story | Status | Notes |
 | --- | --- | --- |
-| SCR-0201 | Done | `supabase/config.toml`, schemas, extensions, enums, `20260822_0001_baseline.sql` |
+| SCR-0201 | Done | `supabase/config.toml`, schemas, extensions, enums, `20260822000001_baseline.sql` |
 | SCR-0202 | Done | profiles, verifications, blocks, vendor refs, signup trigger, RLS + column REVOKE |
 | SCR-0203 | Done | gardens, `private.garden_locations`, fuzz trigger, H3/geohash helpers, `get_my_garden_location` |
 | SCR-0204 | Done | `app.is_moderator`, `is_blocked_either_way`, `can_transact`, session/thread participants; stub `exchange_sessions` / `message_threads` |

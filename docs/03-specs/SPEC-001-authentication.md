@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | **Status** | Review |
-| **Version** | 1.2.0 |
+| **Version** | 1.2.1 |
 | **Owner** | Engineering — Auth |
 | **Phase** | MVP |
 | **Security review** | required |
@@ -164,7 +164,7 @@ Sharecropr accounts are created with email + password, Sign in with Apple, or Go
 **New schema objects introduced by this spec:**
 
 ```sql
--- supabase/migrations/20260828_0009_auth.sql
+-- supabase/migrations/20260828000009_auth.sql
 CREATE TABLE private.pending_email_changes (
   user_id        uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   new_email      citext NOT NULL,
@@ -579,7 +579,7 @@ Exact strings. Anything not listed here is a spec gap and must be added before i
 | Field | Value |
 | --- | --- |
 | Feature flag | None. Authentication is not flaggable — there is no meaningful "off". Provider-level kill switches (`auth.provider.apple.enabled`, `auth.provider.google.enabled`) exist as remote config so a broken provider can be hidden without a release. |
-| Migration required | Yes — `20260828_0009_auth.sql` (the profile/verification tables and signup trigger landed earlier in `20260822_0002_identity_tables.sql`): the signup trigger, `profiles` policies, `private.pending_email_changes`, `private.account_deletions`, `private.retired_handles`, and the deletion cron job. |
+| Migration required | Yes — `20260828000009_auth.sql` (the profile/verification tables and signup trigger landed earlier in `20260822000002_identity_tables.sql`): the signup trigger, `profiles` policies, `private.pending_email_changes`, `private.account_deletions`, `private.retired_handles`, and the deletion cron job. |
 | Backfill required | No. Greenfield. |
 | Rollback plan | Forward-only ([Data Model §15](../01-architecture/03-data-model.md)). A broken provider is disabled by remote config within minutes. A broken deletion pipeline is stopped by disabling the `pg_cron` job, which is safe: pending deletions accumulate and execute late rather than incorrectly. **Late deletion is recoverable; wrong deletion is not**, and the runbook reflects that asymmetry. |
 | Client version floor | 1.0.0. First release. |
@@ -601,3 +601,4 @@ Exact strings. Anything not listed here is a spec gap and must be added before i
 | 2026-10-21 | 1.1.0 | Architecture | R36 and R44 now require AAL2 only when a second factor is enrolled (2FA is optional, SPEC-002 R04; otherwise no one without 2FA could delete their account, R43); T25/T28/T34 updated. `request_email_change` treats expired pending rows as absent, is reaped hourly, and returns the neutral response without inserting for a taken address (R39, R40, N02). `profiles` other-user reads and column privileges per [ADR-0022](../01-architecture/adr/ADR-0022-profiles-other-user-reads.md); `rpc.get_my_profile` added |
 | 2026-10-21 | 1.0.1 | Architecture | §6 and §14 name the real migration files (`20260822_0002_identity_tables.sql`, `20260828_0009_auth.sql`); no behavioural change |
 | 2026-10-22 | 1.2.0 | Engineering — Auth | WP-AUTH-FIX: `private.account_deletions` keeps history with one open row per user (EC-08, T50); §8.3 copy for network, interim rate-limit, invalid reset link, account-status and restore failures; T46–T54 added for the boot deletion gate, reset deep link, sessionless verify, error mapping, provider cancel, per-intent idempotency keys and query-cache single-flight; T19 gains a unit slice |
+| 2026-10-22 | 1.2.1 | Architecture | Migration filenames updated to 14-digit versions; SCR-0201. No behavioural change |

@@ -1,6 +1,6 @@
 # Row-Level Security Design
 
-**Status:** Review · **Version:** 1.1.0 · **Owner:** Architecture + Security
+**Status:** Review · **Version:** 1.1.1 · **Owner:** Architecture + Security
 **Security review:** required for any change.
 
 RLS *is* the authorization layer in Sharecropr. There is no service tier that could enforce access control instead, which means a missing or wrong policy is a data breach with no error, no crash, and no alert. This document defines the patterns, the helper functions, the performance traps, and the proof obligations.
@@ -31,6 +31,8 @@ RLS *is* the authorization layer in Sharecropr. There is no service tier that co
 | `moderator` | Staff, via the console | Elevated read on reports, messages in reported threads, garden submissions. Granted through `app.is_moderator()`, backed by a JWT claim. |
 | `service_role` | Edge Functions, migrations | Bypasses RLS. Used for webhook writes, outbox drain, cron. |
 | `break_glass` | Two-person authorized, time-boxed | Read on `private.garden_locations`. Fully audited. |
+
+> `break_glass` is a real Postgres role, created `NOLOGIN` with no grants by migration `20261022154625_break_glass_role.sql` and asserted empty by `supabase/tests/roles_break_glass.test.sql`. It gains read on `private.garden_locations` only through the provisioning procedure in [Runbooks §6](../05-operations/05-runbooks.md), which is not built yet. `anon`, `authenticated` and `service_role` are Supabase-provided.
 
 Moderator status lives in a JWT custom claim (`app_metadata.role`), not in a table lookup, so policies don't pay a query per row. Claims are refreshed on token refresh, giving a worst-case 1-hour lag on revocation — acceptable, and mitigated by also checking `profiles.is_suspended` on sensitive writes.
 
@@ -463,3 +465,4 @@ Every table needs all of these before it can ship. Full matrix in [RLS Test Plan
 | --- | --- | --- | --- |
 | 2026-08-08 | 1.0.0 | Architecture + Security | Initial RLS design |
 | 2026-10-21 | 1.1.0 | Architecture + Security | §3: caller-scoped `is_blocked_with()` / `can_transact()`, two-argument forms made internal, `is_moderator` grant explained. §4 rewritten: revoke-then-grant column privileges, `profiles_select_visible`, `get_my_profile()` ([ADR-0022](adr/ADR-0022-profiles-other-user-reads.md)) |
+| 2026-10-22 | 1.1.1 | Architecture + Security | §2: `break_glass` role exists with no privileges (SCR-0201) |
