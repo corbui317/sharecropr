@@ -1,5 +1,7 @@
 # Sharecropr local Postgres harness: baseline
 
+> CI note (2026-10-22, WP-DBCI): before this fix `db.yml` never started Supabase, so CI never applied a migration. The failures below come from the local harness, and CI should now reproduce them.
+
 Repo state tested: `/home/claude/sharecropr` (develop HEAD, not modified). Everything lives in this directory.
 
 ## Usage

@@ -35,8 +35,11 @@ jobs:
         with:
           version: latest
 
-      - name: Start Supabase and apply migrations
-        run: supabase db reset
+      - name: Start Supabase (applies migrations + seed)
+        # `supabase start` boots the stack and applies supabase/migrations + [db.seed] on a fresh
+        # volume, so a separate `db reset` would apply everything twice. Studio, the image proxy,
+        # edge runtime and the log pipeline are not needed for pgTAP and only cost boot time.
+        run: supabase start -x studio,imgproxy,edge-runtime,logflare,vector
 
       - name: Static CI gates
         run: |
