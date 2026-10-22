@@ -40,8 +40,11 @@ jobs:
       - name: Install
         run: npm ci
 
-      - name: Lint (includes the src/domain + src/api React Native import ban)
+      - name: Lint (incl. import seams — src/domain purity, src/api RN ban, SDK + map-renderer isolation)
         run: npm run lint
+
+      - name: Lint fixtures (prove each import seam rejects a violation)
+        run: npm run lint:fixtures
 
       - name: Typecheck
         run: npm run typecheck

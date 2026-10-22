@@ -28,7 +28,7 @@ flowchart LR
 | `src/app` | `features`, `ui` | `api`, `domain` directly | Route files are ≤ 40 lines: params in, a feature screen out. Keeps navigation refactors cheap. |
 | `src/features/*` | `domain`, `api`, `ui`, `lib`, sibling features **only via their `index.ts`** | Another feature's internals | Feature-to-feature coupling through a published surface, so the blast radius of a change is a directory. |
 | `src/domain` | Nothing outside `src/domain` | `react`, `react-native`, `expo*`, `@supabase/*`, `@tanstack/*`, `zustand` | Pure TypeScript. Runs in Node under Jest with zero mocks, and runs unchanged in a future web client. |
-| `src/api` | `domain`, `src/api/supabase.ts` | `react-native`, `features`, `ui` | Transport isolation. Swapping Supabase is a one-file change plus type reconciliation ([System Architecture §8](01-system-architecture.md)). |
+| `src/api` | `domain`, `src/api/supabase.ts` | `react-native` (and RN/Expo native modules except the §1.1a adapters), `features`, `ui`, `@maplibre/*` | Transport isolation. Swapping Supabase is a one-file change plus type reconciliation ([System Architecture §8](01-system-architecture.md)). |
 
 ### 1.1 Why `src/domain` is platform-free
 
@@ -36,67 +36,34 @@ The exchange state machine, the taxonomy resolver, the unit formatter, the dista
 
 Keeping React Native out of `src/domain` costs almost nothing today and is nearly impossible to retrofit later, because the first `import { Platform } from 'react-native'` inside a validator drags the entire RN module graph into the Node test run and someone "fixes" it with a mock instead of a boundary.
 
-```js
-// eslint.config.js — excerpt
-import boundaries from 'eslint-plugin-import';
+The rule lives in `eslint.config.js`. Its shape is the part that matters. ESLint flat config **replaces** a rule's options when a later block matching the same file sets the same rule; it does not merge them. An earlier version of this excerpt had three blocks that each set `no-restricted-imports` for overlapping globs. Under that structure the domain ban silently stopped applying (SCR-0011). So every file glob gets **one complete** `no-restricted-imports` entry, assembled from shared pieces:
 
-export default [
-  {
-    files: ['src/domain/**/*.ts'],
-    rules: {
-      'no-restricted-imports': ['error', {
-        patterns: [
-          {
-            group: [
-              'react', 'react-dom', 'react-native', 'react-native/*', 'react-native-*',
-              'expo', 'expo-*', '@expo/*',
-              '@supabase/*', '@tanstack/*', 'zustand', '@shopify/*',
-              '../features/*', '../app/*', '../api/*', '../ui/*', '../lib/*',
-            ],
-            message:
-              'src/domain is platform-free pure TypeScript. It must run in Node and in a future web client. ' +
-              'If you need a platform capability, invert the dependency: take it as an argument.',
-          },
-        ],
-      }],
-      '@typescript-eslint/no-explicit-any': 'error',
-    },
-  },
-  {
-    files: ['src/**/*.{ts,tsx}'],
-    ignores: ['src/api/supabase.ts'],
-    rules: {
-      'no-restricted-imports': ['error', {
-        paths: [{
-          name: '@supabase/supabase-js',
-          message: 'Import the client from src/api/supabase.ts. Exactly one file may touch the SDK.',
-        }],
-      }],
-    },
-  },
-  {
-    files: ['src/**/*.{ts,tsx}'],
-    ignores: ['src/features/map/components/MapCanvas.tsx'],
-    rules: {
-      'no-restricted-imports': ['error', {
-        patterns: [{
-          // Both the current renderer and the documented fallback. The rule bans
-          // the *seam being bypassed*, not one library, so adopting the fallback
-          // under ADR-0013 does not require editing this rule under pressure.
-          group: ['@maplibre/*', 'react-native-maps', 'react-native-maps/*', '@rnmapbox/*'],
-          message:
-            'The map renderer is isolated behind MapCanvas — exactly one file may import it. ' +
-            'See 02-mobile-architecture.md §4 and ADR-0019.',
-        }],
-      }],
-    },
-  },
-];
-```
+| Glob | Patterns |
+| --- | --- |
+| `src/**/*.{ts,tsx}`, `app/**/*.{ts,tsx}` | SDK seam (`@supabase/*`) · map-renderer seam |
+| `src/domain/**/*.{ts,tsx}` | domain purity (list below) · cross-layer (any depth, and the `@/` alias) · SDK seam · map-renderer seam |
+| `src/api/**/*.{ts,tsx}` | api isolation (§1.1a) · cross-layer (`features`/`app`/`ui`) · SDK seam · map-renderer seam |
+| `src/api/supabase.ts` | everything in the `src/api` row **except** the SDK seam |
+| `src/features/map/components/MapCanvas.tsx` | SDK seam only (exempt from the map-renderer seam) |
+
+Domain purity bans `react`, `react-dom`, `react-native`, `react-native/*`, `react-native-*`, `expo`, `expo-*`, `@expo/*`, `@supabase/*`, `@tanstack/*`, `zustand`, `@shopify/*`, `../features/*`, `../app/*`, `../api/*`, `../ui/*`, `../lib/*`, and keeps `@typescript-eslint/no-explicit-any` at `error`. The literal `../x/*` globs only match one level up, so a regex pattern holds the layer line at any depth and through the `@/` alias.
+
+There are no global `ignores`. A seam file is exempt from exactly the one restriction it exists to break, and it is linted for everything else. `npm run lint:fixtures` lints must-fail and must-pass imports against the real config as if they sat at each glob's paths, and CI runs it. A seam that stops biting fails the build.
 
 Three rules, three seams: domain purity, transport isolation, map-renderer isolation. Each has a corresponding CI check that fails the build rather than warning.
 
 The third rule has now been cashed in once. [ADR-0019](adr/ADR-0019-openstreetmap-maplibre.md) replaced the entire map substrate — renderer, tile source, and marker model — and the blast radius was one component plus its type adapters. That is the argument for seams, made concretely rather than in the abstract. Note also that a lint rule is a *source* check: it cannot see a transitive dependency reaching a network host, which is why NFR-102 is asserted from captured traffic instead.
+
+### 1.1a `src/api` exceptions
+
+`src/api` may not import React Native. The native modules below are the **only** sanctioned exceptions. Each one is a storage or crypto adapter that the transport layer cannot work without, and each is named in this document. Adding one is an architecture change: amend this table and the `apiIsolation` list in `eslint.config.js` in the same PR.
+
+| Module | Used by | Why it is sanctioned |
+| --- | --- | --- |
+| `react-native-mmkv` | `src/api/query-cache.ts` | Encrypted query cache (§2.3) |
+| `expo-secure-store` | `src/api/secure-storage.ts`, `src/api/query-cache.ts` | Chunked session storage (§5.2) and the MMKV key (§2.3) |
+| `expo-crypto` | `src/api/query-cache.ts` | CSPRNG for the MMKV key (§2.3, "key generated once") |
+| `react-native` → `AppState` only | `src/api/supabase.ts` | **Temporary, undecided.** §1 forbids `react-native` in `src/api` and §5.3 puts the `AppState` listener in `supabase.ts`. Those two contradict each other, and resolving it is SCRUM-62. Until then the lint rule allows `AppState`/`AppStateStatus` in that one file and nothing else from `react-native`. |
 
 ### 1.2 Folder tree
 
@@ -1168,3 +1135,4 @@ Stated plainly so they can be argued with.
 | --- | --- | --- | --- |
 | 2026-08-08 | 1.0.0 | Architecture | Initial mobile architecture |
 | 2026-08-09 | 1.1.0 | Architecture | Map screen restated for MapLibre over self-hosted OSM vector tiles ([ADR-0019](adr/ADR-0019-openstreetmap-maplibre.md), [ADR-0020](adr/ADR-0020-pmtiles-self-hosting.md)): seam contract now `Camera` + `styleUrl`, markers are a `ShapeSource`/`SymbolLayer` rather than native views, new §4.4a for attribution and tile failure. Lint rule now bans `@maplibre/*` (and the fallback renderers) outside the seam. Offline table splits basemap tiles out — offline packs are Phase 2. Weaknesses 2, 9, 10 |
+| 2026-10-21 | 1.1.1 | Architecture | §1.1 excerpt replaced with the one-entry-per-glob structure (the old excerpt's overlapping blocks overrode each other — SCR-0011); new §1.1a records the sanctioned `src/api` native adapters and the SCRUM-62 `AppState` exemption; `src/api/auth-types.ts` removed, `Session`/`User` types come from `src/api/supabase.ts` |

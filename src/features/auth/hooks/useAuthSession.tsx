@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import type { Session, User } from '@/api/auth-types';
+import type { Session, User } from '@/api/supabase';
 
 import { supabase } from '@/api/supabase';
 

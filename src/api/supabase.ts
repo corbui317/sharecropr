@@ -1,5 +1,6 @@
 import { AppState, type AppStateStatus } from 'react-native';
 import { createClient, type Session } from '@supabase/supabase-js';
+export type { Session, User } from '@supabase/supabase-js';
 
 import { chunkedSecureStorage } from './secure-storage';
 

@@ -40,7 +40,7 @@ None of these are advisory once built. A PR cannot merge with any *running* chec
 
 | Check | Blocks on | State (2026-10-21) |
 | --- | --- | --- |
-| `lint` | ESLint errors; `src/domain` importing React Native | **Running** — `app.yml` |
+| `lint` | ESLint errors; `src/domain` or `src/api` importing React Native; any file but the seam importing `@supabase/*` or a map renderer — proved by `npm run lint:fixtures` | **Running** — `app.yml` |
 | `typecheck` | Any TS error; `any` in `src/domain` | **Running** — `app.yml` |
 | `unit` | Any failure | **Partial** — `app.yml` runs `test:auth-domain` only |
 | `migrate` | Migration fails against a production-shaped seed | **Partial** — `db.yml` `supabase db reset`; no production-shaped seed |

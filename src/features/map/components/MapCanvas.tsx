@@ -77,7 +77,8 @@ export const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(function Ma
   const markerSignature = useMemo(() => markerCollectionSignature(markers), [markers]);
   const markerCollection = useMemo(
     () => markersToFeatureCollection(markers),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- signature is the memo gate per R26
+    // Deliberately keyed on markerSignature, not markers: the signature is the memo gate per R26.
+    // (eslint-plugin-react-hooks is not installed; if it is adopted, disable exhaustive-deps here.)
     [markerSignature],
   );
 
