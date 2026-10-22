@@ -2,19 +2,42 @@ import * as Crypto from 'expo-crypto';
 
 import { wipeQueryCache } from '@/api/query-cache';
 import { supabase } from '@/api/supabase';
-import { checkPasswordBreached } from '@/domain/auth/hibp';
+import { checkPasswordBreached, type Sha1Hex } from '@/domain/auth/hibp';
 import { normalizeEmail, isValidEmail } from '@/domain/validation/email';
 import { validatePasswordLength } from '@/domain/validation/password';
 
 export type AuthErrorCode =
   | 'invalid_email'
   | 'password_too_short'
+  | 'password_too_long'
+  | 'breach_check_unavailable'
   | 'password_breached'
   | 'network'
   | 'bad_credentials'
   | 'rate_limited'
   | 'suspended'
   | 'unknown';
+
+// Hermes has no crypto.subtle, so the domain hasher is injected from expo-crypto.
+const sha1Hex: Sha1Hex = async (input) =>
+  (await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA1, input)).toUpperCase();
+
+function lengthError(password: string) {
+  const check = validatePasswordLength(password);
+  if (check.ok) return null;
+  return check.reason === 'too_long' ? ('password_too_long' as const) : ('password_too_short' as const);
+}
+
+/**
+ * SPEC-001 R08 permits skipping the breach check only when HIBP is unreachable.
+ * A local hashing failure is not that, so it fails closed instead of silently skipping.
+ */
+async function breachError(password: string) {
+  const hibp = await checkPasswordBreached(password, { sha1Hex });
+  if ('breached' in hibp && hibp.breached) return 'password_breached' as const;
+  if ('skipped' in hibp && hibp.reason === 'no_hasher') return 'breach_check_unavailable' as const;
+  return null;
+}
 
 export function mapAuthError(message: string): AuthErrorCode {
   const lower = message.toLowerCase();
@@ -30,15 +53,11 @@ export async function signUpWithEmail(email: string, password: string) {
     return { error: 'invalid_email' as const };
   }
 
-  const lengthCheck = validatePasswordLength(password);
-  if (!lengthCheck.ok) {
-    return { error: 'password_too_short' as const };
-  }
+  const lengthErr = lengthError(password);
+  if (lengthErr) return { error: lengthErr };
 
-  const hibp = await checkPasswordBreached(password);
-  if ('breached' in hibp && hibp.breached) {
-    return { error: 'password_breached' as const };
-  }
+  const breachErr = await breachError(password);
+  if (breachErr) return { error: breachErr };
 
   const { data, error } = await supabase.auth.signUp({
     email: normalizeEmail(email),
@@ -88,15 +107,11 @@ export async function requestPasswordReset(email: string) {
 }
 
 export async function updatePassword(newPassword: string) {
-  const lengthCheck = validatePasswordLength(newPassword);
-  if (!lengthCheck.ok) {
-    return { error: 'password_too_short' as const };
-  }
+  const lengthErr = lengthError(newPassword);
+  if (lengthErr) return { error: lengthErr };
 
-  const hibp = await checkPasswordBreached(newPassword);
-  if ('breached' in hibp && hibp.breached) {
-    return { error: 'password_breached' as const };
-  }
+  const breachErr = await breachError(newPassword);
+  if (breachErr) return { error: breachErr };
 
   return supabase.auth.updateUser({ password: newPassword });
 }

@@ -1,6 +1,8 @@
 export const authCopy = {
   wrongCredentials: "That email and password don't match. Check both and try again.",
   passwordTooShort: 'Passwords need at least 12 characters. Length beats complexity.',
+  passwordTooLong: 'Passwords can be at most 128 characters.',
+  breachCheckUnavailable: "We couldn't check this password against known breaches. Try again.",
   passwordBreached:
     "This password has appeared in a known data breach. Pick a different one — it doesn't have to be complicated, just not this one.",
   providerFailed: (provider: 'Apple' | 'Google') =>

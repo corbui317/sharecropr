@@ -45,6 +45,14 @@ export function SecuritySettingsScreen() {
       setError(authCopy.passwordTooShort);
       return;
     }
+    if (result.error === 'password_too_long') {
+      setError(authCopy.passwordTooLong);
+      return;
+    }
+    if (result.error === 'breach_check_unavailable') {
+      setError(authCopy.breachCheckUnavailable);
+      return;
+    }
     if (result.error === 'password_breached') {
       setError(authCopy.passwordBreached);
       return;

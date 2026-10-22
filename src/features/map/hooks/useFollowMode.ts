@@ -38,45 +38,55 @@ export function useFollowMode({ onAnimateToUser }: Options): FollowModeControlle
   );
 
   useEffect(() => {
+    let cancelled = false;
     let subscription: Location.LocationSubscription | null = null;
 
+    const toDevice = (fix: Location.LocationObject): DeviceLocation => ({
+      latitude: fix.coords.latitude,
+      longitude: fix.coords.longitude,
+    });
+
     void (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        return;
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (cancelled || status !== 'granted') return;
+
+        // A failed initial fix must not prevent the watcher from starting.
+        try {
+          const initial = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          });
+          if (cancelled) return;
+          applyLocation(toDevice(initial), useFollowModeStore.getState().following);
+        } catch {
+          if (cancelled) return;
+        }
+
+        const sub = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.Balanced,
+            distanceInterval: 5,
+            timeInterval: 2000,
+          },
+          (fix) => {
+            if (cancelled) return;
+            applyLocation(toDevice(fix), useFollowModeStore.getState().following);
+          },
+        );
+        if (cancelled) {
+          sub.remove();
+          return;
+        }
+        subscription = sub;
+      } catch {
+        // Permission/services errors: stay with no location; the map remains usable.
       }
-
-      const initial = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-      applyLocation(
-        {
-          latitude: initial.coords.latitude,
-          longitude: initial.coords.longitude,
-        },
-        useFollowModeStore.getState().following,
-      );
-
-      subscription = await Location.watchPositionAsync(
-        {
-          accuracy: Location.Accuracy.Balanced,
-          distanceInterval: 5,
-          timeInterval: 2000,
-        },
-        (fix) => {
-          applyLocation(
-            {
-              latitude: fix.coords.latitude,
-              longitude: fix.coords.longitude,
-            },
-            useFollowModeStore.getState().following,
-          );
-        },
-      );
     })();
 
     return () => {
+      cancelled = true;
       subscription?.remove();
+      subscription = null;
     };
   }, [applyLocation]);
 

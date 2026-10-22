@@ -31,6 +31,14 @@ export function SignUpScreen() {
       setFieldError(authCopy.passwordTooShort);
       return;
     }
+    if (result.error === 'password_too_long') {
+      setFieldError(authCopy.passwordTooLong);
+      return;
+    }
+    if (result.error === 'breach_check_unavailable') {
+      setFieldError(authCopy.breachCheckUnavailable);
+      return;
+    }
     if (result.error === 'password_breached') {
       setFieldError(authCopy.passwordBreached);
       return;
