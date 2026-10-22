@@ -65,30 +65,17 @@ const DOMAIN_LAYERS = crossLayer(['features', 'app', 'api', 'ui', 'lib'], DOMAIN
  */
 const API_MESSAGE =
   'src/api is transport only: no React Native, no features/ui (Invariant 11, mobile-architecture §1). ' +
-  'Only the adapters listed in §1 "src/api exceptions" are sanctioned.';
-const apiIsolation = ({ allowReactNative = false } = {}) => ({
+  'Only the adapters listed in §1.1a "src/api exceptions" are sanctioned. The AppState listener is the ' +
+  'useAuthAutoRefresh boot hook in src/features/auth (SCRUM-62).';
+const API_ISOLATION = {
   group: [
-    ...(allowReactNative ? [] : ['react-native']),
-    'react-native/*',
+    'react-native', 'react-native/*',
     'react-native-*', '!react-native-mmkv',
     'expo', 'expo-*', '!expo-secure-store', '!expo-crypto', '@expo/*',
   ],
   message: API_MESSAGE,
-});
-const API_LAYERS = crossLayer(['features', 'app', 'ui'], API_MESSAGE);
-
-/**
- * TODO(SCRUM-62): supabase.ts imports AppState from react-native to start/stop token auto-refresh.
- * Whether that listener moves to a feature/boot hook or Invariant 11 is amended by ADR is
- * UNDECIDED. Until SCRUM-62 lands, supabase.ts may import exactly AppState/AppStateStatus and
- * nothing else from react-native. Remove this entry when SCRUM-62 is resolved.
- */
-const SCRUM_62_APPSTATE_ONLY = {
-  name: 'react-native',
-  allowImportNames: ['AppState', 'AppStateStatus'],
-  message:
-    'src/api may not import react-native. supabase.ts has a temporary AppState-only exemption pending SCRUM-62.',
 };
+const API_LAYERS = crossLayer(['features', 'app', 'ui'], API_MESSAGE);
 
 const restrict = ({ paths = [], patterns }) => ['error', { paths, patterns }];
 
@@ -132,17 +119,12 @@ export default tseslint.config(
   // 3. src/api: RN ban + both seams.
   {
     files: ['src/api/**/*.{ts,tsx}'],
-    rules: { 'no-restricted-imports': restrict({ patterns: [apiIsolation(), API_LAYERS, SUPABASE_SDK, MAP_RENDERER] }) },
+    rules: { 'no-restricted-imports': restrict({ patterns: [API_ISOLATION, API_LAYERS, SUPABASE_SDK, MAP_RENDERER] }) },
   },
-  // 4. The SDK seam itself: exempt from SUPABASE_SDK only (+ the SCRUM-62 AppState exemption).
+  // 4. The SDK seam itself: exempt from SUPABASE_SDK only.
   {
     files: ['src/api/supabase.ts'],
-    rules: {
-      'no-restricted-imports': restrict({
-        paths: [SCRUM_62_APPSTATE_ONLY],
-        patterns: [apiIsolation({ allowReactNative: true }), API_LAYERS, MAP_RENDERER],
-      }),
-    },
+    rules: { 'no-restricted-imports': restrict({ patterns: [API_ISOLATION, API_LAYERS, MAP_RENDERER] }) },
   },
   // 5. The map seam itself: exempt from MAP_RENDERER only.
   {

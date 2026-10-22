@@ -5,13 +5,12 @@
 // message contains `match`; `expect: 'pass'` cases MUST produce none. Pass cases are the
 // controls that prove each exemption is narrow rather than a hole.
 //
-// Mobile-architecture §1/§1.1/§4.1 · AGENTS.md Invariant 11 · SCRUM-15 · SCRUM-69 · SCRUM-62 (open).
+// Mobile-architecture §1/§1.1/§4.1 · AGENTS.md Invariant 11 · SCRUM-15 · SCRUM-69 · SCRUM-62 (decided 2026-10-21: AppState lives in the auth boot hook).
 
 const DOMAIN = 'src/domain is platform-free';
 const API = 'src/api is transport only';
 const SDK = 'Exactly one file may touch the SDK';
 const MAP = 'The map renderer is isolated behind MapCanvas';
-const SCRUM62 = 'pending SCRUM-62';
 
 const imp = (spec, name = 'x') => `import { ${name} } from '${spec}';\nexport const _y = ${name};\n`;
 
@@ -50,14 +49,20 @@ export const cases = [
   { id: 'api-ok-crypto', path: 'src/api/__fixture__.ts', code: imp('expo-crypto', 'getRandomBytes'), expect: 'pass' },
   { id: 'api-ok-domain', path: 'src/api/__fixture__.ts', code: imp('@/domain/geo/types', 'x'), expect: 'pass' },
 
-  // ---- src/api/supabase.ts: exempt from the SDK seam only; AppState-only RN exemption (SCRUM-62, open) ----
+  // ---- src/api/supabase.ts: exempt from the SDK seam only; NO react-native exemption (SCRUM-62) ----
   { id: 'sb-ok-sdk', path: 'src/api/supabase.ts', code: imp('@supabase/supabase-js', 'createClient'), expect: 'pass' },
-  { id: 'sb-ok-appstate', path: 'src/api/supabase.ts', code: imp('react-native', 'AppState'), expect: 'pass' },
-  { id: 'sb-rn-platform', path: 'src/api/supabase.ts', code: imp('react-native', 'Platform'), expect: 'fail', match: SCRUM62 },
-  { id: 'sb-rn-namespace', path: 'src/api/supabase.ts', code: `import * as RN from 'react-native';\nexport const _y = RN;\n`, expect: 'fail', match: SCRUM62 },
+  { id: 'sb-rn-appstate', path: 'src/api/supabase.ts', code: imp('react-native', 'AppState'), expect: 'fail', match: API },
+  { id: 'sb-rn-appstate-type', path: 'src/api/supabase.ts', code: `import type { AppStateStatus } from 'react-native';\nexport type S = AppStateStatus;\n`, expect: 'fail', match: API },
+  { id: 'sb-rn-platform', path: 'src/api/supabase.ts', code: imp('react-native', 'Platform'), expect: 'fail', match: API },
+  { id: 'sb-rn-namespace', path: 'src/api/supabase.ts', code: `import * as RN from 'react-native';\nexport const _y = RN;\n`, expect: 'fail', match: API },
   { id: 'sb-rn-module', path: 'src/api/supabase.ts', code: imp('react-native-reanimated', 'useSharedValue'), expect: 'fail', match: API },
   { id: 'sb-maplibre', path: 'src/api/supabase.ts', code: imp('@maplibre/maplibre-react-native', 'MapView'), expect: 'fail', match: MAP },
   { id: 'sb-alias-features', path: 'src/api/supabase.ts', code: imp('@/features/auth/lib/copy'), expect: 'fail', match: API },
+
+  // ---- the AppState boot hook (SCRUM-62): features may use react-native and call src/api ----
+  { id: 'hook-ok-appstate', path: 'src/features/auth/hooks/useAuthAutoRefresh.ts', code: imp('react-native', 'AppState'), expect: 'pass' },
+  { id: 'hook-ok-api', path: 'src/features/auth/hooks/useAuthAutoRefresh.ts', code: imp('@/api/supabase', 'startAutoRefresh'), expect: 'pass' },
+  { id: 'app-ok-boot-hook', path: 'app/_layout.tsx', code: imp('@/features/auth/hooks/useAuthAutoRefresh', 'useAuthAutoRefresh'), expect: 'pass' },
 
   // ---- MapCanvas.tsx: exempt from the map-renderer seam only ----
   { id: 'mc-ok-maplibre', path: 'src/features/map/components/MapCanvas.tsx', code: imp('@maplibre/maplibre-react-native', 'MapView'), expect: 'pass' },

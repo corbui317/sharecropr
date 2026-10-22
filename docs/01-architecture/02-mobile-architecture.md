@@ -28,7 +28,7 @@ flowchart LR
 | `src/app` | `features`, `ui` | `api`, `domain` directly | Route files are ≤ 40 lines: params in, a feature screen out. Keeps navigation refactors cheap. |
 | `src/features/*` | `domain`, `api`, `ui`, `lib`, sibling features **only via their `index.ts`** | Another feature's internals | Feature-to-feature coupling through a published surface, so the blast radius of a change is a directory. |
 | `src/domain` | Nothing outside `src/domain` | `react`, `react-native`, `expo*`, `@supabase/*`, `@tanstack/*`, `zustand` | Pure TypeScript. Runs in Node under Jest with zero mocks, and runs unchanged in a future web client. |
-| `src/api` | `domain`, `src/api/supabase.ts` | `react-native` (and RN/Expo native modules except the §1.1a adapters), `features`, `ui`, `@maplibre/*` | Transport isolation. Swapping Supabase is a one-file change plus type reconciliation ([System Architecture §8](01-system-architecture.md)). |
+| `src/api` | `domain`, `src/api/supabase.ts` | `react-native` (no exceptions — the `AppState` listener is a feature boot hook, §5.3) and every other RN/Expo native module except the three sanctioned §1.1a adapters (`react-native-mmkv`, `expo-secure-store`, `expo-crypto`), `features`, `ui`, `@maplibre/*` | Transport isolation. Swapping Supabase is a one-file change plus type reconciliation ([System Architecture §8](01-system-architecture.md)). |
 
 ### 1.1 Why `src/domain` is platform-free
 
@@ -56,14 +56,13 @@ The third rule has now been cashed in once. [ADR-0019](adr/ADR-0019-openstreetma
 
 ### 1.1a `src/api` exceptions
 
-`src/api` may not import React Native. The native modules below are the **only** sanctioned exceptions. Each one is a storage or crypto adapter that the transport layer cannot work without, and each is named in this document. Adding one is an architecture change: amend this table and the `apiIsolation` list in `eslint.config.js` in the same PR.
+`src/api` may not import React Native. The native modules below are the **only** sanctioned exceptions. Each one is a storage or crypto adapter that the transport layer cannot work without, and each is named in this document. Adding one is an architecture change: amend this table and the `API_ISOLATION` list in `eslint.config.js` in the same PR. `react-native` itself has **no** exception: the `AppState` listener that drives token refresh is the `useAuthAutoRefresh` boot hook in `src/features/auth/hooks/`, which calls `startAutoRefresh`/`stopAutoRefresh` exported by `src/api/supabase.ts` (§5.3; decided in SCRUM-62, 2026-10-21).
 
 | Module | Used by | Why it is sanctioned |
 | --- | --- | --- |
 | `react-native-mmkv` | `src/api/query-cache.ts` | Encrypted query cache (§2.3) |
 | `expo-secure-store` | `src/api/secure-storage.ts`, `src/api/query-cache.ts` | Chunked session storage (§5.2) and the MMKV key (§2.3) |
 | `expo-crypto` | `src/api/query-cache.ts` | CSPRNG for the MMKV key (§2.3, "key generated once") |
-| `react-native` → `AppState` only | `src/api/supabase.ts` | **Temporary, undecided.** §1 forbids `react-native` in `src/api` and §5.3 puts the `AppState` listener in `supabase.ts`. Those two contradict each other, and resolving it is SCRUM-62. Until then the lint rule allows `AppState`/`AppStateStatus` in that one file and nothing else from `react-native`. |
 
 ### 1.2 Folder tree
 
@@ -803,7 +802,6 @@ Two details that are load-bearing:
 ```ts
 // src/api/supabase.ts — the only file importing @supabase/supabase-js
 import { createClient } from '@supabase/supabase-js';
-import { AppState } from 'react-native';
 import { chunkedSecureStorage } from './secure-storage';
 import type { Database } from './types.generated';
 
@@ -827,13 +825,30 @@ export const supabase = createClient<Database>(
   },
 );
 
+// GoTrue cannot see the app lifecycle on a phone, and src/api may not import react-native (§1.1a).
+// So the client exposes the two calls and a feature boot hook drives them.
+export const startAutoRefresh = () => supabase.auth.startAutoRefresh();
+export const stopAutoRefresh = () => supabase.auth.stopAutoRefresh();
+```
+
+```ts
+// src/features/auth/hooks/useAuthAutoRefresh.ts — mounted once in app/_layout.tsx
 // GoTrue's refresh timer does not survive backgrounding. Without this, a user
 // who leaves the app for an hour returns to a 401 storm on every query.
-AppState.addEventListener('change', (state) => {
-  if (state === 'active') supabase.auth.startAutoRefresh();
-  else supabase.auth.stopAutoRefresh();
-});
+export function useAuthAutoRefresh(): void {
+  useEffect(() => {
+    if (AppState.currentState === 'active') void startAutoRefresh();
+    else if (AppState.currentState === 'background') void stopAutoRefresh();
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void startAutoRefresh();
+      else void stopAutoRefresh();
+    });
+    return () => sub.remove();
+  }, []);
+}
 ```
+
+The listener is a feature hook rather than part of `src/api` because `src/api` must not import React Native (§1, Invariant 11). That keeps the transport layer runnable in a future web client, which drives refresh from `visibilitychange` instead (SCRUM-62).
 
 `processLock` (the SDK's `@supabase/auth-js` navigator lock shim) prevents two concurrent refreshes — which happens routinely when several queries 401 at the same moment on foreground. Two concurrent refreshes with a rotating refresh token trigger the server's reuse detection and log the user out. This is not hypothetical; it is the standard failure.
 
@@ -1136,3 +1151,4 @@ Stated plainly so they can be argued with.
 | 2026-08-08 | 1.0.0 | Architecture | Initial mobile architecture |
 | 2026-08-09 | 1.1.0 | Architecture | Map screen restated for MapLibre over self-hosted OSM vector tiles ([ADR-0019](adr/ADR-0019-openstreetmap-maplibre.md), [ADR-0020](adr/ADR-0020-pmtiles-self-hosting.md)): seam contract now `Camera` + `styleUrl`, markers are a `ShapeSource`/`SymbolLayer` rather than native views, new §4.4a for attribution and tile failure. Lint rule now bans `@maplibre/*` (and the fallback renderers) outside the seam. Offline table splits basemap tiles out — offline packs are Phase 2. Weaknesses 2, 9, 10 |
 | 2026-10-21 | 1.1.1 | Architecture | §1.1 excerpt replaced with the one-entry-per-glob structure (the old excerpt's overlapping blocks overrode each other — SCR-0011); new §1.1a records the sanctioned `src/api` native adapters and the SCRUM-62 `AppState` exemption; `src/api/auth-types.ts` removed, `Session`/`User` types come from `src/api/supabase.ts` |
+| 2026-10-21 | 1.1.2 | Architecture | SCRUM-62: the `AppState` refresh listener moves out of `src/api/supabase.ts` into the `useAuthAutoRefresh` boot hook (`src/features/auth/hooks/`), which calls the newly exported `startAutoRefresh`/`stopAutoRefresh`. §5.3 snippet amended; §1 and §1.1a now list exactly three sanctioned `src/api` adapters and no `react-native` exception; the `supabase.ts` lint exemption is removed |

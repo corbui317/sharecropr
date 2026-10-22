@@ -1,4 +1,3 @@
-import { AppState, type AppStateStatus } from 'react-native';
 import { createClient, type Session } from '@supabase/supabase-js';
 export type { Session, User } from '@supabase/supabase-js';
 
@@ -36,12 +35,16 @@ export async function refreshSessionSingleFlight(): Promise<Session | null> {
   }
 }
 
-function handleAppStateChange(state: AppStateStatus) {
-  if (state === 'active') {
-    void supabase.auth.startAutoRefresh();
-  } else {
-    void supabase.auth.stopAutoRefresh();
-  }
+/**
+ * Token auto-refresh lifecycle (SPEC-001 R24). GoTrue cannot see the app lifecycle on a phone, and
+ * src/api may not import React Native (AGENTS.md Invariant 11), so the AppState listener is the boot
+ * hook src/features/auth/hooks/useAuthAutoRefresh.ts, which calls these. Both are idempotent.
+ * SCRUM-62 · mobile-architecture §5.3.
+ */
+export function startAutoRefresh(): Promise<void> {
+  return supabase.auth.startAutoRefresh();
 }
 
-AppState.addEventListener('change', handleAppStateChange);
+export function stopAutoRefresh(): Promise<void> {
+  return supabase.auth.stopAutoRefresh();
+}
