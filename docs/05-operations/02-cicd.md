@@ -289,7 +289,7 @@ There are no `DOWN` migrations. Reversing a migration on a live database with co
 | Full Maestro suite | Nightly | Beyond smoke |
 | Performance suite | Nightly | k6 + `EXPLAIN` diffs |
 | **Location invariant canary (LP-10)** | **Every 15 min against production** | Verifies what we deployed, not what we intended |
-| Dependency audit | Weekly | CVEs |
+| Dependency audit | Weekly | CVEs — **Running (weekly, not a PR gate)**: [dependency-audit.yml](../../.github/workflows/dependency-audit.yml) opens one issue per advisory; Dependabot for npm + actions |
 | Data-quality checks | Nightly | Stale safe-spot hours, orphaned media |
 | Preview cleanup | Daily | Destroy orphaned branch projects |
 | Flake report | Weekly | Auto-quarantine above 2% |

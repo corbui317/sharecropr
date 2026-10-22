@@ -13,6 +13,7 @@
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
     "test:auth-domain": "node --experimental-strip-types scripts/auth-domain-tests.mjs",
+    "test:dependency-audit": "node --test scripts/dependency-audit.test.mjs",
     "lint": "eslint src app --max-warnings 0",
     "postinstall": "patch-package",
     "db:start": "supabase start",

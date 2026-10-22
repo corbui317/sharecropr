@@ -48,3 +48,6 @@ jobs:
 
       - name: Unit — auth domain
         run: npm run test:auth-domain
+
+      - name: Unit — dependency audit script
+        run: npm run test:dependency-audit
