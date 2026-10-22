@@ -13,8 +13,8 @@
 | **Owner** | <name / role> |
 | **Phase** | MVP / Phase 2 / Phase 3 |
 | **Security review** | required / not required |
-| **Depends on** | SPEC-###, SPEC-### |
-| **Depended on by** | SPEC-### |
+| **Schema depends on** | SPEC-### — needs tables/types another spec's migration creates. Must stay acyclic |
+| **Behaviourally coupled with** | SPEC-### — calls or is called at runtime. Must be symmetric: name this spec in theirs too |
 | **Related ADRs** | ADR-####, ADR-#### |
 | **Last updated** | YYYY-MM-DD |
 
@@ -158,7 +158,7 @@
 
 | Test ID | Level | Covers | Description |
 | --- | --- | --- | --- |
-| T01 | unit / integration / rls / e2e | R01 | … |
+| T01 | unit / integration / rls / e2e | R01 | … *(test source cites it as `SPEC-###-T01`)* |
 
 ### 13.2 Negative & security tests
 

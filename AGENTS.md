@@ -52,7 +52,8 @@ Full index: [docs/README.md](docs/README.md).
 
 ## 4. Working agreements
 
-- **Traceability is enforced, not encouraged.** Every spec `MUST` maps to a test ID in that spec's §13. CI fails a spec with an untested `MUST`.
+- **Traceability is required.** Every spec `MUST` maps to a test ID in that spec's §13, and the test source echoes the namespaced ID (`// SPEC-001-T34`, never a bare `T34`). The CI gate that would enforce this (`ci:spec-traceability`) **is not built yet** ([N-07](docs/07-review/02-development-notes.md#n-07--the-ci-gates-are-described-not-built)) — until it is, check it yourself.
+- **CI today is two workflows:** `app.yml` (bridge check, lint incl. the RN-import ban, typecheck, auth-domain unit tests) and `db.yml` (pgTAP, RLS negative ratio, private-grant and definer allowlist gates). Every other check in [CI/CD §2](docs/05-operations/02-cicd.md) is planned, not running — do not assume it will catch you.
 - **Two dependency relations, and only one orders work.** `Schema depends on` must be a DAG and is the only thing that constrains build order. `Behaviourally coupled with` may cycle freely and must be symmetric. Conflating them makes the plan look unbuildable. See [Spec Register](docs/03-specs/README.md#build-order).
 - **Spec numbers are permanent and never reused.** Claim one in a small PR before writing.
 - **Backlog keys (`SCR-EENN`) are permanent and never reused.**
@@ -63,9 +64,11 @@ Full index: [docs/README.md](docs/README.md).
 
 ## 5. Current state
 
-**Map spike code is on the shipping stack (MapLibre + PMTiles). Device profiling and go/no-go are still open.**
+**EPIC-01 spike, EPIC-02 baseline, and EPIC-03 auth code are in-repo. Map go/no-go is still open.**
 
-Expo SDK 57 app boots into `MapSpikeScreen` via the `MapCanvas` seam (`@maplibre/maplibre-react-native`, client-side `supercluster`, GPU GeoJSON layers, ODbL attribution). `react-native-maps` is removed. SCR-0105/0106 scaffolding is in-repo; the launch-metro PMTiles archive is not yet published to R2.
+- **EPIC-02** (data model, RLS, pgTAP harness): story status in [Development Notes § Session notes](docs/07-review/02-development-notes.md#session-notes). SCR-0209 deferred; SCR-0210 canary is a scaffold.
+- **EPIC-03** (SPEC-001 auth): code landed in `c0b9be7` — auth routes, session storage, `20260828_0009_auth.sql`. Story-by-story status and which SPEC-001 §13 tests exist are **not yet recorded**; only a handful of T-IDs have tests.
+- **Map:** the app boots through auth into the `MapCanvas` seam (`@maplibre/maplibre-react-native`, client-side `supercluster`, GPU GeoJSON layers, ODbL attribution). `react-native-maps` is removed. SCR-0105/0106 scaffolding is in-repo; the launch-metro PMTiles archive is not yet published to R2.
 
 **Blocking next action:** run SCR-0101…0103 on physical hardware and file [docs/07-review/03-map-spike-go-no-go.md](docs/07-review/03-map-spike-go-no-go.md) (SCR-0104). Do not treat any prior `react-native-maps` result as evidence.
 
@@ -84,8 +87,25 @@ If your work runs into one of these, **stop and surface it**. Picking a side in 
 | Any export or public API of safe-spot data | **ODbL share-alike — legal review before implementation, not after.** [ADR-0021](docs/01-architecture/adr/ADR-0021-osm-safe-spot-sourcing.md) |
 | Does the alternate trust path exist at MVP? | [R-03](docs/06-roadmap/02-open-risks.md), [Identity §6.1](docs/02-security/03-identity-verification.md) |
 | SPEC-022's security-review classification | [Spec Register](docs/03-specs/README.md), SPEC-022 §15 Q1 |
-| `composted` exists in two vocabularies with different meanings | [N-15](docs/07-review/02-development-notes.md) — fix before the first seed load |
+| ~~`composted` exists in two vocabularies~~ | **Resolved 2026-10-21** — `inventory_status` only; dropped from `archive_reason`. [SPEC-006 Q3](docs/03-specs/SPEC-006-crop-inventory.md#15-open-questions) |
 | Who can read `handoff_code_key` | [N-03](docs/07-review/02-development-notes.md) — belongs in Environments, currently unstated |
+
+---
+
+## Commands
+
+npm, not pnpm — `pnpm …` scripts named in `docs/` are planned and mostly do not exist yet.
+
+| Task | Command |
+| --- | --- |
+| Install | `npm install` |
+| Run (dev client; Expo Go cannot run MapLibre) | `npx expo run:ios` · `npx expo run:android` |
+| Lint · typecheck | `npm run lint` · `npm run typecheck` |
+| Unit (auth domain) | `npm run test:auth-domain` |
+| Database: start · reset · pgTAP | `npm run db:start` · `npm run db:reset` · `npm run db:test` |
+| RLS / grant gates | `npm run ci:assert-rls` · `ci:assert-negative-ratio` · `ci:assert-no-private-grants` · `ci:assert-definer-allowlist` |
+| Location canary | `npm run location-canary` |
+| Agent memory | `./scripts/agent-memory-bridge.sh check` |
 
 ---
 
@@ -119,6 +139,8 @@ Both Claude Code and Cursor read this file. Neither can see the other's chat his
 
 Newest first. `[YYYY-MM-DD] [tool] fact — link.`
 
+- `[2026-10-21] [claude] N-15 resolved: `composted` is an inventory_status value only and is not in the archive_reason vocabulary — SPEC-006 v1.1.0 Q3.`
+- `[2026-10-21] [claude] Docs claimed CI gates that did not exist. Added .github/workflows/app.yml (bridge, lint, typecheck, auth unit); everything else in CI/CD §2 is labelled planned. Treat any "CI enforces" claim as unverified until you find the workflow step.`
 - `[2026-08-10] [cursor] EPIC-01 spike ported to MapLibre: MapCanvas is the sole @maplibre/* import site; supercluster client-side (R70); Camera center+zoom; GPU GeoJSON layers; OsmAttribution; style JSON + tile-build scaffold. Prior react-native-maps spike invalidated — re-run go/no-go on device.`
 - `[2026-08-09] [claude] OSM is the map substrate end to end. ADR-0019 (MapLibre RN over OSM vector tiles, supersedes ADR-0013), ADR-0020 (self-hosted Protomaps PMTiles on Cloudflare R2 — no tile vendor, no API key, no per-load billing), ADR-0021 (Overpass seeds safe-spot candidates into private.osm_spot_candidates; humans verify before anything goes live).`
 - `[2026-08-09] [claude] THE MAP SPIKE IS RESET. The existing src/features/map/ code is react-native-maps and no longer validates the shipping stack. Port cost 4–6 days. Do not treat the earlier green result as evidence — docs/07-review/03-map-spike-go-no-go.md.`

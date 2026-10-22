@@ -28,11 +28,11 @@ Organised by **when each one bites**, not by topic. A note filed under "the firs
 | [N-12](#n-12--contesting-a-no-show-weakens-the-signal-it-corrects) | Contest weakens the signal it corrects | 30 days | Medium |
 | [N-13](#n-13--the-trusted-tier-will-be-empty-and-will-read-as-a-warning) | `trusted` will be empty at launch | Launch day | Medium |
 | [N-14](#n-14--adding-a-session_state-is-breaking-with-a-long-tail) | Adding a `session_state` is breaking | First schema change | High |
-| [N-15](#n-15--composted-exists-twice-and-the-fix-gets-more-expensive-monthly) | `composted` exists twice | Before launch | Low now, Medium later |
+| [N-15](#n-15--composted-exists-twice-and-the-fix-gets-more-expensive-monthly) | `composted` exists twice | **Resolved 2026-10-21** | — |
 | [N-16](#n-16--the-highest-value-row-in-the-database-has-a-90-day-fuse) | Time-and-place has a 90-day fuse | Ongoing | High |
 | [N-17](#n-17--phase-3-proximity-would-replace-the-handoff-model-not-extend-it) | Phase 3 proximity replaces the model | Phase 3 | Medium |
 | [N-18](#n-18--every-rate-limit-is-a-guess-and-two-of-them-are-load-bearing) | Rate limits are guesses | 30 days | Medium |
-| [N-19](#n-19--expo-modules-jsi-5705-needs-a-temporary-patch-on-xcode-26) | `expo-modules-jsi@57.0.5` needs a patch on Xcode 26 | Day one (iOS dev client) | High — blocks iOS build |
+| [N-19](#n-19--expo-modules-jsi5705-needs-a-temporary-patch-on-xcode-26) | `expo-modules-jsi@57.0.5` needs a patch on Xcode 26 | Day one (iOS dev client) | High — blocks iOS build |
 
 ---
 
@@ -110,9 +110,11 @@ The failure mode of shipped-but-disabled code is that it stops working silently.
 
 [CI/CD §5.1](../05-operations/02-cicd.md) specifies five doc-governance gates and three generated-artefact gates. They are the mechanism by which most of [the review's](01-workflow-architect-review.md) process findings stay fixed rather than recurring — the normative-prose sweep in particular exists because five rate limits hid in a prose cell where the existing `MUST`→test gate could not see them.
 
-**None of them exist yet.** Until `pnpm ci:doc-gates` is real, the fixes are a snapshot and the doc set will drift back. The schema-graph gate is the cheapest and catches the most (it is ~30 lines of Python; the version in [the review's](01-workflow-architect-review.md) verification run already works). The approval gate is the one that matters most, because without it `Approved` goes back to meaning "we finished writing it".
+**None of them exist yet.** Until `npm run ci:doc-gates` is real, the fixes are a snapshot and the doc set will drift back. The schema-graph gate is the cheapest and catches the most (it is ~30 lines of Python; the version in [the review's](01-workflow-architect-review.md) verification run already works). The approval gate is the one that matters most, because without it `Approved` goes back to meaning "we finished writing it".
 
 Build them in the first sprint, while the reasons are fresh and there are no green builds to break.
+
+> **2026-10-21 — the predicted drift happened.** By EPIC-03 the spec register again showed all 18 specs `Approved` (front matter and registry said `Review`), its dependency column disagreed with four specs' `Schema depends on`, and AGENTS.md described traceability and the RN-import ban as CI-enforced when no workflow ran them. Fixed by hand; `.github/workflows/app.yml` now runs lint, typecheck, auth unit tests, and the agent-memory bridge check. **The doc gates themselves still do not exist** — [CI/CD §2](../05-operations/02-cicd.md#2-required-checks) now carries a State column so the gap is visible.
 
 ---
 
@@ -227,6 +229,8 @@ The tail is longer than the enum, and every item is somewhere different:
 The Cleanup Inventory section now in the [spec template](../00-foundation/07-spec-template.md) exists to force the fourth item. Use it.
 
 ### N-15 — `composted` exists twice, and the fix gets more expensive monthly
+
+> **Resolved 2026-10-21.** `composted` stays in `inventory_status` (the baseline migration already ships it) and is removed from the `archive_reason` vocabulary. See [SPEC-006 Q3](../03-specs/SPEC-006-crop-inventory.md#15-open-questions). The note is kept as the record of why.
 
 `composted` is both a value of `inventory_status` and a value of `archive_reason` ([SPEC-006](../03-specs/SPEC-006-crop-inventory.md) Q3). Two ways to say the same thing is how enums rot: some rows will use one, some the other, and every query that cares has to handle both forever.
 

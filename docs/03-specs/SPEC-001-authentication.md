@@ -3,14 +3,14 @@
 | Field | Value |
 | --- | --- |
 | **Status** | Review |
-| **Version** | 1.0.0 |
+| **Version** | 1.0.1 |
 | **Owner** | Engineering — Auth |
 | **Phase** | MVP |
 | **Security review** | required |
 | **Schema depends on** | — (root capability) |
 | **Behaviourally coupled with** | SPEC-002 (R32, R36, R44 cite R18), SPEC-013 |
 | **Related ADRs** | [ADR-0004](../01-architecture/adr/ADR-0004-supabase.md), [ADR-0006](../01-architecture/adr/ADR-0006-auth-providers.md), [ADR-0007](../01-architecture/adr/ADR-0007-token-storage.md), [ADR-0014](../01-architecture/adr/ADR-0014-totp-not-sms.md) |
-| **Last updated** | 2026-08-08 |
+| **Last updated** | 2026-10-21 |
 
 ---
 
@@ -164,7 +164,7 @@ Sharecropr accounts are created with email + password, Sign in with Apple, or Go
 **New schema objects introduced by this spec:**
 
 ```sql
--- supabase/migrations/0002_auth.sql
+-- supabase/migrations/20260828_0009_auth.sql
 CREATE TABLE private.pending_email_changes (
   user_id        uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   new_email      citext NOT NULL,
@@ -556,7 +556,7 @@ Exact strings. Anything not listed here is a spec gap and must be added before i
 | Field | Value |
 | --- | --- |
 | Feature flag | None. Authentication is not flaggable — there is no meaningful "off". Provider-level kill switches (`auth.provider.apple.enabled`, `auth.provider.google.enabled`) exist as remote config so a broken provider can be hidden without a release. |
-| Migration required | Yes — `0002_auth.sql`: the signup trigger, `profiles` policies, `private.pending_email_changes`, `private.account_deletions`, `private.retired_handles`, and the deletion cron job. |
+| Migration required | Yes — `20260828_0009_auth.sql` (the profile/verification tables and signup trigger landed earlier in `20260822_0002_identity_tables.sql`): the signup trigger, `profiles` policies, `private.pending_email_changes`, `private.account_deletions`, `private.retired_handles`, and the deletion cron job. |
 | Backfill required | No. Greenfield. |
 | Rollback plan | Forward-only ([Data Model §15](../01-architecture/03-data-model.md)). A broken provider is disabled by remote config within minutes. A broken deletion pipeline is stopped by disabling the `pg_cron` job, which is safe: pending deletions accumulate and execute late rather than incorrectly. **Late deletion is recoverable; wrong deletion is not**, and the runbook reflects that asymmetry. |
 | Client version floor | 1.0.0. First release. |
@@ -575,3 +575,4 @@ Exact strings. Anything not listed here is a spec gap and must be added before i
 | Date | Version | Author | Change |
 | --- | --- | --- | --- |
 | 2026-08-08 | 1.0.0 | Engineering — Auth | Initial spec. Approved with Security sign-off per [Doc Conventions §6](../00-foundation/06-doc-conventions.md). |
+| 2026-10-21 | 1.0.1 | Architecture | §6 and §14 name the real migration files (`20260822_0002_identity_tables.sql`, `20260828_0009_auth.sql`); no behavioural change |

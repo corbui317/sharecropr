@@ -28,8 +28,8 @@ The only exception is the [break-glass procedure](../01-architecture/04-location
 ```bash
 supabase start                    # Postgres + PostGIS + h3 + GoTrue + Storage + Realtime
 supabase db reset                 # migrations, then seed
-pnpm seed:local                   # synthetic users, gardens, listings, safe spots
-pnpm ios / pnpm android           # Expo Dev Client
+npm run seed:local                   # synthetic users, gardens, listings, safe spots
+npm run ios / npm run android           # Expo Dev Client
 ```
 
 `supabase/config.toml` pins extension versions so a developer's local Postgres matches CI and production. A PostGIS version drift between local and CI produces geospatial results that differ in the last decimal place and wastes an afternoon.

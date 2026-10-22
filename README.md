@@ -2,13 +2,22 @@
 
 Home gardeners inventory surplus crops and barter with nearby gardeners — meeting only at pre-approved public safe spots.
 
-**Current phase:** EPIC-01 map spike (SCR-0101…0107) on **MapLibre + self-hosted OSM PMTiles** (ADR-0019/0020). The app boots directly into the spike screen.
+**Current phase:** EPIC-01 map spike (go/no-go pending device profiling), EPIC-02 data model + RLS harness, and EPIC-03 authentication are in-repo. The app boots through sign-in into the map spike screen (MapLibre + self-hosted OSM PMTiles, ADR-0019/0020). Live status: [AGENTS.md §5](AGENTS.md#5-current-state).
 
 ## Prerequisites
 
 - Node.js 20+
 - iOS Simulator (Xcode) and/or Android emulator or device
 - **Expo dev client** — MapLibre does not run in Expo Go
+
+## Commands
+
+npm only. The full table, including database and CI gates, is in [AGENTS.md § Commands](AGENTS.md#commands).
+
+```bash
+npm run lint && npm run typecheck && npm run test:auth-domain
+npm run db:start && npm run db:reset && npm run db:test   # needs Docker + Supabase CLI
+```
 
 ## Quick start
 

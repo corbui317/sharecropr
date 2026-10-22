@@ -1,0 +1,37 @@
+name: App (lint, typecheck, unit, agent memory)
+
+# The cheap required checks from docs/05-operations/02-cicd.md §2 that have a
+# real npm script today. Everything else in that table is planned — see N-07.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  app:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Agent memory bridge
+        run: ./scripts/agent-memory-bridge.sh check
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint (includes the src/domain + src/api React Native import ban)
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit — auth domain
+        run: npm run test:auth-domain
