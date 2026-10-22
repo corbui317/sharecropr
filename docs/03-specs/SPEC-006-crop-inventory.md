@@ -3,14 +3,14 @@
 | Field | Value |
 | --- | --- |
 | **Status** | Review |
-| **Version** | 1.0.0 |
+| **Version** | 1.1.0 |
 | **Owner** | Mobile Engineering |
 | **Phase** | MVP |
 | **Security review** | not required |
 | **Schema depends on** | [SPEC-004](SPEC-004-garden-verification.md), [SPEC-005](SPEC-005-crop-taxonomy.md) |
 | **Behaviourally coupled with** | SPEC-012 (image moderation), SPEC-013 |
 | **Related ADRs** | [ADR-0003](../01-architecture/adr/ADR-0003-database-centric-authz.md), [ADR-0008](../01-architecture/adr/ADR-0008-edge-functions.md), [ADR-0011](../01-architecture/adr/ADR-0011-state-management.md) |
-| **Last updated** | 2026-08-08 |
+| **Last updated** | 2026-10-21 |
 
 ---
 
@@ -179,7 +179,7 @@ Inventory is the private ledger of what a gardener actually has: a structured ro
 ALTER TABLE public.inventory_items
   ADD COLUMN archived_at   timestamptz,
   ADD COLUMN archive_reason text CHECK (archive_reason IN
-      ('eaten','shared_offline','spoiled','composted','planted','mistake','other')),
+      ('eaten','shared_offline','spoiled','planted','mistake','other')),
   ADD CONSTRAINT inventory_best_by_after_harvest
       CHECK (best_by IS NULL OR harvested_on IS NULL OR best_by >= harvested_on);
 
@@ -310,7 +310,7 @@ Also introduced: `trg_inventory_variety_parent` (R14/R16, asserts `variety_id`'s
 
 | Vocabulary | Values |
 | --- | --- |
-| `archive_reason` | `eaten`, `shared_offline`, `spoiled`, `composted`, `planted`, `mistake`, `other` |
+| `archive_reason` | `eaten`, `shared_offline`, `spoiled`, `planted`, `mistake`, `other`. **Not** `composted` — that is the `inventory_status` value (Q3, resolved) |
 | `quantity_unit` | The eleven values in [Data Model §4](../01-architecture/03-data-model.md) |
 | `item_condition` | `just_picked`, `fresh`, `ripe`, `very_ripe`, `preserved`, `seed` |
 
@@ -696,7 +696,7 @@ Exact strings.
 | --- | --- | --- | --- |
 | Q1 | Should there be a per-user item cap? None exists today (T58). A cap prevents a runaway client from filling a table, but a real August allotment can legitimately hold 150 rows and a cap that bites a real user at harvest time is worse than a bot we can suspend. | Architecture | Post-launch, first season |
 | Q2 | Is freezing all eight fields on `listed` too strict? A user who miscounted and wants to change 4 lb to 3 lb currently has to withdraw and republish, losing their position and any pending requests. A "reduce quantity only" exception is defensible and is also exactly the shape of a bait-and-switch. | Product | Post-launch, first season |
-| Q3 | **Cheapest question in the set, and the only one whose price rises on a schedule — decide it before the first migration.** Should `composted` be a status at all, given `archive_reason` already carries `composted`? Two ways to say the same thing is how enums rot. Removing it is an `ALTER TYPE`, which is destructive and gated ([Data Model §15.3](../01-architecture/03-data-model.md)) — so the decision is cheap now and expensive in three months. | Architecture | Before launch |
+| Q3 | ~~Should `composted` be a status at all, given `archive_reason` already carries `composted`?~~ **Resolved 2026-10-21:** `composted` stays an `inventory_status` value — it is a lifecycle end state, and the baseline migration (`20260822_0001_baseline.sql`) already ships it. It is removed from the `archive_reason` vocabulary (§6, §6.2) so the concept has exactly one home. Closes [N-15](../07-review/02-development-notes.md#n-15--composted-exists-twice-and-the-fix-gets-more-expensive-monthly). | Architecture | Resolved |
 | Q4 | Do we need image moderation to be synchronous before a photo is visible to a counterparty? Today `moderation_state` starts `pending` and the asset is visible once EXIF is stripped, so there is a window where an unreviewed image is on a listing ([Mobile Architecture §12.6](../01-architecture/02-mobile-architecture.md)). Synchronous review is a latency and cost decision, not a technical one. | Trust & Safety + Product | Before launch |
 | Q5 | Should the private note be included in a DSAR export as a separate category, given it is the one field a user may reasonably have forgotten exists? | Legal + Platform | Before first DSAR |
 | Q6 | Is 21 days the right staleness prompt (R48)? Too eager and it nags; too slow and the map fills with produce that rotted a fortnight ago, which is the single most damaging thing to trust in a barter product. | Product | Post-launch data |
@@ -706,3 +706,4 @@ Exact strings.
 | Date | Version | Author | Change |
 | --- | --- | --- | --- |
 | 2026-08-08 | 1.0.0 | Mobile Engineering | Initial spec |
+| 2026-10-21 | 1.1.0 | Architecture | Q3 resolved: `composted` is an `inventory_status` value only; removed from the `archive_reason` vocabulary. Closes N-15 |
