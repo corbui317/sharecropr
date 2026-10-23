@@ -1,6 +1,6 @@
 # Mobile Architecture
 
-**Status:** Review · **Version:** 1.1.4 · **Owner:** Architecture
+**Status:** Review · **Version:** 1.1.5 · **Owner:** Architecture
 
 The backend is where authorization and invariants live ([System Architecture §1](01-system-architecture.md)). The client is therefore **a rendering and caching layer with a state machine mirror** — it is not allowed to be the place a rule is enforced, and any rule that exists only here is a bug. What the client *is* responsible for: being fast, being usable offline, being usable with a screen reader, and never holding a secret it shouldn't.
 
@@ -586,6 +586,7 @@ export type MapCanvasProps = {
   userLocation: QuantizedPoint | null;              // ~100 m quantized before it gets here
   styleUrl: string;                                 // our style JSON → our PMTiles archive
   onCameraChanged: (c: Camera, gesture: boolean) => void;  // gesture=true breaks follow mode
+  onGestureStart: () => void;                      // gesture began (userInteraction on onRegionWillChange) — follow clears here
   onMarkerPress: (id: string) => void;
   onMapPress: () => void;
   children?: React.ReactNode;                       // overlays, positioned in RN space
@@ -608,17 +609,17 @@ The seam also means **the map screen is testable without a map**: Jest renders `
 
 ```
 initial                → camera = user location, zoom 13 (≈ 8 km radius), following = true
-user pans / rotates    → following = false                    (gesture flag from onRegionChange)
-user pinches           → following = false
+user pans / rotates / pinches → following = false at gesture START (onRegionWillChange with userInteraction); no camera animation until it ends
 FollowMeButton press   → following = true, animate to user, zoom preserved
 location update, following = true  → animateCamera(200 ms)
 location update, following = false → update the avatar dot only; camera untouched
+location update during a gesture → avatar only; camera untouched (even if following was true a frame earlier)
 app returns to fg, following = true and last fix > 60 s old  → single fresh fix, then animate
 ```
 
 `following` lives in Zustand and is read by `useFollowMode`, not by the screen — a boolean in React state here re-renders the marker tree on every location tick.
 
-The critical detail: **programmatic camera moves must not clear follow mode.** Every map SDK fires its camera-changed callback for animations as well as gestures, so the discriminator is the only thing standing between us and a follow button that turns itself off half a second after you press it — the single most-reported bug in every map app that has shipped it wrong. On MapLibre the flag is `isUserInteraction` on the region-change payload; normalising it to the seam's `gesture: boolean` is `MapCanvas`'s job, and it is the one piece of renderer trivia the swap did not eliminate.
+The critical detail: **programmatic camera moves must not clear follow mode.** Every map SDK fires its camera-changed callback for animations as well as gestures, so the discriminator is the only thing standing between us and a follow button that turns itself off half a second after you press it — the single most-reported bug in every map app that has shipped it wrong. On MapLibre the flag is `userInteraction` on the `onRegionWillChange` / `onRegionDidChange` payload (native normalises iOS's reason mask and Android's move reason); normalising it to the seam's `gesture: boolean` is `MapCanvas`'s job, and it is the one piece of renderer trivia the swap did not eliminate.
 
 ### 4.3 Clustering
 
@@ -1154,3 +1155,4 @@ Stated plainly so they can be argued with.
 | 2026-10-21 | 1.1.2 | Architecture | SCRUM-62: the `AppState` refresh listener moves out of `src/api/supabase.ts` into the `useAuthAutoRefresh` boot hook (`src/features/auth/hooks/`), which calls the newly exported `startAutoRefresh`/`stopAutoRefresh`. §5.3 snippet amended; §1 and §1.1a now list exactly three sanctioned `src/api` adapters and no `react-native` exception; the `supabase.ts` lint exemption is removed |
 | 2026-10-22 | 1.1.3 | Architecture | §3: the reset deep link is sharecropr://reset-password with a PKCE ?code= query, not a fragment token; the root route's logic lives in src/features/auth/screens/BootGateScreen.tsx because every file under app/ is a route (WP-AUTH-FIX) |
 | 2026-10-22 | 1.1.4 | Architecture | H3 removed; renamed to location tiers per [ADR-0023](adr/ADR-0023-postgis-location-tiers.md). Route-param regex now rejects `_cell`. |
+| 2026-10-22 | 1.1.5 | Architecture | §4.1/§4.2: follow mode clears at gesture start (`onRegionWillChange` + `userInteraction`, new `onGestureStart` prop), no camera animation during a gesture, avatar interpolated between fixes (SCRUM-25). |

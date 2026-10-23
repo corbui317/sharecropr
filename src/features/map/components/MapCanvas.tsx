@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useImperativeHandle, useLayoutEffect, useMemo, useRef } from 'react';
+import { forwardRef, memo, useCallback, useImperativeHandle, useLayoutEffect, useMemo, useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
 import {
   Camera,
@@ -9,6 +9,7 @@ import {
   type MapRef,
   type PressEventWithFeatures,
   type StyleSpecification,
+  type ViewStateChangeEvent,
 } from '@maplibre/maplibre-react-native';
 import type { NativeSyntheticEvent } from 'react-native';
 
@@ -16,6 +17,8 @@ import type { Camera as MapCamera, DeviceLocation } from '@/domain/geo/types';
 import { deviceLocationToGeoPoint } from '@/domain/geo/types';
 import { OsmAttribution } from '@/features/map/components/OsmAttribution';
 import { resolveBasemapStyle } from '@/features/map/config/basemap';
+import { useInterpolatedLocation } from '@/features/map/hooks/useInterpolatedLocation';
+import { FOLLOW_ANIMATION_MS } from '@/features/map/lib/followMode';
 import {
   EMPTY_RENDER_MILESTONES,
   markFrameRendered,
@@ -37,6 +40,8 @@ export type MapCanvasProps = {
   userLocation: DeviceLocation | null;
   styleUrl?: string;
   onCameraChanged: (camera: MapCamera, gesture: boolean) => void;
+  /** User pan/pinch/rotate began; follow mode clears here (R04). Programmatic moves never call it (R05). */
+  onGestureStart: () => void;
   onMarkerPress: (id: string) => void;
   onClusterPress: (clusterId: number, lat: number, lng: number) => void;
   onMapPress: () => void;
@@ -67,6 +72,7 @@ export const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(function Ma
     markers,
     userLocation,
     onCameraChanged,
+    onGestureStart,
     onMarkerPress,
     onClusterPress,
     onMapPress,
@@ -98,21 +104,15 @@ export const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(function Ma
     [markerSignature],
   );
 
-  const avatarCollection = useMemo(() => {
-    if (!userLocation) return null;
-    const point = deviceLocationToGeoPoint(userLocation);
-    return userLocationFeature(point.lat, point.lng);
-  }, [userLocation]);
-
   useImperativeHandle(ref, () => ({
-    animateToCamera: (nextCamera, durationMs = 200) => {
+    animateToCamera: (nextCamera, durationMs = FOLLOW_ANIMATION_MS) => {
       cameraRef.current?.easeTo({
         center: [nextCamera.center.lng, nextCamera.center.lat],
         zoom: nextCamera.zoom,
         duration: durationMs,
       });
     },
-    animateToCoordinate: (location, durationMs = 200) => {
+    animateToCoordinate: (location, durationMs = FOLLOW_ANIMATION_MS) => {
       const point = deviceLocationToGeoPoint(location);
       cameraRef.current?.easeTo({
         center: [point.lng, point.lat],
@@ -121,8 +121,15 @@ export const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(function Ma
     },
   }));
 
+  const handleRegionWillChange = useCallback(
+    (event: NativeSyntheticEvent<ViewStateChangeEvent>) => {
+      if (event.nativeEvent.userInteraction) onGestureStart(); // R05: programmatic moves are ignored
+    },
+    [onGestureStart],
+  );
+
   const handleRegionDidChange = useCallback(
-    (event: NativeSyntheticEvent<{ center: [number, number]; zoom: number; userInteraction: boolean }>) => {
+    (event: NativeSyntheticEvent<ViewStateChangeEvent>) => {
       const { center, zoom, userInteraction } = event.nativeEvent;
       onCameraChanged(toMapCamera({ center, zoom }), userInteraction);
     },
@@ -194,6 +201,7 @@ export const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(function Ma
         attribution={false}
         logo={false}
         onPress={onMapPress}
+        onRegionWillChange={handleRegionWillChange}
         onRegionDidChange={handleRegionDidChange}
         onDidFinishRenderingMapFully={handleDidFinishRenderingMapFully}
         onDidFinishLoadingStyle={handleDidFinishLoadingStyle}
@@ -282,34 +290,47 @@ export const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(function Ma
           />
         </GeoJSONSource>
 
-        {avatarCollection ? (
-          <GeoJSONSource id="avatar" data={avatarCollection}>
-            <Layer
-              id="avatar-halo"
-              type="circle"
-              paint={{
-                'circle-radius': 12,
-                'circle-color': 'rgba(59, 130, 246, 0.25)',
-              }}
-            />
-            <Layer
-              id="avatar-dot"
-              type="circle"
-              paint={{
-                'circle-radius': 6,
-                'circle-color': '#3b82f6',
-                'circle-stroke-width': 2,
-                'circle-stroke-color': '#ffffff',
-              }}
-            />
-          </GeoJSONSource>
-        ) : null}
+        {userLocation ? <AvatarSource location={userLocation} /> : null}
       </Map>
 
       <View style={styles.attributionSlot} pointerEvents="none">
         <OsmAttribution />
       </View>
     </View>
+  );
+});
+
+// Own subtree so per-frame interpolation re-renders only the avatar, never the spot source (R09, R26).
+// Kept here because it renders GeoJSONSource/Layer and this is the sole @maplibre import site.
+const AvatarSource = memo(function AvatarSource({ location }: { location: DeviceLocation }) {
+  const shown = useInterpolatedLocation(location);
+  const collection = useMemo(() => {
+    if (!shown) return null;
+    const point = deviceLocationToGeoPoint(shown);
+    return userLocationFeature(point.lat, point.lng);
+  }, [shown]);
+  if (!collection) return null;
+  return (
+    <GeoJSONSource id="avatar" data={collection}>
+      <Layer
+        id="avatar-halo"
+        type="circle"
+        paint={{
+          'circle-radius': 12,
+          'circle-color': 'rgba(59, 130, 246, 0.25)',
+        }}
+      />
+      <Layer
+        id="avatar-dot"
+        type="circle"
+        paint={{
+          'circle-radius': 6,
+          'circle-color': '#3b82f6',
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#ffffff',
+        }}
+      />
+    </GeoJSONSource>
   );
 });
 

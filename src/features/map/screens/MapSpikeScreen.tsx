@@ -17,6 +17,7 @@ import { MAP_PROFILER_ENABLED } from '@/features/map/config/profiler';
 import { useFpsProfiler, type LiveProfilerReading } from '@/features/map/hooks/useFpsProfiler';
 import { useFollowMode } from '@/features/map/hooks/useFollowMode';
 import { buildClusterIndex, useMapMarkers } from '@/features/map/hooks/useMapMarkers';
+import { FOLLOW_ANIMATION_MS } from '@/features/map/lib/followMode';
 import { EMPTY_RENDER_MILESTONES, type RenderMilestones } from '@/features/map/lib/renderMilestones';
 
 /** Portland, OR — launch metro one placeholder for spike data. */
@@ -44,19 +45,20 @@ export function MapSpikeScreen() {
   const profiler = useFpsProfiler({ enabled: MAP_PROFILER_ENABLED });
 
   const handleAnimateToUser = useCallback((location: DeviceLocation) => {
-    mapRef.current?.animateToCoordinate(location, 200);
+    mapRef.current?.animateToCoordinate(location, FOLLOW_ANIMATION_MS);
   }, []);
 
   const follow = useFollowMode({ onAnimateToUser: handleAnimateToUser });
+  const { onGestureStart, onGestureEnd } = follow;
 
   const handleCameraChanged = useCallback(
     (nextCamera: Camera, gesture: boolean) => {
       setCamera(nextCamera);
       if (gesture) {
-        follow.onUserGesture();
+        onGestureEnd();
       }
     },
-    [follow],
+    [onGestureEnd],
   );
 
   const handleClusterPress = useCallback(
@@ -108,6 +110,7 @@ export function MapSpikeScreen() {
         markers={markers}
         userLocation={follow.userLocation}
         onCameraChanged={handleCameraChanged}
+        onGestureStart={onGestureStart}
         onMarkerPress={setSelectedId}
         onClusterPress={handleClusterPress}
         onMapPress={() => setSelectedId(null)}
