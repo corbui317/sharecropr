@@ -116,7 +116,7 @@ Generated from `Schema depends on` only. A valid order: **001 → 002 → 003 �
 
 ## Traceability
 
-Every `MUST` requirement in every spec maps to at least one test ID in that spec's §13, and the test source echoes the namespaced ID (`SPEC-001-T34`). The CI gate for this ([CI/CD §5](../05-operations/02-cicd.md)) is **planned, not built** — reviewers check it by hand until it exists.
+Every `MUST` requirement in every spec maps to at least one test ID in that spec's §13, and the test source echoes the namespaced ID (`SPEC-001-T34`). The CI gate for this ([CI/CD §5](../05-operations/02-cicd.md)) runs in `app.yml` (`ci:spec-traceability`) against a shrink-only baseline of existing gaps.
 
 | Want to know… | Look at |
 | --- | --- |

@@ -22,6 +22,8 @@
     "db:test": "bash scripts/run-pgtap.sh",
     "test:doc-gates": "node --test scripts/doc-gates.test.mjs",
     "ci:doc-gates": "node scripts/doc-gates.mjs",
+    "test:spec-traceability": "node --test scripts/spec-traceability.test.mjs",
+    "ci:spec-traceability": "node scripts/spec-traceability.mjs",
     "ci:assert-negative-ratio": "bash scripts/ci-assert-negative-ratio.sh",
     "ci:assert-rls": "bash scripts/ci-assert-rls.sh",
     "ci:assert-no-private-grants": "bash scripts/ci-assert-no-private-grants.sh",

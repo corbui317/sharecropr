@@ -37,6 +37,21 @@ jobs:
       - name: Doc gates — schema graph acyclic + coupling symmetric + register sync (CI/CD §5.1)
         run: npm run ci:doc-gates
 
+      - name: Spec traceability — self-test (broken fixtures must fail)
+        run: npm run test:spec-traceability
+
+      - name: Spec traceability — every MUST → §13 row → echoed test; baseline only shrinks (CI/CD §5)
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -n "$BASE_SHA" ] && [ "$BASE_SHA" != "0000000000000000000000000000000000000000" ]; then
+            git fetch --no-tags --depth=1 origin "$BASE_SHA"
+            npm run -s ci:spec-traceability -- --base-ref "$BASE_SHA"
+          else
+            echo "::warning::no base commit; baseline growth check skipped"
+            npm run -s ci:spec-traceability
+          fi
+
       - name: Install
         run: npm ci
 

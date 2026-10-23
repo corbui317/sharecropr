@@ -1,6 +1,6 @@
 # CI/CD
 
-**Status:** Approved · **Version:** 1.0.7 · **Owner:** Platform Engineering
+**Status:** Approved · **Version:** 1.0.8 · **Owner:** Platform Engineering
 
 GitHub Actions for verification, EAS for building and shipping. The pipeline's job is to make the [five rules](../README.md) mechanically enforced rather than culturally enforced, because culture degrades under deadline pressure and a `grep` in CI does not.
 
@@ -51,7 +51,7 @@ None of these are advisory once built. A PR cannot merge with any *running* chec
 | `integration` | Any failure | Planned |
 | `concurrency` | Any hazard H1–H8 | Planned |
 | `security-static` | §4 checks | **Partial** — `db.yml` private-grant gate runs; definer-allowlist is a stub |
-| `spec-traceability` | A `MUST` with no linked test | Planned |
+| `spec-traceability` | A `MUST` with no linked test | Running — `app.yml`; existing gaps sit in a shrink-only baseline (SCR-0005) |
 | `doc-gates` | §5.1 gates | **Partial** — `app.yml` runs schema-graph acyclic + coupling symmetric + register sync (SCR-0003, SCR-0004); normative-prose, approval, cross-reference and staleness gates planned |
 | `secret-scan` | Any secret in source or the built bundle | Planned |
 | `e2e-smoke` | Any smoke flow on either platform | Planned |
@@ -177,6 +177,8 @@ Three notes on why these are shaped the way they are:
 Parses `docs/03-specs/*.md`, extracts every requirement marked `MUST`, and confirms each appears in that spec's §13 coverage matrix **and** that a test file references the ID. A `MUST` with no test fails the build.
 
 This is what makes [the doc conventions](../00-foundation/06-doc-conventions.md) real rather than aspirational.
+
+**How it ratchets (SCR-0005).** A `MUST` is *mapped* when a `Covers` cell in a §13 table cites it (an R-ID in §13.2 "Expected" prose does not count), and *traced* when at least one of the T-IDs that cite it is echoed as `SPEC-NNN-Tnn` in a test source: a file under `src/`, `app/`, `supabase/tests/`, `packages/`, `e2e/` or `.maestro/` that is in `__tests__/`, named `*.test.*`, a `supabase/tests/*.sql`, or an `e2e`/`.maestro` flow. Production files, `docs/` and `scripts/` never count. Gaps that existed when the gate landed are listed in `scripts/spec-traceability.baseline.json`, which may only shrink. The gate goes red on a gap not listed there (`must-unmapped`, `must-untested`, `echo-unknown`), on a listed gap that is now closed (`baseline-stale`), and, with `--base-ref` (the PR base, or `github.event.before` on a push), on any entry not in the base commit's baseline (`baseline-grew`). There is no status exemption: a `Draft` spec's `MUST` fails like any other. Every package that adds a test echo must also shrink the baseline (`npm run ci:spec-traceability -- --update-baseline`); otherwise CI is red with `baseline-stale`.
 
 ### 5.1 The checks the traceability gate cannot see
 
@@ -356,3 +358,4 @@ Production-scoped secrets live in a protected GitHub Environment requiring a nam
 | 2026-10-22 | 1.0.5 | Platform Engineering | §2 db.yml rows corrected: pins the Supabase CLI (2.120.0, setup-cli v3.0.1), runs static gates before start, excludes all non-DB services, and writes the first migration error to the job summary; pgtap rows are wired, not passing and is red at the first real migration error (SCRUM-37) |
 | 2026-10-22 | 1.0.6 | Platform Engineering | H3 removed; renamed to location tiers per [ADR-0023](../01-architecture/adr/ADR-0023-postgis-location-tiers.md). `fine_cell` replaces `h3_r9` in the gate descriptions. |
 | 2026-10-22 | 1.0.7 | Platform Engineering | §2 `doc-gates` and §5.1 note: `ci:doc-gates` also fails on an asymmetric `Behaviourally coupled with` edge (SCRUM-16, SCR-0004) |
+| 2026-10-22 | 1.0.8 | Platform Engineering | §2 `spec-traceability` is Running; §5 documents the shrink-only baseline, the test-source definition and the one-echoed-T-ID rule (SCRUM-13, SCR-0005) |

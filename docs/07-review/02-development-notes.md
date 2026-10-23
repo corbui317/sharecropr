@@ -120,6 +120,8 @@ Build them in the first sprint, while the reasons are fresh and there are no gre
 
 > **2026-10-22 — symmetry half built.** `ci:doc-gates` now also fails on an asymmetric `Behaviourally coupled with` edge (SCR-0004); 13 one-sided edges in the docs were closed by adding the reciprocal. Normative-prose, approval, cross-reference and staleness gates remain planned.
 
+> **2026-10-22 — traceability gate built.** `ci:spec-traceability` (SCR-0005): 1,012 MUSTs, 38 traced; the other 974 (36 with no §13 row, 938 with no echoed test) are a shrink-only baseline. New gaps fail.
+
 ---
 
 ## The first week live
