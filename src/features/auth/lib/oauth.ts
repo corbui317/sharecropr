@@ -4,6 +4,8 @@ import { makeRedirectUri } from 'expo-auth-session';
 import { Platform } from 'react-native';
 
 import { supabase } from '@/api/supabase';
+import { exchangeAuthCode } from '@/features/auth/lib/code-exchange';
+import { parseAuthRedirect } from '@/features/auth/lib/deep-link';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -89,12 +91,13 @@ async function signInWithOAuth(provider: OAuthProvider): Promise<OAuthResult> {
     return { error: null, cancelled: true };
   }
 
-  const url = new URL(result.url);
-  const code = url.searchParams.get('code');
-  if (!code) {
+  // On Android the same redirect can also reach the router's /auth/callback (SPEC-001-T58). The PKCE
+  // verifier is single-use, so both callers go through one exchange per code.
+  const parsed = parseAuthRedirect(result.url);
+  if (parsed.kind !== 'code') {
     return { error: new Error('oauth_code_missing') };
   }
 
-  const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
-  return { error: exchangeError };
+  const exchanged = await exchangeAuthCode(parsed.code);
+  return { error: exchanged.error ? new Error('oauth_exchange_failed') : null };
 }

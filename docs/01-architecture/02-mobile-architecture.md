@@ -1,6 +1,6 @@
 # Mobile Architecture
 
-**Status:** Review · **Version:** 1.1.6 · **Owner:** Architecture
+**Status:** Review · **Version:** 1.1.7 · **Owner:** Architecture
 
 The backend is where authorization and invariants live ([System Architecture §1](01-system-architecture.md)). The client is therefore **a rendering and caching layer with a state machine mirror** — it is not allowed to be the place a rule is enforced, and any rule that exists only here is a bug. What the client *is* responsible for: being fast, being usable offline, being usable with a screen reader, and never holding a secret it shouldn't.
 
@@ -82,6 +82,8 @@ src/
 │   │   ├── reset-password.tsx
 │   │   ├── mfa-challenge.tsx             # TOTP at sign-in
 │   │   └── recovery-code.tsx
+│   ├── auth/
+│   │   └── callback.tsx                  # sharecropr://auth/callback; re-exports AuthCallbackScreen
 │   ├── (onboarding)/
 │   │   ├── _layout.tsx                   # Guard: session required, onboarding incomplete
 │   │   ├── welcome.tsx
@@ -455,6 +457,8 @@ Expo Router, file-based, typed routes on ([ADR-0012](adr/ADR-0012-navigation.md)
   /reset-password                   ← email deep link target (sharecropr://reset-password?code=…, PKCE code exchanged on the screen — SPEC-001-T47)
   /mfa-challenge
   /recovery-code
+
+/auth/callback                       ← email-verification and OAuth redirect target (sharecropr://auth/callback?code=…, PKCE — SPEC-001-T58); outside the groups, so it is reachable with or without a session
 
 (onboarding)                        [guard: session AND onboarding_completed_at IS NULL]
   /welcome → /profile → /garden → /garden-photo → /identity → /done
@@ -1158,3 +1162,4 @@ Stated plainly so they can be argued with.
 | 2026-10-22 | 1.1.4 | Architecture | H3 removed; renamed to location tiers per [ADR-0023](adr/ADR-0023-postgis-location-tiers.md). Route-param regex now rejects `_cell`. |
 | 2026-10-22 | 1.1.5 | Architecture | §4.1/§4.2: follow mode clears at gesture start (`onRegionWillChange` + `userInteraction`, new `onGestureStart` prop), no camera animation during a gesture, avatar interpolated between fixes (SCRUM-25). |
 | 2026-10-22 | 1.1.6 | Architecture | §4.1: `MapCanvasProps` gains `bottomInset`; chrome (`children`) is confined to an overlay region above an in-flow OSM attribution strip, so the notice is guaranteed by layout, not z-order (SCRUM-28, SPEC-008 R76). |
+| 2026-10-23 | 1.1.7 | Architecture | §3: `/auth/callback` route (email-verification and OAuth redirect target, PKCE code exchanged once through a shared single-flight) outside the route groups (WP-30R, SPEC-001-T58) |

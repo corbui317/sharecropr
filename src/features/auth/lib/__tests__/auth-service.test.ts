@@ -2,10 +2,11 @@ import { beforeEach, describe, expect, jest, test } from '@jest/globals';
 
 import {
   AUTH_ERROR_CODES,
+  AUTH_CALLBACK_REDIRECT,
   PASSWORD_RESET_REDIRECT,
   cancelAccountDeletion,
-  exchangeRecoveryCode,
   getDeletionStatus,
+  getPendingVerificationEmail,
   mapAuthError,
   requestAccountDeletion,
   requestEmailChange,
@@ -96,24 +97,52 @@ describe('password reset', () => {
     });
     expect(PASSWORD_RESET_REDIRECT).toBe('sharecropr://reset-password');
   });
+});
 
-  test('exchangeRecoveryCode: concurrent calls for one code make one exchange (SPEC-001-T47)', async () => {
-    api.supabase.auth.exchangeCodeForSession!.mockResolvedValue({ data: {}, error: null });
-    const [a, b] = await Promise.all([exchangeRecoveryCode('c1'), exchangeRecoveryCode('c1')]);
-    expect(api.supabase.auth.exchangeCodeForSession).toHaveBeenCalledTimes(1);
-    expect(a).toEqual({ error: null });
-    expect(b).toEqual({ error: null });
+describe('email verification redirect', () => {
+  beforeEach(async () => {
+    api.signOutWithLocalFallback.mockResolvedValue({ remoteRevoked: true });
+    await signOut(); // clears the in-memory pending address between tests
   });
 
-  test('exchangeRecoveryCode: SDK error or rejection -> link_invalid (SPEC-001-T47)', async () => {
-    api.supabase.auth.exchangeCodeForSession!.mockResolvedValueOnce({
-      data: null,
-      error: { message: 'invalid flow state' },
-    });
-    expect(await exchangeRecoveryCode('bad-1')).toEqual({ error: 'link_invalid' });
+  test('signUp and resend pass emailRedirectTo sharecropr://auth/callback (SPEC-001-T58)', async () => {
+    api.supabase.auth.signUp!.mockResolvedValueOnce({ data: {}, error: null });
+    api.supabase.auth.resend!.mockResolvedValueOnce({ error: null });
+    await signUpWithEmail('a@b.org', 'password-long-enough');
+    await resendVerificationEmail('a@b.org');
+    expect(AUTH_CALLBACK_REDIRECT).toBe('sharecropr://auth/callback');
+    expect(api.supabase.auth.signUp).toHaveBeenCalledWith(
+      expect.objectContaining({ options: { emailRedirectTo: 'sharecropr://auth/callback' } }),
+    );
+    expect(api.supabase.auth.resend).toHaveBeenCalledWith(
+      expect.objectContaining({ options: { emailRedirectTo: 'sharecropr://auth/callback' } }),
+    );
+  });
 
-    api.supabase.auth.exchangeCodeForSession!.mockRejectedValueOnce(new Error('offline'));
-    expect(await exchangeRecoveryCode('bad-2')).toEqual({ error: 'link_invalid' });
+  test('the pending address is set after a successful signUp and cleared by signOut (SPEC-001-T58)', async () => {
+    expect(getPendingVerificationEmail()).toBeNull();
+    api.supabase.auth.signUp!.mockResolvedValueOnce({ data: {}, error: null });
+    await signUpWithEmail(' A@B.org ', 'password-long-enough');
+    expect(getPendingVerificationEmail()).toBe('a@b.org');
+    api.signOutWithLocalFallback.mockResolvedValueOnce({ remoteRevoked: true });
+    await signOut();
+    expect(getPendingVerificationEmail()).toBeNull();
+  });
+
+  test('a failed signUp or resend does not set the pending address (SPEC-001-T58)', async () => {
+    api.supabase.auth.signUp!.mockResolvedValueOnce({ data: null, error: { message: 'x', status: 500 } });
+    await signUpWithEmail('a@b.org', 'password-long-enough');
+    api.supabase.auth.resend!.mockResolvedValueOnce({ error: { message: 'x', status: 500 } });
+    await resendVerificationEmail('c@d.org');
+    expect(getPendingVerificationEmail()).toBeNull();
+  });
+
+  test('the pending address is cleared even when sign-out rejects (SPEC-001-T58)', async () => {
+    api.supabase.auth.signUp!.mockResolvedValueOnce({ data: {}, error: null });
+    await signUpWithEmail('a@b.org', 'password-long-enough');
+    api.signOutWithLocalFallback.mockRejectedValueOnce(new Error('x'));
+    await expect(signOut()).rejects.toThrow('x');
+    expect(getPendingVerificationEmail()).toBeNull();
   });
 });
 

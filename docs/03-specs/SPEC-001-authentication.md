@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | **Status** | Review |
-| **Version** | 1.3.0 |
+| **Version** | 1.4.0 |
 | **Owner** | Engineering — Auth |
 | **Phase** | MVP |
 | **Security review** | required |
@@ -363,7 +363,7 @@ Exact strings. Anything not listed here is a spec gap and must be added before i
 | Holding screen | `Check your email` / `We sent a confirmation link to {email}. Tap it and you're in.` |
 | Resend available | `Didn't arrive? Resend` |
 | Resend cooldown | `You can resend in {mm:ss}.` |
-| Link expired | `That link has expired. Links are good for 24 hours — here's a fresh one.` |
+| Link expired | `That link has expired. Links are good for 24 hours — request a fresh one.` |
 | Link already used | `This link was already used. Try signing in.` |
 | Wrong address | `Wrong address? Start over` |
 | Resend failed | `Could not resend right now. Try again shortly.` |
@@ -545,6 +545,8 @@ Exact strings. Anything not listed here is a spec gap and must be added before i
 | T55 | unit | R25, §8.2 Error, Invariant 10 | Every sign-out action goes through `signOutAndRedirect`. It never rejects, navigates only on success, is single-flight, and a failure shows inline copy and keeps the screen. |
 | T56 | unit | §8.2 Rate limited, §8.3, §12 | `Retry-After` (delta-seconds or HTTP date) is read from GoTrue 429s by the client fetch, or parsed from the GoTrue message. Sign-in submit is disabled for exactly that time with "Try again in m:ss", with no auto-retry; it announces at start, 60, 30 and 0 only. Without a value it shows the interim copy. |
 | T57 | unit | §8.3, R29, §8.2 Offline | `authErrorCopy` is total over code × context and uses only §8.3 strings. A reset request shows distinct copy only for a transport failure. ForgotPassword shows the offline banner and never spins forever. |
+| T58 | unit | R14, R17, R03 | `signUp` and `resend` use `emailRedirectTo: sharecropr://auth/callback`. `/auth/callback` exchanges the PKCE code once (a single-flight shared with OAuth), reads errors from the query or the fragment, and renders expired (→ resend) or already-used (→ sign in) states. It never shows a dead end or a spinner over 10 s, and implicit tokens are never read. |
+| T59 | unit | R18, §8.2, §12 | The resend cooldown is 60 s after a send, or `Retry-After` / the GoTrue-stated seconds on a 429, as a deadline-based countdown announced at start, 30 and 0. |
 
 ### 13.2 Negative & security tests
 
@@ -616,3 +618,4 @@ Exact strings. Anything not listed here is a spec gap and must be added before i
 | 2026-10-22 | 1.2.0 | Engineering — Auth | WP-AUTH-FIX: `private.account_deletions` keeps history with one open row per user (EC-08, T50); §8.3 copy for network, interim rate-limit, invalid reset link, account-status and restore failures; T46–T54 added for the boot deletion gate, reset deep link, sessionless verify, error mapping, provider cancel, per-intent idempotency keys and query-cache single-flight; T19 gains a unit slice |
 | 2026-10-22 | 1.2.1 | Architecture | Migration filenames updated to 14-digit versions; SCR-0201. No behavioural change |
 | 2026-10-22 | 1.3.0 | Engineering — Auth | WP-28-31: `signOutAndRedirect` for every sign-out site (T55); `Retry-After` capture and sign-in countdown (T56); error-copy module, R29-safe reset errors and offline banner (T57); §8.2 Rate limited no longer applies a countdown to password reset; §8.3 rows for new and moved strings. |
+| 2026-10-22 | 1.4.0 | Engineering — Auth | WP-30R: email verification redirects to `sharecropr://auth/callback` (R14, R17); the `/auth/callback` route exchanges the PKCE code once through a single-flight shared with OAuth and reads errors from the query or the fragment (T58); the resend cooldown follows the 60 s server interval or `Retry-After` instead of a fixed hour (T59); §8.3 `Link expired` reads "request a fresh one" — no auto-resend from an unauthenticated deep link (Corey, 2026-10-22). |

@@ -56,6 +56,8 @@ export const authCopy = {
   passwordsDontMatch: 'Passwords do not match.',
   passwordUpdateFailed: 'Could not update password. Request a new reset link.',
   resendFailed: 'Could not resend right now. Try again shortly.',
+  verifyLinkExpired: 'That link has expired. Links are good for 24 hours — request a fresh one.',
+  verifyLinkUsed: 'This link was already used. Try signing in.',
   wrongAddress: 'Wrong address? Start over',
   signOutFailed: "We couldn't sign you out. Try again.",
 } as const;

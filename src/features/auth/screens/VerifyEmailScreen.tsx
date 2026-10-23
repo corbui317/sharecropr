@@ -1,58 +1,70 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Link, Redirect, router, useLocalSearchParams } from 'expo-router';
-import { StyleSheet, Text } from 'react-native';
+import { useCallback, useState } from "react";
+import { Link, Redirect, router, useLocalSearchParams } from "expo-router";
+import { StyleSheet, Text } from "react-native";
 
-import { AuthButton } from '@/features/auth/components/AuthButton';
-import { AuthScreenShell } from '@/features/auth/components/AuthScreenShell';
-import { BootSplash } from '@/features/auth/components/BootSplash';
-import { useAuthSession } from '@/features/auth/hooks/useAuthSession';
-import { useSignOutAndRedirect } from '@/features/auth/hooks/useSignOutAndRedirect';
-import { resendVerificationEmail, type AuthErrorCode } from '@/features/auth/lib/auth-service';
-import { authCopy, formatMmSs } from '@/features/auth/lib/copy';
-import { authErrorCopy } from '@/features/auth/lib/error-copy';
-import { routes } from '@/features/auth/lib/routes';
+import { AuthButton } from "@/features/auth/components/AuthButton";
+import { AuthScreenShell } from "@/features/auth/components/AuthScreenShell";
+import { BootSplash } from "@/features/auth/components/BootSplash";
+import { useAuthSession } from "@/features/auth/hooks/useAuthSession";
+import { useCountdown } from "@/features/auth/hooks/useCountdown";
+import { useSignOutAndRedirect } from "@/features/auth/hooks/useSignOutAndRedirect";
+import {
+  resendVerificationEmail,
+  type AuthErrorCode,
+} from "@/features/auth/lib/auth-service";
+import { authCopy, formatMmSs } from "@/features/auth/lib/copy";
+import { authErrorCopy } from "@/features/auth/lib/error-copy";
+import { routes } from "@/features/auth/lib/routes";
 
-const RESEND_COOLDOWN_SEC = 3600;
+/** supabase/config.toml [auth.email] max_frequency: GoTrue refuses a resend inside this interval. */
+const RESEND_MIN_INTERVAL_SEC = 60;
 
 export function VerifyEmailScreen() {
   const { user, status, isEmailVerified } = useAuthSession();
-  const params = useLocalSearchParams<{ email?: string }>();
-  const email = user?.email ?? (typeof params.email === 'string' ? params.email : '');
-  const [cooldown, setCooldown] = useState(0);
+  const params = useLocalSearchParams<{ email?: string; reason?: string }>();
+  const email =
+    user?.email ?? (typeof params.email === "string" ? params.email : "");
+  const [resendUntil, setResendUntil] = useState<number | null>(null);
+  // SPEC-001-T59: deadline-based, so a backgrounded app cannot drift; announced at start, 30 and 0.
+  const cooldown = useCountdown(resendUntil, (r) =>
+    r > 0 ? authCopy.resendCooldown(formatMmSs(r)) : authCopy.resendAvailable,
+  );
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const signingOut = useSignOutAndRedirect();
-
-  useEffect(() => {
-    if (cooldown <= 0) return;
-    const timer = setInterval(() => setCooldown((value) => Math.max(0, value - 1)), 1000);
-    return () => clearInterval(timer);
-  }, [cooldown]);
 
   const handleResend = useCallback(async () => {
     if (!email || cooldown > 0) return;
     setLoading(true);
     setError(null);
     let resendError: AuthErrorCode | null;
+    let retryAfterSec: number | null | undefined;
     try {
-      ({ error: resendError } = await resendVerificationEmail(email));
+      ({ error: resendError, retryAfterSec } =
+        await resendVerificationEmail(email));
     } catch {
-      resendError = 'unknown'; // Invariant 10: never leave the spinner on
+      resendError = "unknown"; // Invariant 10: never leave the spinner on
     } finally {
       setLoading(false);
     }
-    if (resendError === 'rate_limited') {
-      setCooldown(RESEND_COOLDOWN_SEC);
+    if (resendError === "rate_limited") {
+      setResendUntil(
+        Date.now() +
+          (retryAfterSec && retryAfterSec > 0
+            ? retryAfterSec
+            : RESEND_MIN_INTERVAL_SEC) *
+            1000,
+      );
       return;
     }
     if (resendError) {
-      setError(authErrorCopy(resendError, 'resend'));
+      setError(authErrorCopy(resendError, "resend"));
       return;
     }
-    setCooldown(RESEND_COOLDOWN_SEC);
+    setResendUntil(Date.now() + RESEND_MIN_INTERVAL_SEC * 1000);
   }, [cooldown, email]);
 
-  if (status === 'loading') return <BootSplash />;
+  if (status === "loading") return <BootSplash />;
   if (!user && !email) return <Redirect href={routes.signIn} />;
   if (user && isEmailVerified) return <Redirect href={routes.map} />;
 
@@ -62,8 +74,17 @@ export function VerifyEmailScreen() {
       subtitle={authCopy.verifyBody(email)}
       footer={
         <>
+          {params.reason === "expired" ? (
+            <Text accessibilityLiveRegion="polite" style={styles.notice}>
+              {authCopy.verifyLinkExpired}
+            </Text>
+          ) : null}
           <AuthButton
-            label={cooldown > 0 ? authCopy.resendCooldown(formatMmSs(cooldown)) : authCopy.resendAvailable}
+            label={
+              cooldown > 0
+                ? authCopy.resendCooldown(formatMmSs(cooldown))
+                : authCopy.resendAvailable
+            }
             onPress={() => void handleResend()}
             loading={loading}
             disabled={cooldown > 0}
@@ -94,6 +115,12 @@ export function VerifyEmailScreen() {
 }
 
 const styles = StyleSheet.create({
-  error: { color: '#b42318', marginTop: 12, textAlign: 'center' },
-  link: { marginTop: 16, textAlign: 'center', color: '#1a3d2e', fontWeight: '600' },
+  notice: { color: "#1a3d2e", marginBottom: 12, textAlign: "center" },
+  error: { color: "#b42318", marginTop: 12, textAlign: "center" },
+  link: {
+    marginTop: 16,
+    textAlign: "center",
+    color: "#1a3d2e",
+    fontWeight: "600",
+  },
 });

@@ -8,6 +8,8 @@ export const routes = {
   forgotPassword: '/(auth)/forgot-password' as Href,
   resetPassword: '/(auth)/reset-password' as Href,
   restoreAccount: '/(auth)/restore-account' as Href,
+  /** Email-verification and OAuth redirect target, sharecropr://auth/callback (SPEC-001-T58). */
+  authCallback: '/auth/callback' as Href,
   map: '/(tabs)/map' as Href,
   profile: '/(tabs)/profile' as Href,
   profileSecurity: '/(tabs)/profile/security' as Href,
@@ -15,5 +17,5 @@ export const routes = {
 } as const;
 
 /** Verify screen with the address the mail went to: signUp returns no session while confirmations are on (SPEC-001-T48). */
-export const verifyEmailHref = (email: string): Href =>
-  ({ pathname: '/(auth)/verify-email', params: { email } }) as Href;
+export const verifyEmailHref = (email: string, reason?: 'expired'): Href =>
+  ({ pathname: '/(auth)/verify-email', params: reason ? { email, reason } : { email } }) as Href;
