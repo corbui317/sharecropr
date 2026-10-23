@@ -16,6 +16,7 @@ jest.mock('expo-web-browser', () => ({
 jest.mock('expo-auth-session', () => ({
   makeRedirectUri: () => 'sharecropr://auth/callback',
 }));
+jest.mock('../code-exchange', () => ({ exchangeAuthCode: jest.fn() }));
 jest.mock('@/api/supabase', () => ({
   supabase: {
     auth: {
@@ -35,6 +36,9 @@ const apple = jest.requireMock<{ signInAsync: jest.Mock<() => Promise<unknown>> 
 const browser = jest.requireMock<{ openAuthSessionAsync: jest.Mock<() => Promise<unknown>> }>(
   'expo-web-browser',
 );
+const exchange = jest.requireMock<{
+  exchangeAuthCode: jest.Mock<(code: string) => Promise<{ error: 'link_invalid' | null }>>;
+}>('../code-exchange');
 const api = jest.requireMock<{
   supabase: { auth: Record<string, jest.Mock<(...a: unknown[]) => Promise<unknown>>> };
 }>('@/api/supabase');
@@ -74,5 +78,33 @@ describe('provider cancel', () => {
     browser.openAuthSessionAsync.mockResolvedValueOnce({ type: 'cancel' });
     expect(await signInWithGoogle()).toEqual({ error: null, cancelled: true });
     expect(api.supabase.auth.exchangeCodeForSession).not.toHaveBeenCalled();
+  });
+
+  test('Google success exchanges the parsed code via the shared single-flight (SPEC-001-T58)', async () => {
+    api.supabase.auth.signInWithOAuth!.mockResolvedValueOnce({ data: { url: 'https://x' }, error: null });
+    browser.openAuthSessionAsync.mockResolvedValueOnce({
+      type: 'success',
+      url: 'sharecropr://auth/callback?code=goog-1',
+    });
+    exchange.exchangeAuthCode.mockResolvedValueOnce({ error: null });
+    expect(await signInWithGoogle()).toEqual({ error: null });
+    expect(exchange.exchangeAuthCode).toHaveBeenCalledWith('goog-1');
+    expect(api.supabase.auth.exchangeCodeForSession).not.toHaveBeenCalled();
+  });
+
+  test('a failed exchange or a redirect without a code is an error (SPEC-001-T58)', async () => {
+    api.supabase.auth.signInWithOAuth!.mockResolvedValue({ data: { url: 'https://x' }, error: null });
+    browser.openAuthSessionAsync.mockResolvedValueOnce({
+      type: 'success',
+      url: 'sharecropr://auth/callback?code=goog-2',
+    });
+    exchange.exchangeAuthCode.mockResolvedValueOnce({ error: 'link_invalid' });
+    expect((await signInWithGoogle()).error?.message).toBe('oauth_exchange_failed');
+
+    browser.openAuthSessionAsync.mockResolvedValueOnce({
+      type: 'success',
+      url: 'sharecropr://auth/callback#error=access_denied',
+    });
+    expect((await signInWithGoogle()).error?.message).toBe('oauth_code_missing');
   });
 });

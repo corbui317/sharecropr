@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Location from 'expo-location';
 
 import type { DeviceLocation } from '@/domain/geo/types';
+import type { FollowEvent } from '@/features/map/lib/followMode';
 import { useFollowModeStore } from '@/features/map/stores/followModeStore';
 
 export type FollowModeController = {
@@ -9,7 +10,9 @@ export type FollowModeController = {
   following: boolean;
   requestPermission: () => Promise<boolean>;
   recenter: () => void;
-  onUserGesture: () => void;
+  /** A user pan/pinch/rotate began: follow clears now, not at gesture end (R04). */
+  onGestureStart: () => void;
+  onGestureEnd: () => void;
 };
 
 type Options = {
@@ -22,19 +25,27 @@ type Options = {
  */
 export function useFollowMode({ onAnimateToUser }: Options): FollowModeController {
   const following = useFollowModeStore((s) => s.following);
-  const setFollowing = useFollowModeStore((s) => s.setFollowing);
   const userLocationRef = useRef<DeviceLocation | null>(null);
   const [userLocation, setUserLocation] = useState<DeviceLocation | null>(null);
 
+  const animateRef = useRef(onAnimateToUser);
+  animateRef.current = onAnimateToUser;
+
+  // The reducer owns every follow decision; this only runs the effect it returns.
+  const run = useCallback((event: FollowEvent) => {
+    const effect = useFollowModeStore.getState().dispatch(event);
+    if (effect === 'animateToUser' && userLocationRef.current) {
+      animateRef.current(userLocationRef.current);
+    }
+  }, []);
+
   const applyLocation = useCallback(
-    (location: DeviceLocation, animate: boolean) => {
+    (location: DeviceLocation) => {
       userLocationRef.current = location;
       setUserLocation(location);
-      if (animate && useFollowModeStore.getState().following) {
-        onAnimateToUser(location);
-      }
+      run({ type: 'locationFix' });
     },
-    [onAnimateToUser],
+    [run],
   );
 
   useEffect(() => {
@@ -57,7 +68,7 @@ export function useFollowMode({ onAnimateToUser }: Options): FollowModeControlle
             accuracy: Location.Accuracy.Balanced,
           });
           if (cancelled) return;
-          applyLocation(toDevice(initial), useFollowModeStore.getState().following);
+          applyLocation(toDevice(initial));
         } catch {
           if (cancelled) return;
         }
@@ -70,7 +81,7 @@ export function useFollowMode({ onAnimateToUser }: Options): FollowModeControlle
           },
           (fix) => {
             if (cancelled) return;
-            applyLocation(toDevice(fix), useFollowModeStore.getState().following);
+            applyLocation(toDevice(fix));
           },
         );
         if (cancelled) {
@@ -96,21 +107,18 @@ export function useFollowMode({ onAnimateToUser }: Options): FollowModeControlle
   }, []);
 
   const recenter = useCallback(() => {
-    setFollowing(true);
-    if (userLocationRef.current) {
-      onAnimateToUser(userLocationRef.current);
-    }
-  }, [onAnimateToUser, setFollowing]);
+    run({ type: 'recenter', hasFix: userLocationRef.current !== null });
+  }, [run]);
 
-  const onUserGesture = useCallback(() => {
-    setFollowing(false);
-  }, [setFollowing]);
+  const onGestureStart = useCallback(() => run({ type: 'gestureStart' }), [run]);
+  const onGestureEnd = useCallback(() => run({ type: 'gestureEnd' }), [run]);
 
   return {
     userLocation,
     following,
     requestPermission,
     recenter,
-    onUserGesture,
+    onGestureStart,
+    onGestureEnd,
   };
 }

@@ -1,23 +1,26 @@
 import * as Crypto from 'expo-crypto';
 
+import { takeRetryAfter, type AuthEndpoint } from '@/api/http';
 import { wipeQueryCache } from '@/api/query-cache';
 import { signOutWithLocalFallback, supabase } from '@/api/supabase';
 import { checkPasswordBreached, type Sha1Hex } from '@/domain/auth/hibp';
 import { normalizeEmail, isValidEmail } from '@/domain/validation/email';
 import { validatePasswordLength } from '@/domain/validation/password';
 
-export type AuthErrorCode =
-  | 'invalid_email'
-  | 'password_too_short'
-  | 'password_too_long'
-  | 'breach_check_unavailable'
-  | 'password_breached'
-  | 'network'
-  | 'bad_credentials'
-  | 'email_not_confirmed'
-  | 'rate_limited'
-  | 'suspended'
-  | 'unknown';
+export const AUTH_ERROR_CODES = [
+  'invalid_email',
+  'password_too_short',
+  'password_too_long',
+  'breach_check_unavailable',
+  'password_breached',
+  'network',
+  'bad_credentials',
+  'email_not_confirmed',
+  'rate_limited',
+  'suspended',
+  'unknown',
+] as const;
+export type AuthErrorCode = (typeof AUTH_ERROR_CODES)[number];
 
 // Hermes has no crypto.subtle, so the domain hasher is injected from expo-crypto.
 const sha1Hex: Sha1Hex = async (input) =>
@@ -55,6 +58,42 @@ export function mapAuthError(error: AuthErrorLike): AuthErrorCode {
   return 'unknown';
 }
 
+/** A throw from the SDK (non-AuthError, transport) must never escape as a rejection (Invariant 10). */
+function toAuthErrorLike(e: unknown): AuthErrorLike {
+  if (typeof e === 'object' && e !== null) {
+    const o = e as Partial<AuthErrorLike>;
+    return {
+      message: typeof o.message === 'string' ? o.message : '',
+      name: typeof o.name === 'string' ? o.name : undefined,
+      status: typeof o.status === 'number' ? o.status : undefined,
+      code: typeof o.code === 'string' ? o.code : undefined,
+    };
+  }
+  return { message: '' };
+}
+
+/** Header hint captured by the client fetch (src/api/http.ts), else GoTrue's "after N seconds" message. */
+function retryAfterFor(endpoint: AuthEndpoint, error: AuthErrorLike): number | null {
+  const header = takeRetryAfter(endpoint);
+  if (header !== null) return header;
+  const m = /after (\d+) seconds?/i.exec(error.message);
+  return m ? Number(m[1]) : null;
+}
+
+/**
+ * The email-verification (and OAuth) redirect target. Allowlisted in supabase/config.toml
+ * ([auth] additional_redirect_urls) and shared with oauth.ts; without it GoTrue falls back to
+ * site_url. app/auth/callback.tsx handles it (SPEC-001-T58).
+ */
+export const AUTH_CALLBACK_REDIRECT = 'sharecropr://auth/callback';
+
+// In memory only, never persisted: the address a verification mail was just sent to, so an expired
+// link can route to the right resend screen without writing PII to disk.
+let pendingVerificationEmail: string | null = null;
+export function getPendingVerificationEmail(): string | null {
+  return pendingVerificationEmail;
+}
+
 export async function signUpWithEmail(email: string, password: string) {
   if (!isValidEmail(email)) {
     return { error: 'invalid_email' as const };
@@ -66,16 +105,18 @@ export async function signUpWithEmail(email: string, password: string) {
   const breachErr = await breachError(password);
   if (breachErr) return { error: breachErr };
 
-  const { data, error } = await supabase.auth.signUp({
-    email: normalizeEmail(email),
-    password,
-  });
-
-  if (error) {
-    return { error: mapAuthError(error) };
+  try {
+    const { data, error } = await supabase.auth.signUp({
+      email: normalizeEmail(email),
+      password,
+      options: { emailRedirectTo: AUTH_CALLBACK_REDIRECT },
+    });
+    if (error) return { error: mapAuthError(error) };
+    pendingVerificationEmail = normalizeEmail(email);
+    return { data, error: null };
+  } catch (e) {
+    return { error: mapAuthError(toAuthErrorLike(e)) };
   }
-
-  return { data, error: null };
 }
 
 export async function signInWithEmail(email: string, password: string) {
@@ -83,32 +124,52 @@ export async function signInWithEmail(email: string, password: string) {
     return { error: 'invalid_email' as const };
   }
 
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email: normalizeEmail(email),
-    password,
-  });
-
-  if (error) {
-    return { error: mapAuthError(error) };
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: normalizeEmail(email),
+      password,
+    });
+    if (error) {
+      const code = mapAuthError(error);
+      return code === 'rate_limited'
+        ? { error: code, retryAfterSec: retryAfterFor('token', error) }
+        : { error: code };
+    }
+    return { data, error: null };
+  } catch (e) {
+    return { error: mapAuthError(toAuthErrorLike(e)) };
   }
-
-  return { data, error: null };
 }
 
 export async function signOut(): Promise<void> {
   try {
     await signOutWithLocalFallback();
   } finally {
+    pendingVerificationEmail = null;
     await wipeQueryCache(); // R25: the cache file goes even if the session purge failed
   }
 }
 
-export async function resendVerificationEmail(email: string): Promise<{ error: AuthErrorCode | null }> {
-  const { error } = await supabase.auth.resend({
-    type: 'signup',
-    email: normalizeEmail(email),
-  });
-  return { error: error ? mapAuthError(error) : null };
+export async function resendVerificationEmail(
+  email: string,
+): Promise<{ error: AuthErrorCode | null; retryAfterSec?: number | null }> {
+  try {
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email: normalizeEmail(email),
+      options: { emailRedirectTo: AUTH_CALLBACK_REDIRECT },
+    });
+    if (!error) {
+      pendingVerificationEmail = normalizeEmail(email);
+      return { error: null };
+    }
+    const code = mapAuthError(error);
+    return code === 'rate_limited'
+      ? { error: code, retryAfterSec: retryAfterFor('resend', error) }
+      : { error: code };
+  } catch (e) {
+    return { error: mapAuthError(toAuthErrorLike(e)) };
+  }
 }
 
 /**
@@ -117,29 +178,15 @@ export async function resendVerificationEmail(email: string): Promise<{ error: A
  */
 export const PASSWORD_RESET_REDIRECT = 'sharecropr://reset-password';
 
-export async function requestPasswordReset(email: string) {
-  return supabase.auth.resetPasswordForEmail(normalizeEmail(email), {
-    redirectTo: PASSWORD_RESET_REDIRECT,
-  });
-}
-
-type RecoveryExchange = { error: 'link_invalid' | null };
-const recoveryExchanges = new Map<string, Promise<RecoveryExchange>>();
-
-/**
- * Exchange the PKCE recovery code for a session. The code is single-use, so a duplicate exchange
- * (StrictMode's double effect, a remount) would fail and wrongly show "link invalid": one exchange
- * per code. Resolved entries are kept; they are tiny.
- */
-export function exchangeRecoveryCode(code: string): Promise<RecoveryExchange> {
-  const existing = recoveryExchanges.get(code);
-  if (existing) return existing;
-  const exchange = supabase.auth.exchangeCodeForSession(code).then(
-    ({ error }): RecoveryExchange => ({ error: error ? 'link_invalid' : null }),
-    (): RecoveryExchange => ({ error: 'link_invalid' }),
-  );
-  recoveryExchanges.set(code, exchange);
-  return exchange;
+export async function requestPasswordReset(email: string): Promise<{ error: AuthErrorCode | null }> {
+  try {
+    const { error } = await supabase.auth.resetPasswordForEmail(normalizeEmail(email), {
+      redirectTo: PASSWORD_RESET_REDIRECT,
+    });
+    return { error: error ? mapAuthError(error) : null };
+  } catch (e) {
+    return { error: mapAuthError(toAuthErrorLike(e)) };
+  }
 }
 
 export async function updatePassword(newPassword: string) {

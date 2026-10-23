@@ -10,10 +10,12 @@ import {
 type Props = TextInputProps & {
   label: string;
   error?: string;
+  /** 'none' while the text changes every second (a countdown); the owner announces it instead. */
+  errorLiveRegion?: 'polite' | 'none';
 };
 
 export const AuthTextField = forwardRef<TextInput, Props>(function AuthTextField(
-  { label, error, style, ...props },
+  { label, error, errorLiveRegion = 'polite', style, ...props },
   ref,
 ) {
   return (
@@ -27,7 +29,7 @@ export const AuthTextField = forwardRef<TextInput, Props>(function AuthTextField
         {...props}
       />
       {error ? (
-        <Text style={styles.error} accessibilityLiveRegion="polite">
+        <Text style={styles.error} accessibilityLiveRegion={errorLiveRegion}>
           {error}
         </Text>
       ) : null}

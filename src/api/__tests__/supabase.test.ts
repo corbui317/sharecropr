@@ -24,7 +24,7 @@ jest.mock('@supabase/supabase-js', () => {
     refreshSession: jest.fn(() => Promise.resolve({ data: { session: null } })),
     signOut: jest.fn(() => Promise.resolve({ error: null })),
   };
-  return { createClient: () => ({ auth }), __auth: auth };
+  return { createClient: jest.fn(() => ({ auth })), __auth: auth };
 });
 
 jest.mock('../secure-storage', () => ({
@@ -60,6 +60,16 @@ describe('src/api/supabase lifecycle seam', () => {
   test('two concurrent refreshes make one refreshSession call (SPEC-001-T18)', async () => {
     await Promise.all([refreshSessionSingleFlight(), refreshSessionSingleFlight()]);
     expect(auth.refreshSession).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('client construction', () => {
+  test('createClient is given the Retry-After-aware fetch (SPEC-001-T56)', () => {
+    const { createClient } = jest.requireMock<{ createClient: jest.Mock }>('@supabase/supabase-js');
+    expect(createClient).toHaveBeenCalledTimes(1);
+    expect(createClient.mock.calls[0]?.[2]).toEqual(
+      expect.objectContaining({ global: { fetch: expect.any(Function) } }),
+    );
   });
 });
 

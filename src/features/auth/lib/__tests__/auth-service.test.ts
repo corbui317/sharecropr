@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, jest, test } from '@jest/globals';
 
 import {
+  AUTH_ERROR_CODES,
+  AUTH_CALLBACK_REDIRECT,
   PASSWORD_RESET_REDIRECT,
   cancelAccountDeletion,
-  exchangeRecoveryCode,
   getDeletionStatus,
+  getPendingVerificationEmail,
   mapAuthError,
   requestAccountDeletion,
   requestEmailChange,
@@ -12,6 +14,7 @@ import {
   resendVerificationEmail,
   signInWithEmail,
   signOut,
+  signUpWithEmail,
 } from '../auth-service';
 
 // SPEC-001-T19 (sign-out slice), T46, T47, T48, T49, T51, T53: the auth-service contract.
@@ -24,6 +27,10 @@ jest.mock('expo-crypto', () => ({
 jest.mock('@/api/query-cache', () => ({
   wipeQueryCache: jest.fn(() => Promise.resolve()),
 }));
+jest.mock('@/domain/auth/hibp', () => ({
+  checkPasswordBreached: jest.fn(() => Promise.resolve({ breached: false })),
+}));
+jest.mock('@/api/http', () => ({ takeRetryAfter: jest.fn(() => null) }));
 jest.mock('@/api/supabase', () => ({
   supabase: {
     auth: {
@@ -44,6 +51,7 @@ const api = jest.requireMock<{
   supabase: { auth: Record<string, Fn>; rpc: Fn };
   signOutWithLocalFallback: Fn;
 }>('@/api/supabase');
+const http = jest.requireMock<{ takeRetryAfter: jest.Mock }>('@/api/http');
 const crypto = jest.requireMock<{ randomUUID: jest.Mock }>('expo-crypto');
 const cache = jest.requireMock<{ wipeQueryCache: jest.Mock }>('@/api/query-cache');
 
@@ -89,24 +97,52 @@ describe('password reset', () => {
     });
     expect(PASSWORD_RESET_REDIRECT).toBe('sharecropr://reset-password');
   });
+});
 
-  test('exchangeRecoveryCode: concurrent calls for one code make one exchange (SPEC-001-T47)', async () => {
-    api.supabase.auth.exchangeCodeForSession!.mockResolvedValue({ data: {}, error: null });
-    const [a, b] = await Promise.all([exchangeRecoveryCode('c1'), exchangeRecoveryCode('c1')]);
-    expect(api.supabase.auth.exchangeCodeForSession).toHaveBeenCalledTimes(1);
-    expect(a).toEqual({ error: null });
-    expect(b).toEqual({ error: null });
+describe('email verification redirect', () => {
+  beforeEach(async () => {
+    api.signOutWithLocalFallback.mockResolvedValue({ remoteRevoked: true });
+    await signOut(); // clears the in-memory pending address between tests
   });
 
-  test('exchangeRecoveryCode: SDK error or rejection -> link_invalid (SPEC-001-T47)', async () => {
-    api.supabase.auth.exchangeCodeForSession!.mockResolvedValueOnce({
-      data: null,
-      error: { message: 'invalid flow state' },
-    });
-    expect(await exchangeRecoveryCode('bad-1')).toEqual({ error: 'link_invalid' });
+  test('signUp and resend pass emailRedirectTo sharecropr://auth/callback (SPEC-001-T58)', async () => {
+    api.supabase.auth.signUp!.mockResolvedValueOnce({ data: {}, error: null });
+    api.supabase.auth.resend!.mockResolvedValueOnce({ error: null });
+    await signUpWithEmail('a@b.org', 'password-long-enough');
+    await resendVerificationEmail('a@b.org');
+    expect(AUTH_CALLBACK_REDIRECT).toBe('sharecropr://auth/callback');
+    expect(api.supabase.auth.signUp).toHaveBeenCalledWith(
+      expect.objectContaining({ options: { emailRedirectTo: 'sharecropr://auth/callback' } }),
+    );
+    expect(api.supabase.auth.resend).toHaveBeenCalledWith(
+      expect.objectContaining({ options: { emailRedirectTo: 'sharecropr://auth/callback' } }),
+    );
+  });
 
-    api.supabase.auth.exchangeCodeForSession!.mockRejectedValueOnce(new Error('offline'));
-    expect(await exchangeRecoveryCode('bad-2')).toEqual({ error: 'link_invalid' });
+  test('the pending address is set after a successful signUp and cleared by signOut (SPEC-001-T58)', async () => {
+    expect(getPendingVerificationEmail()).toBeNull();
+    api.supabase.auth.signUp!.mockResolvedValueOnce({ data: {}, error: null });
+    await signUpWithEmail(' A@B.org ', 'password-long-enough');
+    expect(getPendingVerificationEmail()).toBe('a@b.org');
+    api.signOutWithLocalFallback.mockResolvedValueOnce({ remoteRevoked: true });
+    await signOut();
+    expect(getPendingVerificationEmail()).toBeNull();
+  });
+
+  test('a failed signUp or resend does not set the pending address (SPEC-001-T58)', async () => {
+    api.supabase.auth.signUp!.mockResolvedValueOnce({ data: null, error: { message: 'x', status: 500 } });
+    await signUpWithEmail('a@b.org', 'password-long-enough');
+    api.supabase.auth.resend!.mockResolvedValueOnce({ error: { message: 'x', status: 500 } });
+    await resendVerificationEmail('c@d.org');
+    expect(getPendingVerificationEmail()).toBeNull();
+  });
+
+  test('the pending address is cleared even when sign-out rejects (SPEC-001-T58)', async () => {
+    api.supabase.auth.signUp!.mockResolvedValueOnce({ data: {}, error: null });
+    await signUpWithEmail('a@b.org', 'password-long-enough');
+    api.signOutWithLocalFallback.mockRejectedValueOnce(new Error('x'));
+    await expect(signOut()).rejects.toThrow('x');
+    expect(getPendingVerificationEmail()).toBeNull();
   });
 });
 
@@ -189,8 +225,79 @@ describe('resendVerificationEmail', () => {
     api.supabase.auth.resend!.mockResolvedValueOnce({
       error: { status: 429, code: 'over_email_send_rate_limit', message: 'rate limit' },
     });
-    expect(await resendVerificationEmail('a@b.org')).toEqual({ error: 'rate_limited' });
+    expect(await resendVerificationEmail('a@b.org')).toEqual({
+      error: 'rate_limited',
+      retryAfterSec: null,
+    });
     api.supabase.auth.resend!.mockResolvedValueOnce({ error: null });
     expect(await resendVerificationEmail('a@b.org')).toEqual({ error: null });
+  });
+});
+
+describe('Retry-After and never-reject contract', () => {
+  test('rate-limited sign-in returns the header hint (SPEC-001-T56)', async () => {
+    http.takeRetryAfter.mockReturnValueOnce(120);
+    api.supabase.auth.signInWithPassword!.mockResolvedValueOnce({
+      data: null,
+      error: { message: 'rate limit', status: 429, code: 'over_request_rate_limit' },
+    });
+    expect(await signInWithEmail('a@b.org', 'password-long-enough')).toEqual({
+      error: 'rate_limited',
+      retryAfterSec: 120,
+    });
+    expect(http.takeRetryAfter).toHaveBeenCalledWith('token');
+  });
+
+  test('resend 429 without a header parses seconds from the GoTrue message (SPEC-001-T56)', async () => {
+    api.supabase.auth.resend!.mockResolvedValueOnce({
+      error: {
+        status: 429,
+        code: 'over_email_send_rate_limit',
+        message: 'For security purposes, you can only request this after 47 seconds.',
+      },
+    });
+    expect(await resendVerificationEmail('a@b.org')).toEqual({ error: 'rate_limited', retryAfterSec: 47 });
+  });
+
+  test('rate-limited with neither source -> retryAfterSec null (SPEC-001-T56)', async () => {
+    api.supabase.auth.signInWithPassword!.mockResolvedValueOnce({
+      data: null,
+      error: { message: 'rate limit', status: 429 },
+    });
+    expect(await signInWithEmail('a@b.org', 'password-long-enough')).toEqual({
+      error: 'rate_limited',
+      retryAfterSec: null,
+    });
+  });
+
+  test('no SDK call ever rejects out of the auth-service (SPEC-001-T57)', async () => {
+    const calls: Array<[string, () => Promise<unknown>]> = [
+      ['signInWithPassword', () => signInWithEmail('a@b.org', 'password-long-enough')],
+      ['signUp', () => signUpWithEmail('a@b.org', 'a-long-enough-passphrase-1')],
+      ['resend', () => resendVerificationEmail('a@b.org')],
+      ['resetPasswordForEmail', () => requestPasswordReset('a@b.org')],
+    ];
+    for (const [fn, run] of calls) {
+      api.supabase.auth[fn]!.mockRejectedValueOnce(new Error('x'));
+      expect(await run()).toEqual({ error: 'unknown' });
+      api.supabase.auth[fn]!.mockRejectedValueOnce({ name: 'AuthRetryableFetchError', status: 0, message: 'offline' });
+      expect(await run()).toEqual({ error: 'network' });
+    }
+  });
+
+  test('requestPasswordReset returns a normalized error code (SPEC-001-T57)', async () => {
+    api.supabase.auth.resetPasswordForEmail!.mockResolvedValueOnce({ error: null });
+    expect(await requestPasswordReset('a@b.org')).toEqual({ error: null });
+    api.supabase.auth.resetPasswordForEmail!.mockResolvedValueOnce({
+      error: { name: 'AuthRetryableFetchError', status: 0, message: 'x' },
+    });
+    expect(await requestPasswordReset('a@b.org')).toEqual({ error: 'network' });
+    api.supabase.auth.resetPasswordForEmail!.mockResolvedValueOnce({ error: { status: 429, message: 'x' } });
+    expect(await requestPasswordReset('a@b.org')).toEqual({ error: 'rate_limited' });
+  });
+
+  test('AUTH_ERROR_CODES lists every code (SPEC-001-T57)', () => {
+    expect(AUTH_ERROR_CODES).toContain('rate_limited');
+    expect(AUTH_ERROR_CODES).toHaveLength(11);
   });
 });

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useLinkingURL } from 'expo-linking';
 import { router, useLocalSearchParams } from 'expo-router';
 
 import { AuthButton } from '@/features/auth/components/AuthButton';
@@ -6,8 +7,12 @@ import { AuthScreenShell } from '@/features/auth/components/AuthScreenShell';
 import { AuthTextField } from '@/features/auth/components/AuthTextField';
 import { BootSplash } from '@/features/auth/components/BootSplash';
 import { useAuthSession } from '@/features/auth/hooks/useAuthSession';
-import { exchangeRecoveryCode, updatePassword } from '@/features/auth/lib/auth-service';
+import { updatePassword } from '@/features/auth/lib/auth-service';
+import type { AuthErrorCode } from '@/features/auth/lib/auth-service';
+import { exchangeAuthCode } from '@/features/auth/lib/code-exchange';
 import { authCopy } from '@/features/auth/lib/copy';
+import { parseAuthRedirect } from '@/features/auth/lib/deep-link';
+import { authErrorCopy } from '@/features/auth/lib/error-copy';
 import { routes } from '@/features/auth/lib/routes';
 import { TIMED_OUT, withTimeout } from '@/features/auth/lib/with-timeout';
 
@@ -17,7 +22,10 @@ export function ResetPasswordScreen() {
   const params = useLocalSearchParams<{ code?: string; error?: string; error_code?: string }>();
   const { status, session } = useAuthSession();
   const code = typeof params.code === 'string' ? params.code : undefined;
-  const linkError = Boolean(params.error ?? params.error_code);
+  // GoTrue often reports an expired link in the URL fragment, which useLocalSearchParams cannot see.
+  const linkUrl = useLinkingURL();
+  const linkError =
+    Boolean(params.error ?? params.error_code) || parseAuthRedirect(linkUrl).kind === 'error';
   const [exchange, setExchange] = useState<{ code: string; ok: boolean } | null>(null);
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -28,7 +36,7 @@ export function ResetPasswordScreen() {
   useEffect(() => {
     if (!code || linkError) return;
     let active = true;
-    void withTimeout(exchangeRecoveryCode(code), EXCHANGE_TIMEOUT_MS).then(
+    void withTimeout(exchangeAuthCode(code), EXCHANGE_TIMEOUT_MS).then(
       (res) => {
         if (active) setExchange({ code, ok: res !== TIMED_OUT && !res.error });
       },
@@ -50,7 +58,7 @@ export function ResetPasswordScreen() {
   const handleSubmit = async () => {
     setError(null);
     if (password !== confirm) {
-      setError('Passwords do not match.');
+      setError(authCopy.passwordsDontMatch);
       return;
     }
 
@@ -58,24 +66,9 @@ export function ResetPasswordScreen() {
     const result = await updatePassword(password);
     setLoading(false);
 
-    if (result.error === 'password_too_short') {
-      setError(authCopy.passwordTooShort);
-      return;
-    }
-    if (result.error === 'password_too_long') {
-      setError(authCopy.passwordTooLong);
-      return;
-    }
-    if (result.error === 'breach_check_unavailable') {
-      setError(authCopy.breachCheckUnavailable);
-      return;
-    }
-    if (result.error === 'password_breached') {
-      setError(authCopy.passwordBreached);
-      return;
-    }
     if ('error' in result && result.error) {
-      setError('Could not update password. Request a new reset link.');
+      const code = typeof result.error === 'string' ? result.error : 'unknown';
+      setError(authErrorCopy(code as AuthErrorCode, 'password_update'));
       return;
     }
 

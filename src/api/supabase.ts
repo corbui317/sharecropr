@@ -1,6 +1,7 @@
 import { createClient, type Session } from '@supabase/supabase-js';
 export type { Session, User } from '@supabase/supabase-js';
 
+import { createAuthFetch } from './http';
 import { chunkedSecureStorage } from './secure-storage';
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
@@ -23,6 +24,8 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: false,
     flowType: 'pkce',
   },
+  // SPEC-001-T56: AuthError carries no headers, so Retry-After is captured here.
+  global: { fetch: createAuthFetch() },
 });
 
 let refreshLock: Promise<Session | null> | null = null;

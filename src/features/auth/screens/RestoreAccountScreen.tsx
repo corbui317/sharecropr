@@ -9,7 +9,8 @@ import { DeletionStatusError } from '@/features/auth/components/DeletionStatusEr
 import { useAuthSession } from '@/features/auth/hooks/useAuthSession';
 import { useDeletionStatus } from '@/features/auth/hooks/useDeletionStatus';
 import { useIntentKey } from '@/features/auth/hooks/useIntentKey';
-import { cancelAccountDeletion, signOut } from '@/features/auth/lib/auth-service';
+import { useSignOutAndRedirect } from '@/features/auth/hooks/useSignOutAndRedirect';
+import { cancelAccountDeletion } from '@/features/auth/lib/auth-service';
 import { authCopy } from '@/features/auth/lib/copy';
 import { routes } from '@/features/auth/lib/routes';
 
@@ -17,6 +18,8 @@ export function RestoreAccountScreen() {
   const { status, session, user } = useAuthSession();
   const { state, retry } = useDeletionStatus(user?.id ?? null);
   const intent = useIntentKey();
+  const startOver = useSignOutAndRedirect(routes.signUp);
+  const continueDeletion = useSignOutAndRedirect(routes.signIn);
   const [loading, setLoading] = useState(false);
   const [restoreError, setRestoreError] = useState<string | null>(null);
   const [graceElapsed, setGraceElapsed] = useState(false);
@@ -31,12 +34,12 @@ export function RestoreAccountScreen() {
   if (graceElapsed || deletionStatus.grace_elapsed) {
     return (
       <AuthScreenShell title="Account deleted" subtitle={authCopy.graceElapsed}>
-        <AuthButton
-          label="Start over"
-          onPress={() => {
-            void signOut().then(() => router.replace(routes.signUp));
-          }}
-        />
+        <AuthButton label="Start over" loading={startOver.pending} onPress={startOver.signOut} />
+        {startOver.failed ? (
+          <Text accessibilityLiveRegion="polite" style={styles.error}>
+            {authCopy.signOutFailed}
+          </Text>
+        ) : null}
       </AuthScreenShell>
     );
   }
@@ -73,10 +76,14 @@ export function RestoreAccountScreen() {
       <AuthButton
         label={authCopy.restoreContinue}
         variant="secondary"
-        onPress={() => {
-          void signOut().then(() => router.replace(routes.signIn));
-        }}
+        loading={continueDeletion.pending}
+        onPress={continueDeletion.signOut}
       />
+      {continueDeletion.failed ? (
+        <Text accessibilityLiveRegion="polite" style={styles.error}>
+          {authCopy.signOutFailed}
+        </Text>
+      ) : null}
       {restoreError ? (
         <Text accessibilityLiveRegion="polite" style={styles.error}>
           {restoreError}

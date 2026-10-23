@@ -116,7 +116,11 @@ Build them in the first sprint, while the reasons are fresh and there are no gre
 
 > **2026-10-21 — the predicted drift happened.** By EPIC-03 the spec register again showed all 18 specs `Approved` (front matter and registry said `Review`), its dependency column disagreed with four specs' `Schema depends on`, and AGENTS.md described traceability and the RN-import ban as CI-enforced when no workflow ran them. Fixed by hand; `.github/workflows/app.yml` now runs lint, typecheck, auth unit tests, and the agent-memory bridge check. **The doc gates themselves still do not exist** — [CI/CD §2](../05-operations/02-cicd.md#2-required-checks) now carries a State column so the gap is visible.
 
-> **2026-10-21 — first gate built.** `npm run ci:doc-gates` checks `Schema depends on` is acyclic and the register column matches front matter, with deliberately-broken fixtures under `scripts/fixtures/doc-gates/` (SCR-0003). Symmetry, normative-prose, approval, cross-reference, and staleness gates remain planned.
+> **2026-10-21 — first gate built.** `npm run ci:doc-gates` checks `Schema depends on` is acyclic and the register column matches front matter, with deliberately-broken fixtures under `scripts/fixtures/doc-gates/` (SCR-0003). Normative-prose, approval, cross-reference, and staleness gates remain planned (symmetry: see next note).
+
+> **2026-10-22 — symmetry half built.** `ci:doc-gates` now also fails on an asymmetric `Behaviourally coupled with` edge (SCR-0004); 13 one-sided edges in the docs were closed by adding the reciprocal. Normative-prose, approval, cross-reference and staleness gates remain planned.
+
+> **2026-10-22 — traceability gate built.** `ci:spec-traceability` (SCR-0005): 1,012 MUSTs, 38 traced; the other 974 (36 with no §13 row, 938 with no echoed test) are a shrink-only baseline. New gaps fail.
 
 ---
 

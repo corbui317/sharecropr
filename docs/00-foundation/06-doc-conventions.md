@@ -59,7 +59,7 @@ Every normative statement inside a spec carries an ID so tests, code comments, a
 Rules:
 
 - IDs are assigned in order and never renumbered. Deleting a requirement leaves a tombstone: `SPEC-010-R09 — *Removed in v1.2. See ADR-0011.*`
-- Every `MUST` requirement maps to at least one test case ID in the spec's Test Plan. A planned CI gate will fail a `MUST` with no linked test ([CI/CD §5](../05-operations/02-cicd.md)); until it exists, reviewers check this by hand.
+- Every `MUST` requirement maps to at least one test case ID in the spec's Test Plan. `ci:spec-traceability` fails a `MUST` with no linked test ([CI/CD §5](../05-operations/02-cicd.md)); pre-existing gaps are in its shrink-only baseline.
 
 ### 3.3 Test cases — `SPEC-###-T##`
 

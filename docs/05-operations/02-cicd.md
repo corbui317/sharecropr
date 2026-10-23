@@ -1,6 +1,6 @@
 # CI/CD
 
-**Status:** Approved · **Version:** 1.0.6 · **Owner:** Platform Engineering
+**Status:** Approved · **Version:** 1.0.9 · **Owner:** Platform Engineering
 
 GitHub Actions for verification, EAS for building and shipping. The pipeline's job is to make the [five rules](../README.md) mechanically enforced rather than culturally enforced, because culture degrades under deadline pressure and a `grep` in CI does not.
 
@@ -51,14 +51,14 @@ None of these are advisory once built. A PR cannot merge with any *running* chec
 | `integration` | Any failure | Planned |
 | `concurrency` | Any hazard H1–H8 | Planned |
 | `security-static` | §4 checks | **Partial** — `db.yml` private-grant gate runs; definer-allowlist is a stub |
-| `spec-traceability` | A `MUST` with no linked test | Planned |
-| `doc-gates` | §5.1 gates | **Partial** — `app.yml` runs the schema-graph acyclic half + register sync (SCR-0003); symmetry (SCR-0004) and the other §5.1 gates planned |
+| `spec-traceability` | A `MUST` with no linked test | Running — `app.yml`; existing gaps sit in a shrink-only baseline (SCR-0005) |
+| `doc-gates` | §5.1 gates | **Partial** — `app.yml` runs schema-graph acyclic + coupling symmetric + register sync (SCR-0003, SCR-0004); normative-prose, approval, cross-reference and staleness gates planned |
 | `secret-scan` | Any secret in source or the built bundle | Planned |
 | `e2e-smoke` | Any smoke flow on either platform | Planned |
 | `perf-baseline` | An unreviewed `EXPLAIN` plan change on a hot path | Planned |
 | `map-style` | An invalid style JSON, or one referencing a tile, sprite, or glyph host we do not control (§4.1) | Running (app.yml) |
 | `map-attribution` | The OSM attribution missing, zero-area, or obscured in any map state — **NFR-99, a licence obligation** (§4.1) | Planned |
-| `map-egress` | Any map-screen request to a non-allowlisted host, or a tile request carrying a credential or a coordinate — NFR-102 (§4.1) | Planned |
+| `map-egress` | Any map-screen request to a non-allowlisted host, or a tile request carrying a credential or a coordinate — NFR-102 (§4.1) | **Partial** — `app.yml` runs the static half (`ci:map-egress-static`: style/config hosts, no credential or coordinate in URLs, SPEC-008-T74/T81); the wire capture (`ci:assert-map-egress`, T78–T80) is planned |
 
 Two approvals required, and a **`DB` CODEOWNERS approval** if `supabase/migrations/**` changed. *(Partial: [`.github/CODEOWNERS`](../../.github/CODEOWNERS) names the DB owner for `supabase/migrations/`, and `app.yml`/`db.yml` now run on pushes to `develop` as well as `main`. **Branch protection is not configured**, so nothing yet blocks a merge, and with a single maintainer "Require review from Code Owners" cannot be satisfied — see SCR-0002.)*
 
@@ -178,6 +178,8 @@ Parses `docs/03-specs/*.md`, extracts every requirement marked `MUST`, and confi
 
 This is what makes [the doc conventions](../00-foundation/06-doc-conventions.md) real rather than aspirational.
 
+**How it ratchets (SCR-0005).** A `MUST` is *mapped* when a `Covers` cell in a §13 table cites it (an R-ID in §13.2 "Expected" prose does not count), and *traced* when at least one of the T-IDs that cite it is echoed as `SPEC-NNN-Tnn` in a test source: a file under `src/`, `app/`, `supabase/tests/`, `packages/`, `e2e/` or `.maestro/` that is in `__tests__/`, named `*.test.*`, a `supabase/tests/*.sql`, or an `e2e`/`.maestro` flow. Production files, `docs/` and `scripts/` never count. Gaps that existed when the gate landed are listed in `scripts/spec-traceability.baseline.json`, which may only shrink. The gate goes red on a gap not listed there (`must-unmapped`, `must-untested`, `echo-unknown`), on a listed gap that is now closed (`baseline-stale`), and, with `--base-ref` (the PR base, or `github.event.before` on a push), on any entry not in the base commit's baseline (`baseline-grew`). There is no status exemption: a `Draft` spec's `MUST` fails like any other. Every package that adds a test echo must also shrink the baseline (`npm run ci:spec-traceability -- --update-baseline`); otherwise CI is red with `baseline-stale`.
+
 ### 5.1 The checks the traceability gate cannot see
 
 The `MUST`→test gate only sees requirements that were written as requirements. Five rate limits in SPEC-010 lived in a prose cell for the whole first draft, so they had no ID, no traceability row, and therefore no test — invisible to the one check designed to catch exactly that. These five gates close the gaps found in the [2026-08-09 review](../07-review/01-workflow-architect-review.md):
@@ -205,7 +207,7 @@ The `MUST`→test gate only sees requirements that were written as requirements.
 
 The pattern is the one already proven by the transition table: put the fact in the database, generate the copy, and let CI fail on drift. Every finding in the review's process section was a fact that lived in two places with nothing comparing them.
 
-> **Only the schema-graph gate's acyclic half exists** (`npm run ci:doc-gates`, SCR-0003, which also checks the register's `Schema depends on` column against front matter); the rest of this section is planned. Until the rest is real, the 2026-08-09 fixes are a snapshot and the doc set will drift back to where it was. Build them in the first sprint, while the reasons are fresh and there are no green builds to break — see [Development Notes N-07](../07-review/02-development-notes.md#n-07--the-ci-gates-are-described-not-built).
+> **Only the schema-graph gate exists, acyclic and symmetric halves** (`npm run ci:doc-gates`, SCR-0003/0004, which also checks the register's `Schema depends on` column against front matter); the rest of this section is planned. Until the rest is real, the 2026-08-09 fixes are a snapshot and the doc set will drift back to where it was. Build them in the first sprint, while the reasons are fresh and there are no green builds to break — see [Development Notes N-07](../07-review/02-development-notes.md#n-07--the-ci-gates-are-described-not-built).
 
 ---
 
@@ -355,3 +357,6 @@ Production-scoped secrets live in a protected GitHub Environment requiring a nam
 | 2026-10-22 | 1.0.4 | Platform Engineering | db.yml now runs `supabase start`; before this every run failed with "supabase start is not running" before any migration (WP-DBCI) |
 | 2026-10-22 | 1.0.5 | Platform Engineering | §2 db.yml rows corrected: pins the Supabase CLI (2.120.0, setup-cli v3.0.1), runs static gates before start, excludes all non-DB services, and writes the first migration error to the job summary; pgtap rows are wired, not passing and is red at the first real migration error (SCRUM-37) |
 | 2026-10-22 | 1.0.6 | Platform Engineering | H3 removed; renamed to location tiers per [ADR-0023](../01-architecture/adr/ADR-0023-postgis-location-tiers.md). `fine_cell` replaces `h3_r9` in the gate descriptions. |
+| 2026-10-22 | 1.0.7 | Platform Engineering | §2 `doc-gates` and §5.1 note: `ci:doc-gates` also fails on an asymmetric `Behaviourally coupled with` edge (SCRUM-16, SCR-0004) |
+| 2026-10-22 | 1.0.8 | Platform Engineering | §2 `spec-traceability` is Running; §5 documents the shrink-only baseline, the test-source definition and the one-echoed-T-ID rule (SCRUM-13, SCR-0005) |
+| 2026-10-22 | 1.0.9 | Platform Engineering | §2 `map-egress` is Partial: `app.yml` gains two steps before Install, the `ci:map-egress-static` fixture self-test and check (static half of SPEC-008-T74/T81, R78–R80). The wire capture `ci:assert-map-egress` (T78–T80) stays planned (SCRUM-28, SCR-0107) |

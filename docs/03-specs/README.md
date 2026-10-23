@@ -72,7 +72,7 @@ Every spec's front matter carries two rows, and conflating them is how a plan be
 
 The exchange calls the notification outbox and the notification catalog describes exchange events; messaging closes threads the exchange opened and the exchange writes system messages into them. Those are real couplings and they are mutually recursive, which is fine — they are satisfied by the shared baseline in [Data Model](../01-architecture/03-data-model.md) and [RLS Design](../01-architecture/05-rls-design.md), both of which land before any feature migration. Written as one undifferentiated "Depends on", they looked like a five-way cycle across SPEC-001/002/003 and SPEC-010/011/012/013, and the first person to topologically sort them would have concluded the plan could not be built.
 
-**Both properties are required**: the schema graph must be acyclic, and every `Behaviourally coupled with` edge must be symmetric — if A names B, B names A. The acyclic check and the register-vs-front-matter comparison now run in `ci:doc-gates` (`app.yml`; [CI/CD §5.1](../05-operations/02-cicd.md)); the symmetry check is still **planned, not built** (SCR-0004, [N-07](../07-review/02-development-notes.md#n-07--the-ci-gates-are-described-not-built)). The register's `Schema depends on` column MUST be copied from each spec's front matter, never typed independently — CI now enforces it.
+**Both properties are required**: the schema graph must be acyclic, and every `Behaviourally coupled with` edge must be symmetric — if A names B, B names A. The acyclic check and the register-vs-front-matter comparison now run in `ci:doc-gates` (`app.yml`; [CI/CD §5.1](../05-operations/02-cicd.md)), and so does the symmetry check (SCR-0004, [N-07](../07-review/02-development-notes.md#n-07--the-ci-gates-are-described-not-built)). The register's `Schema depends on` column MUST be copied from each spec's front matter, never typed independently — CI now enforces it.
 
 ### The critical path
 
@@ -116,7 +116,7 @@ Generated from `Schema depends on` only. A valid order: **001 → 002 → 003 �
 
 ## Traceability
 
-Every `MUST` requirement in every spec maps to at least one test ID in that spec's §13, and the test source echoes the namespaced ID (`SPEC-001-T34`). The CI gate for this ([CI/CD §5](../05-operations/02-cicd.md)) is **planned, not built** — reviewers check it by hand until it exists.
+Every `MUST` requirement in every spec maps to at least one test ID in that spec's §13, and the test source echoes the namespaced ID (`SPEC-001-T34`). The CI gate for this ([CI/CD §5](../05-operations/02-cicd.md)) runs in `app.yml` (`ci:spec-traceability`) against a shrink-only baseline of existing gaps.
 
 | Want to know… | Look at |
 | --- | --- |

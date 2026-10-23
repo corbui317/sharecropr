@@ -36,7 +36,7 @@ jest.mock('@/features/auth/lib/auth-service', () => ({
 }));
 
 type Fn = jest.Mock<(...a: unknown[]) => Promise<unknown>>;
-const svc = jest.requireMock<{ getDeletionStatus: Fn; cancelAccountDeletion: Fn }>(
+const svc = jest.requireMock<{ getDeletionStatus: Fn; cancelAccountDeletion: Fn; signOut: Fn }>(
   '@/features/auth/lib/auth-service',
 );
 const mockRouter = jest.requireMock<{ router: { replace: jest.Mock } }>('expo-router').router;
@@ -101,5 +101,38 @@ describe('RestoreAccountScreen', () => {
     await fireEvent.press(screen.getByText(authCopy.restoreKeep));
     await act(async () => {});
     expect(mockRouter.replace).toHaveBeenCalledWith(routes.map);
+  });
+
+  test('Continue with deletion: a failed sign-out shows inline copy and stays on the screen (SPEC-001-T55)', async () => {
+    svc.signOut.mockRejectedValueOnce(new Error('x'));
+    await renderPending();
+    await fireEvent.press(screen.getByText(authCopy.restoreContinue));
+    await act(async () => {});
+    expect(screen.getByText(authCopy.signOutFailed)).toBeOnTheScreen();
+    expect(mockRouter.replace).not.toHaveBeenCalled();
+  });
+
+  test('Continue with deletion: success replaces to sign-in (SPEC-001-T55)', async () => {
+    svc.signOut.mockResolvedValueOnce(undefined);
+    await renderPending();
+    await fireEvent.press(screen.getByText(authCopy.restoreContinue));
+    await act(async () => {});
+    expect(mockRouter.replace).toHaveBeenCalledWith(routes.signIn);
+  });
+
+  test('Start over after grace: failed sign-out shows inline copy; success goes to sign-up (SPEC-001-T55)', async () => {
+    svc.cancelAccountDeletion.mockResolvedValueOnce({ ok: false, reason: 'grace_elapsed' });
+    await renderPending();
+    await fireEvent.press(screen.getByText(authCopy.restoreKeep));
+    await act(async () => {});
+    svc.signOut.mockRejectedValueOnce(new Error('x'));
+    await fireEvent.press(screen.getByText('Start over'));
+    await act(async () => {});
+    expect(screen.getByText(authCopy.signOutFailed)).toBeOnTheScreen();
+    expect(mockRouter.replace).not.toHaveBeenCalled();
+    svc.signOut.mockResolvedValueOnce(undefined);
+    await fireEvent.press(screen.getByText('Start over'));
+    await act(async () => {});
+    expect(mockRouter.replace).toHaveBeenCalledWith(routes.signUp);
   });
 });

@@ -8,7 +8,7 @@
 | **Phase** | MVP |
 | **Security review** | required |
 | **Schema depends on** | [SPEC-004](SPEC-004-garden-verification.md), [SPEC-011](SPEC-011-messaging.md), [SPEC-012](SPEC-012-trust-and-safety.md) |
-| **Behaviourally coupled with** | SPEC-005, SPEC-007, SPEC-010 (dispute resolution), SPEC-011, SPEC-012 |
+| **Behaviourally coupled with** | SPEC-004, SPEC-005, SPEC-007, SPEC-010 (dispute resolution), SPEC-011, SPEC-012, SPEC-013, SPEC-021 |
 | **Related ADRs** | [ADR-0003](../01-architecture/adr/ADR-0003-database-centric-authz.md), [ADR-0018](../01-architecture/adr/ADR-0018-observability.md) |
 | **Last updated** | 2026-08-08 |
 

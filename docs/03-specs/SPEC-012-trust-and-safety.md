@@ -8,7 +8,7 @@
 | **Phase** | MVP |
 | **Security review** | required |
 | **Schema depends on** | [SPEC-003](SPEC-003-identity-verification.md), [SPEC-010](SPEC-010-exchange-lifecycle.md), [SPEC-011](SPEC-011-messaging.md) |
-| **Behaviourally coupled with** | SPEC-009, SPEC-010, SPEC-011, SPEC-013, SPEC-900 |
+| **Behaviourally coupled with** | SPEC-006 (image moderation), SPEC-009, SPEC-010, SPEC-011, SPEC-013, SPEC-900 |
 | **Related ADRs** | [ADR-0003](../01-architecture/adr/ADR-0003-database-centric-authz.md), [ADR-0009](../01-architecture/adr/ADR-0009-safe-spots-only.md), [ADR-0010](../01-architecture/adr/ADR-0010-kyc-vendor.md), [ADR-0014](../01-architecture/adr/ADR-0014-totp-not-sms.md) |
 | **Last updated** | 2026-08-08 |
 
