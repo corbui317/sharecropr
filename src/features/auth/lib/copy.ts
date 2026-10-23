@@ -46,6 +46,18 @@ export const authCopy = {
     'Reset links work once, expire after 60 minutes, and open only on the device that asked for them. Request a new one.',
   resetLinkRequestNew: 'Request a new link',
   backToSignIn: 'Back to sign in',
+  invalidEmail: 'Enter a valid email address.',
+  genericError: 'Something went wrong. Try again.',
+  rateLimitedGeneric: 'Too many attempts. Wait a few minutes and try again.',
+  signInRateLimitedIn: (mmss: string) => `Too many sign-in attempts. Try again in ${mmss}.`,
+  tryAgainIn: (mmss: string) => `Try again in ${mmss}`,
+  signInAvailableAgain: 'You can try signing in again.',
+  offlineReset: "You're offline. Sending a reset link needs a connection.",
+  passwordsDontMatch: 'Passwords do not match.',
+  passwordUpdateFailed: 'Could not update password. Request a new reset link.',
+  resendFailed: 'Could not resend right now. Try again shortly.',
+  wrongAddress: 'Wrong address? Start over',
+  signOutFailed: "We couldn't sign you out. Try again.",
 } as const;
 
 export function formatMmSs(totalSeconds: number): string {

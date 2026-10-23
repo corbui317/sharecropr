@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, jest, test } from '@jest/globals';
+import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals';
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
-import { Platform } from 'react-native';
+import { AccessibilityInfo, Platform } from 'react-native';
 
 import { authCopy } from '@/features/auth/lib/copy';
 import { SignInScreen } from '@/features/auth/screens/SignInScreen';
@@ -112,5 +112,82 @@ describe('SignInScreen', () => {
     await act(async () => {});
     expect(screen.queryByText(authCopy.providerFailed('Apple'))).toBeNull();
     expect(mockRouter.replace).not.toHaveBeenCalled();
+  });
+});
+
+describe('SignInScreen rate-limit countdown (§8.2)', () => {
+  let announce: jest.SpiedFunction<typeof AccessibilityInfo.announceForAccessibility>;
+  beforeEach(() => {
+    jest.useFakeTimers();
+    Platform.OS = 'ios';
+    announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => {});
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+    jest.restoreAllMocks();
+    jest.clearAllMocks();
+  });
+
+  async function submitRateLimited(retryAfterSec: number | undefined) {
+    mockSignIn.mockResolvedValueOnce({ error: 'rate_limited', retryAfterSec });
+    await render(<SignInScreen />);
+    await fireEvent.changeText(screen.getByLabelText('Email'), 'a@b.org');
+    await fireEvent.changeText(screen.getByLabelText('Password'), 'whatever-password');
+    await fireEvent.press(screen.getByRole('button', { name: 'Sign in' }));
+    await act(async () => {});
+  }
+  async function advance(sec: number) {
+    await act(async () => {
+      jest.advanceTimersByTime(sec * 1000);
+    });
+  }
+
+  test('Retry-After disables submit with a live "Try again in m:ss" label; pressing does nothing (SPEC-001-T56)', async () => {
+    await submitRateLimited(252);
+    expect(screen.getByText('Too many sign-in attempts. Try again in 4:12.')).toBeOnTheScreen();
+    const button = screen.getByRole('button', { name: 'Try again in 4:12' });
+    expect(button.props.accessibilityState).toEqual(expect.objectContaining({ disabled: true }));
+    await advance(1);
+    expect(screen.getByRole('button', { name: 'Try again in 4:11' })).toBeOnTheScreen();
+    expect(screen.getByText('Too many sign-in attempts. Try again in 4:11.')).toBeOnTheScreen();
+    await fireEvent.press(screen.getByRole('button', { name: 'Try again in 4:11' }));
+    await act(async () => {});
+    expect(mockSignIn).toHaveBeenCalledTimes(1);
+  });
+
+  test('after the deadline the button is Sign in again, the error is gone, and nothing auto-retries (SPEC-001-T56)', async () => {
+    await submitRateLimited(252);
+    await advance(252);
+    const button = screen.getByRole('button', { name: 'Sign in' });
+    expect(button.props.accessibilityState).toEqual(expect.objectContaining({ disabled: false }));
+    expect(screen.queryByText(/Too many sign-in attempts/)).toBeNull();
+    expect(mockSignIn).toHaveBeenCalledTimes(1);
+  });
+
+  test('announces at start and at 0 only for a short wait (SPEC-001-T56)', async () => {
+    await submitRateLimited(20);
+    await advance(25);
+    expect(announce.mock.calls.length).toBeLessThanOrEqual(4);
+    expect(announce).toHaveBeenCalledWith(authCopy.signInAvailableAgain);
+    expect(announce.mock.calls[0]?.[0]).toBe('Too many sign-in attempts. Try again in 0:20.');
+  });
+
+  test('without Retry-After the interim copy shows and the button stays enabled (SPEC-001-T56)', async () => {
+    await submitRateLimited(undefined);
+    expect(screen.getByText(authCopy.signInRateLimited)).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: 'Sign in' }).props.accessibilityState).toEqual(
+      expect.objectContaining({ disabled: false }),
+    );
+  });
+
+  test('a failed sign-in leaves the button usable, never loading (SPEC-001-T57)', async () => {
+    mockSignIn.mockResolvedValueOnce({ error: 'unknown' });
+    await render(<SignInScreen />);
+    await fireEvent.changeText(screen.getByLabelText('Email'), 'a@b.org');
+    await fireEvent.changeText(screen.getByLabelText('Password'), 'whatever-password');
+    await fireEvent.press(screen.getByRole('button', { name: 'Sign in' }));
+    await act(async () => {});
+    expect(screen.getByRole('button', { name: 'Sign in' })).toBeOnTheScreen();
+    expect(screen.getByText(authCopy.wrongCredentials)).toBeOnTheScreen();
   });
 });

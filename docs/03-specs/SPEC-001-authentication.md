@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | **Status** | Review |
-| **Version** | 1.2.1 |
+| **Version** | 1.3.0 |
 | **Owner** | Engineering — Auth |
 | **Phase** | MVP |
 | **Security review** | required |
@@ -328,7 +328,7 @@ Static page + a form that calls a public Edge Function `web-delete-request`. Flo
 | **Error (terminal)** | Account suspended, provider permanently unlinked, grace period elapsed: full-screen state with the reason, a support mail link, and a "Sign in with a different account" action. No retry button, because retrying cannot succeed. |
 | **Offline** | Provider buttons and submit are disabled with a persistent banner: sign-in requires a live server, and there is no honest way to queue it. An existing valid session is hydrated from SecureStore and the app opens normally offline. |
 | **Permission denied** | Not applicable to sign-in (no OS permission is involved). OAuth cancellation by the user is not an error: the sheet closes and the screen returns to rest, silently. |
-| **Rate limited** | Submit disabled for exactly `Retry-After` seconds with a live countdown on the button label ("Try again in 4:12"). No auto-retry. Applies to sign-in (5 / 15 min per email), reset (3 / hour), and resend (3 / hour). |
+| **Rate limited** | Submit disabled for exactly `Retry-After` seconds with a live countdown on the button label ("Try again in 4:12"). No auto-retry. Applies to sign-in (5 / 15 min per email) and resend (3 / hour). A password-reset request never shows a countdown: a 429 renders the standard success screen, because GoTrue's per-user interval is existence-dependent (R29). |
 
 ### 8.3 Copy
 
@@ -349,6 +349,12 @@ Exact strings. Anything not listed here is a spec gap and must be added before i
 | Provider degraded banner | `{Google} sign-in is having problems right now. The email and password option is working normally.` |
 | Account suspended | `This account is suspended. Email support@sharecropr.app if you think that's a mistake.` |
 | Offline | `You're offline. Signing in needs a connection.` |
+| Sign-in rate limited, countdown finished (screen-reader announcement) | `You can try signing in again.` |
+| Countdown button label | `Try again in {mm:ss}` |
+| Invalid email | `Enter a valid email address.` |
+| Generic failure | `Something went wrong. Try again.` |
+| Rate limited, no countdown (sign-up) | `Too many attempts. Wait a few minutes and try again.` |
+| Sign-out failed | `We couldn't sign you out. Try again.` |
 
 **Email verification**
 
@@ -360,6 +366,7 @@ Exact strings. Anything not listed here is a spec gap and must be added before i
 | Link expired | `That link has expired. Links are good for 24 hours — here's a fresh one.` |
 | Link already used | `This link was already used. Try signing in.` |
 | Wrong address | `Wrong address? Start over` |
+| Resend failed | `Could not resend right now. Try again shortly.` |
 | Return without a session | `Back to sign in` |
 
 **Password reset**
@@ -367,6 +374,9 @@ Exact strings. Anything not listed here is a spec gap and must be added before i
 | Condition | Copy |
 | --- | --- |
 | Success (always, regardless of existence) | `If there's an account for {email}, a reset link is on its way. It expires in 60 minutes.` |
+| Offline (request screen) | `You're offline. Sending a reset link needs a connection.` |
+| Passwords differ | `Passwords do not match.` |
+| Update failed | `Could not update password. Request a new reset link.` |
 | OAuth-only account email body | `Your Sharecropr account signs in with {Apple\|Google}, so there's no password to reset. Open the app and use the {Apple\|Google} button.` |
 | Reset complete | `Password updated. You've been signed out everywhere else.` |
 | Still needs 2FA | `One more step — enter the code from your authenticator app.` |
@@ -532,6 +542,9 @@ Exact strings. Anything not listed here is a spec gap and must be added before i
 | T52 | unit | R03, §8.2 | Apple cancel (`err.code === 'ERR_REQUEST_CANCELED'`) and Google sheet dismissal return silently: no error copy, no navigation. |
 | T53 | unit + rls | §7 `p_idempotency_key` | One user intent (delete, restore, email change) sends the same `p_idempotency_key` on every retry. A new intent, a remount or an edited email sends a new key. The server replays the stored result for a repeated key and rejects a reused key with different arguments. |
 | T54 | unit | R25 | Concurrent first `getQueryCache()` calls generate and persist one encryption key and open one MMKV instance. A failed open can be retried. |
+| T55 | unit | R25, §8.2 Error, Invariant 10 | Every sign-out action goes through `signOutAndRedirect`. It never rejects, navigates only on success, is single-flight, and a failure shows inline copy and keeps the screen. |
+| T56 | unit | §8.2 Rate limited, §8.3, §12 | `Retry-After` (delta-seconds or HTTP date) is read from GoTrue 429s by the client fetch, or parsed from the GoTrue message. Sign-in submit is disabled for exactly that time with "Try again in m:ss", with no auto-retry; it announces at start, 60, 30 and 0 only. Without a value it shows the interim copy. |
+| T57 | unit | §8.3, R29, §8.2 Offline | `authErrorCopy` is total over code × context and uses only §8.3 strings. A reset request shows distinct copy only for a transport failure. ForgotPassword shows the offline banner and never spins forever. |
 
 ### 13.2 Negative & security tests
 
@@ -602,3 +615,4 @@ Exact strings. Anything not listed here is a spec gap and must be added before i
 | 2026-10-21 | 1.0.1 | Architecture | §6 and §14 name the real migration files (`20260822_0002_identity_tables.sql`, `20260828_0009_auth.sql`); no behavioural change |
 | 2026-10-22 | 1.2.0 | Engineering — Auth | WP-AUTH-FIX: `private.account_deletions` keeps history with one open row per user (EC-08, T50); §8.3 copy for network, interim rate-limit, invalid reset link, account-status and restore failures; T46–T54 added for the boot deletion gate, reset deep link, sessionless verify, error mapping, provider cancel, per-intent idempotency keys and query-cache single-flight; T19 gains a unit slice |
 | 2026-10-22 | 1.2.1 | Architecture | Migration filenames updated to 14-digit versions; SCR-0201. No behavioural change |
+| 2026-10-22 | 1.3.0 | Engineering — Auth | WP-28-31: `signOutAndRedirect` for every sign-out site (T55); `Retry-After` capture and sign-in countdown (T56); error-copy module, R29-safe reset errors and offline banner (T57); §8.2 Rate limited no longer applies a countdown to password reset; §8.3 rows for new and moved strings. |

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, jest, test } from '@jest/globals';
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 
 import type { DeletionStatusResult } from '@/features/auth/lib/auth-service';
+import { authCopy } from '@/features/auth/lib/copy';
 import { routes } from '@/features/auth/lib/routes';
 
 import { BootGateScreen } from '../BootGateScreen';
@@ -111,5 +112,21 @@ describe('BootGateScreen', () => {
     await render(<BootGateScreen />);
     expect(mockRedirects).toEqual([routes.signIn]);
     expect(mockGet).not.toHaveBeenCalled();
+  });
+
+  test('status error: a failed Sign out shows inline copy and stays (SPEC-001-T55)', async () => {
+    mockAuth = signedIn(true);
+    mockGet.mockResolvedValueOnce({ ok: false, reason: 'error' });
+    const auth = jest.requireMock<{ signOut: jest.Mock<() => Promise<void>> }>(
+      '@/features/auth/lib/auth-service',
+    );
+    auth.signOut.mockRejectedValueOnce(new Error('x'));
+    await render(<BootGateScreen />);
+    await act(async () => {});
+    await fireEvent.press(screen.getByText('Sign out'));
+    await act(async () => {});
+    expect(screen.getByText(authCopy.signOutFailed)).toBeOnTheScreen();
+    const nav = jest.requireMock<{ router: { replace: jest.Mock } }>('expo-router').router;
+    expect(nav.replace).not.toHaveBeenCalled();
   });
 });

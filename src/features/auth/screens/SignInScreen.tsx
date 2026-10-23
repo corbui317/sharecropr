@@ -6,10 +6,12 @@ import { AuthButton } from '@/features/auth/components/AuthButton';
 import { AuthScreenShell } from '@/features/auth/components/AuthScreenShell';
 import { AuthTextField } from '@/features/auth/components/AuthTextField';
 import { ProviderButtons } from '@/features/auth/components/ProviderButtons';
+import { useCountdown } from '@/features/auth/hooks/useCountdown';
 import { useIsOffline } from '@/features/auth/hooks/useIsOffline';
 import { useAuthSession } from '@/features/auth/hooks/useAuthSession';
 import { signInWithEmail } from '@/features/auth/lib/auth-service';
-import { authCopy } from '@/features/auth/lib/copy';
+import { authCopy, formatMmSs } from '@/features/auth/lib/copy';
+import { authErrorCopy, rateLimitedCopy } from '@/features/auth/lib/error-copy';
 import { routes, verifyEmailHref } from '@/features/auth/lib/routes';
 import { normalizeEmail } from '@/domain/validation/email';
 import { signInWithApple, signInWithGoogle } from '@/features/auth/lib/oauth';
@@ -24,34 +26,36 @@ export function SignInScreen() {
     null,
   );
 
+  const [rateLimitedUntil, setRateLimitedUntil] = useState<number | null>(null);
+  // SPEC-001-T56: submit stays disabled for exactly Retry-After seconds; no auto-retry.
+  const remaining = useCountdown(rateLimitedUntil, (r) =>
+    r > 0 ? rateLimitedCopy('sign_in', r) : authCopy.signInAvailableAgain,
+  );
+  const shownError = remaining > 0 ? rateLimitedCopy('sign_in', remaining) : error;
+
   const handleEmailSignIn = async () => {
     setError(null);
+    setRateLimitedUntil(null);
     setLoadingProvider('email');
-    const result = await signInWithEmail(email, password);
-    setLoadingProvider(null);
-
-    if (result.error === 'bad_credentials') {
-      setError(authCopy.wrongCredentials);
-      return;
+    let result: Awaited<ReturnType<typeof signInWithEmail>>;
+    try {
+      result = await signInWithEmail(email, password);
+    } catch {
+      result = { error: 'unknown' }; // Invariant 10: never leave the spinner on
+    } finally {
+      setLoadingProvider(null);
     }
+
     if (result.error === 'email_not_confirmed') {
       router.replace(verifyEmailHref(normalizeEmail(email)));
       return;
     }
-    if (result.error === 'suspended') {
-      setError(authCopy.accountSuspended);
-      return;
-    }
-    if (result.error === 'rate_limited') {
-      setError(authCopy.signInRateLimited);
-      return;
-    }
-    if (result.error === 'network') {
-      setError(authCopy.network);
+    if (result.error === 'rate_limited' && result.retryAfterSec && result.retryAfterSec > 0) {
+      setRateLimitedUntil(Date.now() + result.retryAfterSec * 1000);
       return;
     }
     if (result.error) {
-      setError(authCopy.wrongCredentials);
+      setError(authErrorCopy(result.error, 'sign_in'));
       return;
     }
 
@@ -124,7 +128,8 @@ export function SignInScreen() {
         autoComplete="password"
         textContentType="password"
         editable={!offline}
-        error={error ?? undefined}
+        error={shownError ?? undefined}
+        errorLiveRegion={remaining > 0 ? 'none' : 'polite'}
       />
 
       <Link href={routes.forgotPassword} style={styles.forgot}>
@@ -132,10 +137,10 @@ export function SignInScreen() {
       </Link>
 
       <AuthButton
-        label="Sign in"
+        label={remaining > 0 ? authCopy.tryAgainIn(formatMmSs(remaining)) : 'Sign in'}
         onPress={() => void handleEmailSignIn()}
         loading={loadingProvider === 'email'}
-        disabled={offline}
+        disabled={offline || remaining > 0}
       />
     </AuthScreenShell>
   );

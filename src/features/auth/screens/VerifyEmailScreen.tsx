@@ -6,8 +6,10 @@ import { AuthButton } from '@/features/auth/components/AuthButton';
 import { AuthScreenShell } from '@/features/auth/components/AuthScreenShell';
 import { BootSplash } from '@/features/auth/components/BootSplash';
 import { useAuthSession } from '@/features/auth/hooks/useAuthSession';
-import { resendVerificationEmail, signOut } from '@/features/auth/lib/auth-service';
+import { useSignOutAndRedirect } from '@/features/auth/hooks/useSignOutAndRedirect';
+import { resendVerificationEmail, type AuthErrorCode } from '@/features/auth/lib/auth-service';
 import { authCopy, formatMmSs } from '@/features/auth/lib/copy';
+import { authErrorCopy } from '@/features/auth/lib/error-copy';
 import { routes } from '@/features/auth/lib/routes';
 
 const RESEND_COOLDOWN_SEC = 3600;
@@ -19,6 +21,7 @@ export function VerifyEmailScreen() {
   const [cooldown, setCooldown] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const signingOut = useSignOutAndRedirect();
 
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -30,18 +33,20 @@ export function VerifyEmailScreen() {
     if (!email || cooldown > 0) return;
     setLoading(true);
     setError(null);
-    const { error: resendError } = await resendVerificationEmail(email);
-    setLoading(false);
+    let resendError: AuthErrorCode | null;
+    try {
+      ({ error: resendError } = await resendVerificationEmail(email));
+    } catch {
+      resendError = 'unknown'; // Invariant 10: never leave the spinner on
+    } finally {
+      setLoading(false);
+    }
+    if (resendError === 'rate_limited') {
+      setCooldown(RESEND_COOLDOWN_SEC);
+      return;
+    }
     if (resendError) {
-      if (resendError === 'rate_limited') {
-        setCooldown(RESEND_COOLDOWN_SEC);
-        return;
-      }
-      if (resendError === 'network') {
-        setError(authCopy.network);
-        return;
-      }
-      setError('Could not resend right now. Try again shortly.');
+      setError(authErrorCopy(resendError, 'resend'));
       return;
     }
     setCooldown(RESEND_COOLDOWN_SEC);
@@ -66,19 +71,22 @@ export function VerifyEmailScreen() {
           />
           {error ? <Text style={styles.error}>{error}</Text> : null}
           <Link href={routes.signUp} style={styles.link}>
-            Wrong address? Start over
+            {authCopy.wrongAddress}
           </Link>
           <AuthButton
             label={user ? authCopy.signOut : authCopy.backToSignIn}
+            loading={signingOut.pending}
             onPress={() => {
-              if (user) {
-                void signOut().then(() => router.replace(routes.signIn));
-              } else {
-                router.replace(routes.signIn);
-              }
+              if (user) signingOut.signOut();
+              else router.replace(routes.signIn);
             }}
             variant="secondary"
           />
+          {signingOut.failed ? (
+            <Text accessibilityLiveRegion="polite" style={styles.error}>
+              {authCopy.signOutFailed}
+            </Text>
+          ) : null}
         </>
       }
     />

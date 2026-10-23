@@ -10,6 +10,7 @@ import { useIsOffline } from '@/features/auth/hooks/useIsOffline';
 import { normalizeEmail } from '@/domain/validation/email';
 import { signUpWithEmail } from '@/features/auth/lib/auth-service';
 import { authCopy } from '@/features/auth/lib/copy';
+import { authErrorCopy } from '@/features/auth/lib/error-copy';
 import { verifyEmailHref, routes } from '@/features/auth/lib/routes';
 import { signInWithApple, signInWithGoogle } from '@/features/auth/lib/oauth';
 
@@ -28,28 +29,8 @@ export function SignUpScreen() {
     const result = await signUpWithEmail(email, password);
     setLoadingProvider(null);
 
-    if (result.error === 'password_too_short') {
-      setFieldError(authCopy.passwordTooShort);
-      return;
-    }
-    if (result.error === 'password_too_long') {
-      setFieldError(authCopy.passwordTooLong);
-      return;
-    }
-    if (result.error === 'breach_check_unavailable') {
-      setFieldError(authCopy.breachCheckUnavailable);
-      return;
-    }
-    if (result.error === 'password_breached') {
-      setFieldError(authCopy.passwordBreached);
-      return;
-    }
-    if (result.error === 'network') {
-      setFieldError(authCopy.network);
-      return;
-    }
     if (result.error) {
-      setFieldError('Something went wrong. Try again.');
+      setFieldError(authErrorCopy(result.error, 'sign_up'));
       return;
     }
 

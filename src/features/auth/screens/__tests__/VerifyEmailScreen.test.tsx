@@ -36,6 +36,7 @@ jest.mock('@/features/auth/lib/auth-service', () => ({
 }));
 const svc = jest.requireMock<{
   resendVerificationEmail: jest.Mock<(e: string) => Promise<{ error: string | null }>>;
+  signOut: jest.Mock<() => Promise<void>>;
 }>('@/features/auth/lib/auth-service');
 
 beforeEach(() => {
@@ -80,5 +81,43 @@ describe('VerifyEmailScreen', () => {
     await fireEvent.press(screen.getByText(authCopy.resendAvailable));
     await act(async () => {});
     expect(screen.getByText(authCopy.network)).toBeOnTheScreen();
+  });
+
+  const signedInUnverified: AuthState = {
+    status: 'authenticated',
+    session: {},
+    user: { id: 'u1', email: 'a@b.org' },
+    isEmailVerified: false,
+  };
+
+  test('signed in: Sign out signs out then replaces to sign-in (SPEC-001-T55)', async () => {
+    mockAuth = signedInUnverified;
+    svc.signOut.mockResolvedValueOnce();
+    await render(<VerifyEmailScreen />);
+    await fireEvent.press(screen.getByText(authCopy.signOut));
+    await act(async () => {});
+    expect(svc.signOut).toHaveBeenCalledTimes(1);
+    expect(jest.requireMock<{ router: { replace: jest.Mock } }>('expo-router').router.replace).toHaveBeenCalledWith(
+      routes.signIn,
+    );
+  });
+
+  test('signed in: a failed Sign out shows inline copy (SPEC-001-T55)', async () => {
+    mockAuth = signedInUnverified;
+    svc.signOut.mockRejectedValueOnce(new Error('x'));
+    await render(<VerifyEmailScreen />);
+    await fireEvent.press(screen.getByText(authCopy.signOut));
+    await act(async () => {});
+    expect(screen.getByText(authCopy.signOutFailed)).toBeOnTheScreen();
+  });
+
+  test('a rejected resend shows resendFailed and the button is usable (SPEC-001-T57)', async () => {
+    mockParams = { email: 'new@example.org' };
+    svc.resendVerificationEmail.mockRejectedValueOnce(new Error('x'));
+    await render(<VerifyEmailScreen />);
+    await fireEvent.press(screen.getByText(authCopy.resendAvailable));
+    await act(async () => {});
+    expect(screen.getByText(authCopy.resendFailed)).toBeOnTheScreen();
+    expect(screen.getByText(authCopy.resendAvailable)).toBeOnTheScreen();
   });
 });

@@ -7,7 +7,9 @@ import { AuthTextField } from '@/features/auth/components/AuthTextField';
 import { BootSplash } from '@/features/auth/components/BootSplash';
 import { useAuthSession } from '@/features/auth/hooks/useAuthSession';
 import { exchangeRecoveryCode, updatePassword } from '@/features/auth/lib/auth-service';
+import type { AuthErrorCode } from '@/features/auth/lib/auth-service';
 import { authCopy } from '@/features/auth/lib/copy';
+import { authErrorCopy } from '@/features/auth/lib/error-copy';
 import { routes } from '@/features/auth/lib/routes';
 import { TIMED_OUT, withTimeout } from '@/features/auth/lib/with-timeout';
 
@@ -50,7 +52,7 @@ export function ResetPasswordScreen() {
   const handleSubmit = async () => {
     setError(null);
     if (password !== confirm) {
-      setError('Passwords do not match.');
+      setError(authCopy.passwordsDontMatch);
       return;
     }
 
@@ -58,24 +60,9 @@ export function ResetPasswordScreen() {
     const result = await updatePassword(password);
     setLoading(false);
 
-    if (result.error === 'password_too_short') {
-      setError(authCopy.passwordTooShort);
-      return;
-    }
-    if (result.error === 'password_too_long') {
-      setError(authCopy.passwordTooLong);
-      return;
-    }
-    if (result.error === 'breach_check_unavailable') {
-      setError(authCopy.breachCheckUnavailable);
-      return;
-    }
-    if (result.error === 'password_breached') {
-      setError(authCopy.passwordBreached);
-      return;
-    }
     if ('error' in result && result.error) {
-      setError('Could not update password. Request a new reset link.');
+      const code = typeof result.error === 'string' ? result.error : 'unknown';
+      setError(authErrorCopy(code as AuthErrorCode, 'password_update'));
       return;
     }
 
