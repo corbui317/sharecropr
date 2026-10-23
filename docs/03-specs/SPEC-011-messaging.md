@@ -8,7 +8,7 @@
 | **Phase** | MVP |
 | **Security review** | required |
 | **Schema depends on** | [SPEC-010](SPEC-010-exchange-lifecycle.md) |
-| **Behaviourally coupled with** | SPEC-012, SPEC-013, SPEC-900 |
+| **Behaviourally coupled with** | SPEC-010, SPEC-012, SPEC-013, SPEC-900 |
 | **Related ADRs** | [ADR-0003](../01-architecture/adr/ADR-0003-database-centric-authz.md), [ADR-0009](../01-architecture/adr/ADR-0009-safe-spots-only.md) |
 | **Last updated** | 2026-08-08 |
 

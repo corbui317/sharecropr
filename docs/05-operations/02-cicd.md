@@ -1,6 +1,6 @@
 # CI/CD
 
-**Status:** Approved · **Version:** 1.0.6 · **Owner:** Platform Engineering
+**Status:** Approved · **Version:** 1.0.7 · **Owner:** Platform Engineering
 
 GitHub Actions for verification, EAS for building and shipping. The pipeline's job is to make the [five rules](../README.md) mechanically enforced rather than culturally enforced, because culture degrades under deadline pressure and a `grep` in CI does not.
 
@@ -52,7 +52,7 @@ None of these are advisory once built. A PR cannot merge with any *running* chec
 | `concurrency` | Any hazard H1–H8 | Planned |
 | `security-static` | §4 checks | **Partial** — `db.yml` private-grant gate runs; definer-allowlist is a stub |
 | `spec-traceability` | A `MUST` with no linked test | Planned |
-| `doc-gates` | §5.1 gates | **Partial** — `app.yml` runs the schema-graph acyclic half + register sync (SCR-0003); symmetry (SCR-0004) and the other §5.1 gates planned |
+| `doc-gates` | §5.1 gates | **Partial** — `app.yml` runs schema-graph acyclic + coupling symmetric + register sync (SCR-0003, SCR-0004); normative-prose, approval, cross-reference and staleness gates planned |
 | `secret-scan` | Any secret in source or the built bundle | Planned |
 | `e2e-smoke` | Any smoke flow on either platform | Planned |
 | `perf-baseline` | An unreviewed `EXPLAIN` plan change on a hot path | Planned |
@@ -205,7 +205,7 @@ The `MUST`→test gate only sees requirements that were written as requirements.
 
 The pattern is the one already proven by the transition table: put the fact in the database, generate the copy, and let CI fail on drift. Every finding in the review's process section was a fact that lived in two places with nothing comparing them.
 
-> **Only the schema-graph gate's acyclic half exists** (`npm run ci:doc-gates`, SCR-0003, which also checks the register's `Schema depends on` column against front matter); the rest of this section is planned. Until the rest is real, the 2026-08-09 fixes are a snapshot and the doc set will drift back to where it was. Build them in the first sprint, while the reasons are fresh and there are no green builds to break — see [Development Notes N-07](../07-review/02-development-notes.md#n-07--the-ci-gates-are-described-not-built).
+> **Only the schema-graph gate exists, acyclic and symmetric halves** (`npm run ci:doc-gates`, SCR-0003/0004, which also checks the register's `Schema depends on` column against front matter); the rest of this section is planned. Until the rest is real, the 2026-08-09 fixes are a snapshot and the doc set will drift back to where it was. Build them in the first sprint, while the reasons are fresh and there are no green builds to break — see [Development Notes N-07](../07-review/02-development-notes.md#n-07--the-ci-gates-are-described-not-built).
 
 ---
 
@@ -355,3 +355,4 @@ Production-scoped secrets live in a protected GitHub Environment requiring a nam
 | 2026-10-22 | 1.0.4 | Platform Engineering | db.yml now runs `supabase start`; before this every run failed with "supabase start is not running" before any migration (WP-DBCI) |
 | 2026-10-22 | 1.0.5 | Platform Engineering | §2 db.yml rows corrected: pins the Supabase CLI (2.120.0, setup-cli v3.0.1), runs static gates before start, excludes all non-DB services, and writes the first migration error to the job summary; pgtap rows are wired, not passing and is red at the first real migration error (SCRUM-37) |
 | 2026-10-22 | 1.0.6 | Platform Engineering | H3 removed; renamed to location tiers per [ADR-0023](../01-architecture/adr/ADR-0023-postgis-location-tiers.md). `fine_cell` replaces `h3_r9` in the gate descriptions. |
+| 2026-10-22 | 1.0.7 | Platform Engineering | §2 `doc-gates` and §5.1 note: `ci:doc-gates` also fails on an asymmetric `Behaviourally coupled with` edge (SCRUM-16, SCR-0004) |

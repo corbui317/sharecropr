@@ -117,3 +117,75 @@ test('T-7 usage errors exit 2 (SCR-0003)', () => {
 test('T-8 the real docs pass (SCR-0003)', () => {
   assert.deepEqual(runGates('docs/03-specs').findings, []);
 });
+
+/** Copies `valid/` to a tmpdir, applies `edit(dir)`, returns the gate result. */
+function withValidCopy(edit) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'doc-gates-'));
+  try {
+    for (const f of fs.readdirSync(`${FIX}/valid`)) {
+      fs.copyFileSync(`${FIX}/valid/${f}`, path.join(dir, f));
+    }
+    edit(dir);
+    return runGates(dir);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+const rewrite = (file, fn) => fs.writeFileSync(file, fn(fs.readFileSync(file, 'utf8')));
+const COUPLING_ROW = /^(\| \*\*Behaviourally coupled with\*\* \| ).*$/m;
+
+test('T-9 asymmetric fixture fails on coupling-symmetric only (SCR-0004)', () => {
+  const r = cli('--root', `${FIX}/asymmetric`);
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /SPEC-003-gamma\.md:11: \[coupling-symmetric\]/);
+  assert.match(r.stderr, /SPEC-003 .*names SPEC-001.*SPEC-001 .*does not name SPEC-003/);
+  const { findings } = runGates(`${FIX}/asymmetric`);
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].rule, 'coupling-symmetric');
+});
+
+test('T-10 coupling to a spec that does not exist fails (SCR-0004)', () => {
+  const { findings } = withValidCopy((dir) =>
+    rewrite(path.join(dir, 'SPEC-003-gamma.md'), (t) =>
+      t.replace(COUPLING_ROW, '$1SPEC-002, [SPEC-099](x.md) |'),
+    ),
+  );
+  assert.ok(findings.some((f) => f.rule === 'coupling-unknown-spec'));
+});
+
+test('T-11 missing coupling row fails frontmatter-row (SCR-0004)', () => {
+  const { findings } = withValidCopy((dir) =>
+    rewrite(path.join(dir, 'SPEC-002-beta.md'), (t) =>
+      t
+        .split('\n')
+        .filter((l) => !l.includes('**Behaviourally coupled with**'))
+        .join('\n'),
+    ),
+  );
+  assert.ok(
+    findings.some(
+      (f) =>
+        f.rule === 'frontmatter-row' &&
+        f.message.includes('"Behaviourally coupled with" row missing'),
+    ),
+  );
+});
+
+test('T-12 a symmetric coupling triangle passes: coupling may cycle (SCR-0004)', () => {
+  const { findings } = withValidCopy((dir) => {
+    rewrite(path.join(dir, 'SPEC-001-alpha.md'), (t) =>
+      t.replace(COUPLING_ROW, '$1SPEC-002, SPEC-003 |'),
+    );
+    rewrite(path.join(dir, 'SPEC-003-gamma.md'), (t) =>
+      t.replace(COUPLING_ROW, '$1SPEC-001, SPEC-002 |'),
+    );
+  });
+  assert.deepEqual(findings, []);
+});
+
+test('T-13 valid fixture reports its coupling pairs (SCR-0004)', () => {
+  const r = cli('--root', `${FIX}/valid`);
+  assert.equal(r.status, 0);
+  assert.match(r.stdout, /2 coupling pairs, symmetric; register in sync/);
+});

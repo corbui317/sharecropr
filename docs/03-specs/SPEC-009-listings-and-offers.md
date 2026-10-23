@@ -8,7 +8,7 @@
 | **Phase** | MVP |
 | **Security review** | not required |
 | **Schema depends on** | [SPEC-006](SPEC-006-crop-inventory.md), [SPEC-007](SPEC-007-safe-spots.md) |
-| **Behaviourally coupled with** | SPEC-010, SPEC-012 (block-aware discoverability), SPEC-013 |
+| **Behaviourally coupled with** | SPEC-008, SPEC-010, SPEC-012 (block-aware discoverability), SPEC-013, SPEC-023 (disclosure on publish) |
 | **Related ADRs** | [ADR-0002](../01-architecture/adr/ADR-0002-barter-only.md), [ADR-0003](../01-architecture/adr/ADR-0003-database-centric-authz.md), [ADR-0009](../01-architecture/adr/ADR-0009-safe-spots-only.md) |
 | **Last updated** | 2026-08-08 |
 

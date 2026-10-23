@@ -8,7 +8,7 @@
 | **Phase** | MVP |
 | **Security review** | not required |
 | **Schema depends on** | [SPEC-001](SPEC-001-authentication.md) |
-| **Behaviourally coupled with** | SPEC-004, SPEC-009, SPEC-010, SPEC-011, SPEC-012, SPEC-020, SPEC-900 |
+| **Behaviourally coupled with** | SPEC-001, SPEC-003, SPEC-004, SPEC-006, SPEC-009, SPEC-010, SPEC-011, SPEC-012, SPEC-020, SPEC-900 |
 | **Related ADRs** | [ADR-0001](../01-architecture/adr/ADR-0001-mobile-stack.md), [ADR-0004](../01-architecture/adr/ADR-0004-supabase.md), [ADR-0008](../01-architecture/adr/ADR-0008-edge-functions.md), [ADR-0012](../01-architecture/adr/ADR-0012-navigation.md) |
 | **Last updated** | 2026-08-08 |
 

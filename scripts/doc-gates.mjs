@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Doc governance gates — CI/CD §5.1. SCR-0003 (schema graph acyclic + register sync).
-// WP-23 / SCR-0004 adds `coupling-symmetric` by appending to GATES.
+// Doc governance gates — CI/CD §5.1. SCR-0003 (schema graph acyclic + register sync)
+// and SCR-0004 (coupling symmetric).
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
@@ -8,6 +8,7 @@ import { pathToFileURL } from 'node:url';
 
 const SPEC_FILE = /^SPEC-(\d{3})-[a-z0-9-]+\.md$/;
 const SCHEMA_LABEL = 'Schema depends on';
+const COUPLING_LABEL = 'Behaviourally coupled with';
 
 const rel = (p) => path.relative(process.cwd(), p) || p;
 
@@ -145,19 +146,56 @@ export function findCycles(graph) {
 export function checkFrontMatter(ctx) {
   const findings = [];
   for (const spec of ctx.specs.values()) {
-    const row = readFrontMatterRow(spec.lines, SCHEMA_LABEL);
     const name = `SPEC-${spec.id}`;
     const bad = (line, message) =>
       findings.push({ rule: 'frontmatter-row', file: spec.file, line, message });
-    if (!row) bad(1, `${name}: "${SCHEMA_LABEL}" row missing from front matter`);
-    else if (row.duplicate)
-      bad(row.duplicate, `${name}: "${SCHEMA_LABEL}" row duplicated (also line ${row.duplicate})`);
-    else {
-      const { ids, ok } = parseRelationCell(row.cell);
-      if (!ok) bad(row.line, `${name}: "${SCHEMA_LABEL}" row unparseable: "${row.cell}"`);
-      else ctx.schema.set(spec.id, { line: row.line, ids });
+    for (const [label, target] of [
+      [SCHEMA_LABEL, ctx.schema],
+      [COUPLING_LABEL, ctx.coupling],
+    ]) {
+      const row = readFrontMatterRow(spec.lines, label);
+      if (!row) bad(1, `${name}: "${label}" row missing from front matter`);
+      else if (row.duplicate)
+        bad(row.duplicate, `${name}: "${label}" row duplicated (also line ${row.duplicate})`);
+      else {
+        const { ids, ok } = parseRelationCell(row.cell);
+        if (!ok) bad(row.line, `${name}: "${label}" row unparseable: "${row.cell}"`);
+        else target.set(spec.id, { line: row.line, ids });
+      }
     }
   }
+  return findings;
+}
+
+export function checkCouplingSymmetric(ctx) {
+  const findings = [];
+  const pairs = new Set();
+  for (const [a, { line, ids }] of [...ctx.coupling].sort((x, y) => x[0].localeCompare(y[0]))) {
+    const spec = ctx.specs.get(a);
+    for (const b of ids) {
+      if (!ctx.specs.has(b)) {
+        findings.push({
+          rule: 'coupling-unknown-spec',
+          file: spec.file,
+          line,
+          message: `SPEC-${a} "${COUPLING_LABEL}" names SPEC-${b}, which does not exist`,
+        });
+        continue;
+      }
+      if (b === a) continue;
+      const other = ctx.coupling.get(b);
+      if (!other) continue; // B already has a frontmatter-row finding
+      pairs.add([a, b].sort().join('|'));
+      if (!other.ids.includes(a))
+        findings.push({
+          rule: 'coupling-symmetric',
+          file: spec.file,
+          line,
+          message: `SPEC-${a} "${COUPLING_LABEL}" names SPEC-${b}, but SPEC-${b} (${ctx.specs.get(b).file}:${other.line}) does not name SPEC-${a} ("${COUPLING_LABEL}" must be symmetric — Specs README §Build order)`,
+        });
+    }
+  }
+  ctx.stats.couplingPairs = pairs.size;
   return findings;
 }
 
@@ -233,7 +271,12 @@ export function checkRegisterSync(ctx) {
   return findings;
 }
 
-export const GATES = [checkFrontMatter, checkSchemaAcyclic, checkRegisterSync];
+export const GATES = [
+  checkFrontMatter,
+  checkSchemaAcyclic,
+  checkCouplingSymmetric,
+  checkRegisterSync,
+];
 
 export function runGates(root) {
   const specs = loadSpecs(root);
@@ -241,8 +284,9 @@ export function runGates(root) {
     root,
     specs,
     schema: new Map(),
+    coupling: new Map(),
     register: loadRegister(root),
-    stats: { specs: specs.size, edges: 0 },
+    stats: { specs: specs.size, edges: 0, couplingPairs: 0 },
   };
   const findings = GATES.flatMap((g) => g(ctx));
   findings.sort(
@@ -283,7 +327,7 @@ function main() {
     process.exit(1);
   }
   process.stdout.write(
-    `doc-gates: OK — ${stats.specs} specs, ${stats.edges} schema edges, acyclic; register in sync\n`,
+    `doc-gates: OK — ${stats.specs} specs, ${stats.edges} schema edges, acyclic; ${stats.couplingPairs} coupling pairs, symmetric; register in sync\n`,
   );
 }
 
