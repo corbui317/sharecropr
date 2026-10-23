@@ -3,6 +3,8 @@ import { StyleSheet, Text, View } from 'react-native';
 /**
  * ODbL attribution — mounted by MapCanvas unconditionally (SPEC-008 R75, NFR-99).
  * Not localised, not abbreviated, not behind a tap target.
+ * Positioned by MapCanvas's in-flow attribution strip above the reserved bottom inset (R76), never
+ * absolutely and never by z-order. The text is never truncated: no `numberOfLines`, ever.
  */
 export function OsmAttribution() {
   return (

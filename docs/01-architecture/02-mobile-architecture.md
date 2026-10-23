@@ -1,6 +1,6 @@
 # Mobile Architecture
 
-**Status:** Review · **Version:** 1.1.5 · **Owner:** Architecture
+**Status:** Review · **Version:** 1.1.6 · **Owner:** Architecture
 
 The backend is where authorization and invariants live ([System Architecture §1](01-system-architecture.md)). The client is therefore **a rendering and caching layer with a state machine mirror** — it is not allowed to be the place a rule is enforced, and any rule that exists only here is a bug. What the client *is* responsible for: being fast, being usable offline, being usable with a screen reader, and never holding a secret it shouldn't.
 
@@ -590,6 +590,7 @@ export type MapCanvasProps = {
   onMarkerPress: (id: string) => void;
   onMapPress: () => void;
   children?: React.ReactNode;                       // overlays, positioned in RN space
+  bottomInset?: number;                            // height owned by the sheet; attribution sits directly above it (SPEC-008 R76)
 };
 ```
 
@@ -1156,3 +1157,4 @@ Stated plainly so they can be argued with.
 | 2026-10-22 | 1.1.3 | Architecture | §3: the reset deep link is sharecropr://reset-password with a PKCE ?code= query, not a fragment token; the root route's logic lives in src/features/auth/screens/BootGateScreen.tsx because every file under app/ is a route (WP-AUTH-FIX) |
 | 2026-10-22 | 1.1.4 | Architecture | H3 removed; renamed to location tiers per [ADR-0023](adr/ADR-0023-postgis-location-tiers.md). Route-param regex now rejects `_cell`. |
 | 2026-10-22 | 1.1.5 | Architecture | §4.1/§4.2: follow mode clears at gesture start (`onRegionWillChange` + `userInteraction`, new `onGestureStart` prop), no camera animation during a gesture, avatar interpolated between fixes (SCRUM-25). |
+| 2026-10-22 | 1.1.6 | Architecture | §4.1: `MapCanvasProps` gains `bottomInset`; chrome (`children`) is confined to an overlay region above an in-flow OSM attribution strip, so the notice is guaranteed by layout, not z-order (SCRUM-28, SPEC-008 R76). |

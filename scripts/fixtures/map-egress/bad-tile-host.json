@@ -1,0 +1,20 @@
+{
+  "version": 8,
+  "name": "Sharecropr Basemap",
+  "metadata": {
+    "sharecropr:archive": "{{BASEMAP_ARCHIVE}}",
+    "sharecropr:tile_origin": "{{TILE_ORIGIN}}"
+  },
+  "glyphs": "{{TILE_ORIGIN}}/fonts/{fontstack}/{range}.pbf",
+  "sprite": "{{TILE_ORIGIN}}/sprites/sharecropr-basemap",
+  "sources": {
+    "basemap": {
+      "type": "vector",
+      "attribution": "© OpenStreetMap contributors",
+      "tiles": [
+        "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+      ]
+    }
+  },
+  "layers": []
+}

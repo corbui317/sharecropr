@@ -1,6 +1,6 @@
 // SPEC-008-T04 · SPEC-008-T05 (unit half) · SPEC-008-T06 (unit half) · R05 · R06 · SCRUM-25
 import { beforeEach, describe, expect, jest, test } from '@jest/globals';
-import { act, fireEvent, render, screen } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, within } from '@testing-library/react-native';
 
 import { INITIAL_FOLLOW_STATE } from '@/features/map/lib/followMode';
 import { useFollowModeStore } from '@/features/map/stores/followModeStore';
@@ -111,5 +111,14 @@ describe('MapSpikeScreen follow wiring', () => {
 
     expect(easeTo()).toHaveBeenCalledWith({ center: [-122, 45], duration: 200 });
     expect(screen.queryByTestId('map.follow')).toBeNull();
+  });
+
+  test('all spike chrome renders inside the map overlay region (R76)', async () => {
+    await renderBooted();
+    await fireEvent(screen.getByTestId('maplibre.map'), 'regionWillChange', willChange(true));
+    const overlay = within(screen.getByTestId('map.overlay'));
+    expect(overlay.getByTestId('map.hud')).toBeOnTheScreen();
+    expect(overlay.getByTestId('map.controls')).toBeOnTheScreen();
+    expect(overlay.getByTestId('map.follow')).toBeOnTheScreen();
   });
 });

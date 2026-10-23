@@ -29,6 +29,8 @@
     "ci:assert-no-private-grants": "bash scripts/ci-assert-no-private-grants.sh",
     "ci:assert-definer-allowlist": "bash scripts/ci-assert-definer-allowlist.sh",
     "ci:validate-map-style": "node scripts/validate-map-style.mjs",
+    "ci:map-egress-static": "node scripts/ci-map-egress.mjs",
+    "test:map-egress": "node --test scripts/ci-map-egress.test.mjs",
     "location-canary": "npm run build --prefix packages/location-canary && npm run check --prefix packages/location-canary"
   },
   "dependencies": {

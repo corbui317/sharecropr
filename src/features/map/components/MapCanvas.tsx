@@ -39,6 +39,10 @@ export type MapCanvasProps = {
   markers: readonly RenderableMarker[];
   userLocation: DeviceLocation | null;
   styleUrl?: string;
+  /** Chrome (HUD, controls). Laid out in the overlay region above the attribution strip and clipped to it (SPEC-008 R76). */
+  children?: React.ReactNode;
+  /** Height owned by UI below the map chrome (e.g. the sheet at its current detent). The attribution sits directly above it. */
+  bottomInset?: number;
   onCameraChanged: (camera: MapCamera, gesture: boolean) => void;
   /** User pan/pinch/rotate began; follow mode clears here (R04). Programmatic moves never call it (R05). */
   onGestureStart: () => void;
@@ -71,6 +75,8 @@ export const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(function Ma
     camera,
     markers,
     userLocation,
+    children,
+    bottomInset = 0,
     onCameraChanged,
     onGestureStart,
     onMarkerPress,
@@ -81,6 +87,7 @@ export const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(function Ma
   },
   ref,
 ) {
+  const reserved = Number.isFinite(bottomInset) ? Math.max(0, bottomInset) : 0;
   const mapRef = useRef<MapRef>(null);
   const cameraRef = useRef<CameraRef>(null);
   const mountedAt = useRef<number | null>(null);
@@ -293,8 +300,21 @@ export const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(function Ma
         {userLocation ? <AvatarSource location={userLocation} /> : null}
       </Map>
 
-      <View style={styles.attributionSlot} pointerEvents="none">
-        <OsmAttribution />
+      {/* SPEC-008 R75/R76, NFR-99: the notice is guaranteed by LAYOUT, not z-order. Chrome (children)
+          is confined to the overlay region; the attribution owns an in-flow strip directly above the
+          reserved bottom inset (sheet). Nothing in this tree can be laid out over it. */}
+      <View style={styles.chrome} pointerEvents="box-none" testID="map.chrome">
+        <View style={styles.overlay} pointerEvents="box-none" testID="map.overlay">
+          {children}
+        </View>
+        <View style={styles.attributionInset} pointerEvents="none" testID="map.attribution-inset">
+          <OsmAttribution />
+        </View>
+        <View
+          style={[styles.reservedBottom, { height: reserved }]}
+          pointerEvents="none"
+          testID="map.reserved-bottom"
+        />
       </View>
     </View>
   );
@@ -342,10 +362,26 @@ const styles = StyleSheet.create({
   map: {
     flex: 1,
   },
-  attributionSlot: {
+  chrome: {
     position: 'absolute',
-    left: 8,
-    bottom: 8,
-    zIndex: 10,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    flexDirection: 'column',
+  },
+  overlay: {
+    flex: 1,
+    minHeight: 0,
+    overflow: 'hidden',
+  },
+  attributionInset: {
+    flexShrink: 0,
+    alignItems: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  reservedBottom: {
+    flexShrink: 1,
   },
 });

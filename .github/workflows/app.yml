@@ -52,6 +52,12 @@ jobs:
             npm run -s ci:spec-traceability
           fi
 
+      - name: Map egress (static) — self-test (bad fixtures must fail)
+        run: npm run test:map-egress
+
+      - name: Map egress (static) — style/config hosts, no credential or coordinate in URLs (SPEC-008-T74, R78–R80)
+        run: npm run ci:map-egress-static
+
       - name: Install
         run: npm ci
 

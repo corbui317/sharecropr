@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals';
-import { act, fireEvent, render, screen } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, within } from '@testing-library/react-native';
 import { createRef } from 'react';
+import { StyleSheet, View } from 'react-native';
 
 import type { DeviceLocation, RenderableMarker } from '@/domain/geo/types';
 import {
@@ -8,6 +9,9 @@ import {
   type MapCanvasHandle,
   type MapCanvasProps,
 } from '@/features/map/components/MapCanvas';
+
+// Layout contract only: the geometric T70/T77 assertion (measured rects, every §8.2 state) needs a
+// real layout engine and stays e2e/device. Do not fake it with synthetic onLayout events.
 
 // The renderer is replaced by host-View stubs so MapCanvas is testable without a map
 // (mobile-architecture §4.1). Shared with the screen test via ./maplibreStub.
@@ -166,3 +170,108 @@ describe('MapCanvas (renderer stubbed)', () => {
     expect(easeTo().mock.calls[0]?.[0]).not.toHaveProperty('zoom');
   });
 });
+
+// --- WP-07 (SCRUM-28): attribution guaranteed by layout, not z-order (R75/R76, NFR-99) ---
+
+function luminance(hex: string): number {
+  const n = parseInt(hex.slice(1), 16);
+  const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * ch[0]! + 0.7152 * ch[1]! + 0.0722 * ch[2]!;
+}
+
+function parseRgba(value: string): { rgb: [number, number, number]; a: number } {
+  const m = /^rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)$/.exec(value);
+  if (!m) throw new Error(`unsupported colour ${value}`);
+  return { rgb: [Number(m[1]), Number(m[2]), Number(m[3])], a: Number(m[4]) };
+}
+
+function contrastOver(fg: string, bg: string, backdrop: number): number {
+  const { rgb, a } = parseRgba(bg);
+  const comp = rgb.map((v) => v * a + backdrop * (1 - a));
+  const toHex = (v: number[]) => `#${v.map((x) => Math.round(x).toString(16).padStart(2, '0')).join('')}`;
+  const l1 = luminance(fg);
+  const l2 = luminance(toHex(comp));
+  return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+}
+
+describe('MapCanvas attribution layout (SPEC-008 R75/R76)', () => {
+  test('the attribution sits in an in-flow reserved inset, not an overlay (SPEC-008-T77 layout half, R76)', async () => {
+    await renderCanvas();
+    const inset = screen.getByTestId('map.attribution-inset');
+    const inner = within(inset).getByTestId('map.attribution');
+    // Whole-style equality: any added absolute positioning or stacking key fails this test.
+    expect(StyleSheet.flatten(inset.props.style)).toEqual({
+      flexShrink: 0,
+      alignItems: 'flex-start',
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+    });
+    expect(Object.keys(StyleSheet.flatten(inner.props.style)).sort()).toEqual([
+      'backgroundColor',
+      'borderColor',
+      'borderRadius',
+      'borderWidth',
+      'paddingHorizontal',
+      'paddingVertical',
+    ]);
+  });
+
+  test('consumer chrome renders only in the overlay region above the inset (R76)', async () => {
+    await render(
+      <MapCanvas {...buildProps()}>
+        <View testID="chrome.banner" />
+      </MapCanvas>,
+    );
+    const overlay = screen.getByTestId('map.overlay');
+    expect(within(overlay).getByTestId('chrome.banner')).toBeOnTheScreen();
+    expect(within(screen.getByTestId('map.attribution-inset')).queryByTestId('chrome.banner')).toBeNull();
+    const overlayStyle = StyleSheet.flatten(overlay.props.style);
+    expect(overlayStyle.flex).toBe(1);
+    expect(overlayStyle.overflow).toBe('hidden');
+    const order = screen
+      .getByTestId('map.chrome')
+      .children.filter((c): c is Exclude<typeof c, string> => typeof c !== 'string')
+      .filter((c) => typeof c.type === 'string')
+      .map((c) => c.props.testID);
+    expect(order).toEqual(['map.overlay', 'map.attribution-inset', 'map.reserved-bottom']);
+  });
+
+  test.each([0, 120, 400, 2000, -10, Number.NaN])(
+    'bottomInset %p reserves space below the notice, which never shrinks (SPEC-008-T70 structural)',
+    async (inset) => {
+      await renderCanvas({ bottomInset: inset });
+      expect(screen.getByTestId('map.attribution')).toBeOnTheScreen();
+      const spacer = StyleSheet.flatten(screen.getByTestId('map.reserved-bottom').props.style);
+      expect(spacer.height).toBe(Number.isFinite(inset) ? Math.max(0, inset) : 0);
+      expect(spacer.flexShrink).toBe(1);
+      expect(StyleSheet.flatten(screen.getByTestId('map.attribution-inset').props.style).flexShrink).toBe(0);
+    },
+  );
+
+  test('the notice is exact, untruncated and scalable, with no tap-to-reveal (SPEC-008-T69, TC-GEO-40 unit half)', async () => {
+    await renderCanvas();
+    const text = screen.getByText('© OpenStreetMap contributors');
+    expect(text.props.numberOfLines).toBeUndefined();
+    expect(text.props.ellipsizeMode).toBeUndefined();
+    expect(text.props.maxFontSizeMultiplier).toBeUndefined();
+    expect(text.props.allowFontScaling).not.toBe(false);
+    let node: typeof text.parent = screen.getByTestId('map.attribution');
+    while (node) {
+      expect(node.props.onPress).toBeUndefined();
+      node = node.parent;
+    }
+  });
+
+  test('text contrast is at least 4.5:1 over the worst-case backdrop (TC-GEO-38 static half)', async () => {
+    await renderCanvas();
+    const container = StyleSheet.flatten(screen.getByTestId('map.attribution').props.style);
+    const label = StyleSheet.flatten(screen.getByText('© OpenStreetMap contributors').props.style);
+    for (const backdrop of [0, 255]) {
+      expect(contrastOver(label.color as string, container.backgroundColor as string, backdrop)).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+});
+
